@@ -1,0 +1,8 @@
+# Realpolitik - Global Situational Awareness
+# https://realpolitik.world
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://realpolitik.world/sitemap.xml

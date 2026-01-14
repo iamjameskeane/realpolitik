@@ -1,0 +1,315 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  /* Viewport height unit - JS will override for older iOS Safari */
+  --vh: 1vh;
+
+  /* War Room - Deep Space Black */
+  --background: #020617;
+  --foreground: #e2e8f0;
+
+  /* Category Colors - Neon Accents */
+  --military: #ef4444;
+  --military-glow: rgba(239, 68, 68, 0.5);
+  --economy: #34d399;
+  --economy-glow: rgba(52, 211, 153, 0.5);
+  --diplomacy: #22d3ee;
+  --diplomacy-glow: rgba(34, 211, 238, 0.5);
+  --unrest: #fbbf24;
+  --unrest-glow: rgba(251, 191, 36, 0.5);
+
+  /* UI Colors */
+  --panel-bg: rgba(0, 0, 0, 0.4);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --accent: #6366f1;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-military: var(--military);
+  --color-economy: var(--economy);
+  --color-diplomacy: var(--diplomacy);
+  --color-unrest: var(--unrest);
+  --color-panel-bg: var(--panel-bg);
+  --color-panel-border: var(--panel-border);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-outfit);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  /* Prevent iOS Safari bounce/scroll */
+  overscroll-behavior: none;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+}
+
+/* iOS Safari full-height fix */
+html {
+  height: -webkit-fill-available;
+}
+
+body {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+}
+
+/* ===== ACCESSIBILITY: Focus-visible styles ===== */
+/* Shows focus ring only for keyboard navigation, not mouse clicks */
+
+/* Interactive elements - buttons, links, inputs */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible:not([tabindex="-1"]) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Glass panels get a glow effect */
+.glass-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+
+/* Slider thumb focus */
+.time-slider:focus-visible {
+  outline: none;
+}
+
+.time-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 3px var(--background),
+    0 0 0 5px var(--accent);
+}
+
+.time-slider:focus-visible::-moz-range-thumb {
+  box-shadow:
+    0 0 0 3px var(--background),
+    0 0 0 5px var(--accent);
+}
+
+/* Map controls - more subtle focus */
+.maplibregl-ctrl button:focus-visible,
+.mapboxgl-ctrl button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Remove default focus outline (we're replacing it) */
+*:focus {
+  outline: none;
+}
+
+/* Glow effects for high-severity events */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* AI button shimmer sweep animation */
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-shimmer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: shimmer-sweep 3s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+/* Loading bar animation */
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+@keyframes fadeSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Glass panel effect */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+
+/* Custom scrollbar - sleek dark theme */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Firefox scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+/* Time Range Slider */
+.time-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.time-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 10px var(--accent);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.time-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 16px var(--accent);
+}
+
+.time-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 10px var(--accent);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.time-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 16px var(--accent);
+}
+
+.time-slider::-moz-range-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* Hide scrollbar utility for horizontal scroll areas */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Mobile-specific touch feedback */
+@media (max-width: 767px) {
+  button:active {
+    transform: scale(0.98);
+  }
+
+  /* Prevent text selection on mobile UI */
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Ensure smooth scrolling */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* When keyboard is open, ensure inputs stay visible */
+  input:focus,
+  textarea:focus {
+    /* Force the browser to scroll element into view */
+    scroll-margin-bottom: 200px;
+  }
+}
+
+/* Prevent iOS zoom on input focus (requires 16px+ font size) */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

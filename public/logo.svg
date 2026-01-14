@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <style>
+      .logo-stroke {
+        fill: none;
+        stroke: #6366f1;
+        stroke-width: 4;
+        stroke-linecap: round;
+      }
+      .logo-fill {
+        fill: #6366f1;
+      }
+    </style>
+  </defs>
+  
+  <!-- Outer circle (globe outline) -->
+  <circle class="logo-stroke" cx="100" cy="100" r="70"/>
+  
+  <!-- Vertical center ellipse (prime meridian) -->
+  <ellipse class="logo-stroke" cx="100" cy="100" rx="35" ry="70"/>
+  
+  <!-- Horizontal center line (equator) -->
+  <ellipse class="logo-stroke" cx="100" cy="100" rx="70" ry="35"/>
+  
+  <!-- Upper latitude line -->
+  <path class="logo-stroke" d="M 38 65 Q 100 45, 162 65"/>
+  
+  <!-- Lower latitude line -->
+  <path class="logo-stroke" d="M 38 135 Q 100 155, 162 135"/>
+  
+  <!-- Crosshair - horizontal line -->
+  <line class="logo-stroke" x1="15" y1="100" x2="185" y2="100"/>
+  
+  <!-- Crosshair - vertical line -->
+  <line class="logo-stroke" x1="100" y1="15" x2="100" y2="185"/>
+  
+  <!-- Crosshair tick marks - top -->
+  <line class="logo-stroke" x1="92" y1="55" x2="108" y2="55"/>
+  
+  <!-- Crosshair tick marks - bottom -->
+  <line class="logo-stroke" x1="92" y1="145" x2="108" y2="145"/>
+  
+  <!-- Crosshair tick marks - left -->
+  <line class="logo-stroke" x1="55" y1="92" x2="55" y2="108"/>
+  
+  <!-- Crosshair tick marks - right -->
+  <line class="logo-stroke" x1="145" y1="92" x2="145" y2="108"/>
+  
+  <!-- Center dot -->
+  <circle class="logo-fill" cx="100" cy="100" r="10"/>
+</svg>

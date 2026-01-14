@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GeoEvent",
+  "description": "A geopolitical event for the Realpolitik dashboard",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "category",
+    "coordinates",
+    "location_name",
+    "severity",
+    "summary",
+    "timestamp",
+    "fallout_prediction",
+    "sources"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the incident"
+    },
+    "title": {
+      "type": "string",
+      "description": "Synthesized event headline",
+      "maxLength": 200
+    },
+    "category": {
+      "type": "string",
+      "enum": ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"],
+      "description": "Event category"
+    },
+    "coordinates": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "[longitude, latitude]"
+    },
+    "location_name": {
+      "type": "string",
+      "description": "Human-readable location name",
+      "maxLength": 100
+    },
+    "severity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Severity score (1-10)"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Synthesized summary from all sources",
+      "maxLength": 500
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Earliest source timestamp (ISO 8601)"
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Latest source timestamp (ISO 8601)"
+    },
+    "fallout_prediction": {
+      "type": "string",
+      "description": "AI-generated prediction of consequences",
+      "maxLength": 500
+    },
+    "sources": {
+      "type": "array",
+      "description": "All news sources covering this incident",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "headline", "summary", "source_name", "source_url", "timestamp"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this source article"
+          },
+          "headline": {
+            "type": "string",
+            "description": "Original article headline",
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "description": "Original GPT summary for this article",
+            "maxLength": 500
+          },
+          "source_name": {
+            "type": "string",
+            "description": "News source name (e.g. Reuters, BBC)",
+            "maxLength": 100
+          },
+          "source_url": {
+            "type": "string",
+            "description": "Link to original article"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Article publication timestamp (ISO 8601)"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

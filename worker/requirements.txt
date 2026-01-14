@@ -1,0 +1,21 @@
+# Realpolitik Python Worker
+# Python 3.11+
+
+# Core
+requests>=2.31.0
+httpx>=0.27.0
+pydantic>=2.5.0
+google-genai>=1.0.0  # Google Gemini AI SDK
+
+# RSS Feed Parsing
+feedparser>=6.0.0
+
+# Validation
+jsonschema>=4.21.0
+
+# Cloud Storage (for production)
+google-cloud-storage>=2.14.0
+boto3>=1.34.0  # S3-compatible storage (Cloudflare R2)
+
+# Development
+python-dotenv>=1.0.0

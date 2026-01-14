@@ -1,0 +1,15 @@
+{
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.realpolitik.world"
+        }
+      ],
+      "destination": "https://realpolitik.world/:path*",
+      "permanent": true
+    }
+  ]
+}

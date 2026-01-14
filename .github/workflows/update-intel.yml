@@ -1,0 +1,50 @@
+name: Update Intelligence
+
+on:
+  schedule:
+    - cron: "*/15 * * * *" # Every 15 minutes (96 runs/day, under NewsAPI 100 req limit)
+  workflow_dispatch: # Manual trigger button
+
+jobs:
+  refresh-intel:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Log environment
+        run: |
+          echo "🕐 Run started: $(date -u)"
+          echo "📦 Python: $(python --version)"
+          echo "🔑 Secrets configured:"
+          echo "   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY != '' && '✓' || '✗ MISSING' }}"
+          echo "   NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY != '' && '✓' || '✗ MISSING' }}"
+          echo "   R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME != '' && '✓' || '✗ MISSING' }}"
+          echo "   UPSTASH_REDIS: ${{ secrets.UPSTASH_REDIS_REST_URL != '' && '✓' || '✗ MISSING' }}"
+
+      - name: Install dependencies
+        run: |
+          pip install -r worker/requirements.txt
+          echo "✓ Dependencies installed"
+
+      - name: Run worker
+        env:
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          STORAGE_MODE: "r2"
+          # Upstash Redis for rate limiting
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: |
+          echo "🚀 Starting worker..."
+          python worker/main.py
+          echo "🏁 Worker finished at $(date -u)"

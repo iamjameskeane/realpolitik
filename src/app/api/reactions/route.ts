@@ -1,0 +1,113 @@
+/**
+ * Reactions API (Analyst Protocol)
+ *
+ * GET /api/reactions - Get ALL reaction counts (global batch, cached)
+ * GET /api/reactions?eventId=xxx - Get reaction counts for single event (with user vote)
+ * POST /api/reactions - Cast or change a vote
+ * DELETE /api/reactions - Remove a vote
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getReactionCountsWithUserVote,
+  castVote,
+  removeVote,
+  getAllReactionCounts,
+  ReactionType,
+} from "@/lib/reactions";
+import { getClientIP } from "@/lib/request";
+
+/**
+ * GET - Fetch reaction counts
+ *
+ * No params: Returns ALL reactions (global batch for map/list display)
+ * ?eventId=xxx: Returns single event with user vote status
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const eventId = searchParams.get("eventId");
+
+    // Single event request (includes user vote status) - used by voting UI
+    if (eventId) {
+      const clientIP = getClientIP(request);
+      const counts = await getReactionCountsWithUserVote(eventId, clientIP);
+      return NextResponse.json({ counts });
+    }
+
+    // Global batch: Return ALL reactions
+    // This enables a static SWR key and eliminates cache thrashing
+    const counts = await getAllReactionCounts();
+
+    return NextResponse.json(
+      { counts },
+      {
+        headers: {
+          // Edge cache for 30s, serve stale for 60s while revalidating
+          // This means multiple users = 1 Redis call per 30s
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+        },
+      }
+    );
+  } catch (error) {
+    console.error("[Reactions] GET error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * POST - Cast or change a vote
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { eventId, type } = body as { eventId: string; type: ReactionType };
+
+    // Validate
+    if (!eventId || !type) {
+      return NextResponse.json({ error: "eventId and type required" }, { status: 400 });
+    }
+
+    if (!["critical", "market", "noise"].includes(type)) {
+      return NextResponse.json({ error: "Invalid reaction type" }, { status: 400 });
+    }
+
+    const clientIP = getClientIP(request);
+    const result = await castVote(eventId, clientIP, type);
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 409 });
+    }
+
+    return NextResponse.json({ success: true, counts: result.counts });
+  } catch (error) {
+    console.error("[Reactions] POST error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE - Remove a vote
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const eventId = searchParams.get("eventId");
+
+    if (!eventId) {
+      return NextResponse.json({ error: "eventId required" }, { status: 400 });
+    }
+
+    const clientIP = getClientIP(request);
+    const result = await removeVote(eventId, clientIP);
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, counts: result.counts });
+  } catch (error) {
+    console.error("[Reactions] DELETE error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
