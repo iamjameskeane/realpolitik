@@ -86,6 +86,37 @@ export const MAX_SEVERITY_BOOST = 2;
 /** Maximum AI briefing messages per IP per day */
 export const DAILY_BRIEFING_LIMIT = 10;
 
+/** Maximum briefing requests globally per minute (across all IPs) */
+export const GLOBAL_BRIEFING_LIMIT_PER_MINUTE = 30;
+
+/**
+ * Proof of Work difficulty (number of leading zero bits required)
+ *
+ * Higher = more computation required:
+ * - 16 bits: ~65K hashes, ~100-200ms
+ * - 18 bits: ~262K hashes, ~300-600ms
+ * - 20 bits: ~1M hashes, ~1-2s
+ *
+ * 18 bits is a good balance between security and UX.
+ */
+export const POW_DIFFICULTY = 18;
+
+/** Session token validity (ms) - how long a solved PoW grants access */
+export const SESSION_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// =============================================================================
+// INPUT VALIDATION
+// =============================================================================
+
+/** Maximum question length (characters) */
+export const MAX_QUESTION_LENGTH = 500;
+
+/** Maximum chat history messages to accept */
+export const MAX_HISTORY_LENGTH = 10;
+
+/** Maximum characters per history message */
+export const MAX_HISTORY_MESSAGE_LENGTH = 2000;
+
 // =============================================================================
 // UI CONSTANTS
 // =============================================================================

@@ -157,6 +157,11 @@ export default function PrivacyPage() {
                   in Upstash Redis and automatically expire after 24 hours (for rate limits) or when
                   events age out.
                 </li>
+                <li>
+                  <strong className="text-slate-300">Session tokens:</strong> When using AI
+                  Briefings, a session token is generated and stored for 1 hour to reduce repeated
+                  verification. This token is tied to your hashed IP and expires automatically.
+                </li>
               </ul>
             </div>
           </section>

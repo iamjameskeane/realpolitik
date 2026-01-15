@@ -1,8 +1,22 @@
 import { GoogleGenAI, Content, Part, FunctionDeclaration, Type } from "@google/genai";
 import { tavily } from "@tavily/core";
 import { NextRequest } from "next/server";
-import { checkBriefingLimit, incrementBriefingCount, logBriefingUsage } from "@/lib/usage";
+import {
+  checkBriefingLimit,
+  incrementBriefingCount,
+  logBriefingUsage,
+  checkAndIncrementGlobalLimit,
+  storeSessionToken,
+  validateSessionToken,
+} from "@/lib/usage";
 import { getClientIP } from "@/lib/request";
+import { generateChallenge, verifySolution, generateSessionToken } from "@/lib/pow";
+import {
+  MAX_QUESTION_LENGTH,
+  MAX_HISTORY_LENGTH,
+  MAX_HISTORY_MESSAGE_LENGTH,
+  POW_DIFFICULTY,
+} from "@/lib/constants";
 
 // Vercel function configuration - increase timeout for AI streaming
 export const maxDuration = 60; // seconds (requires Pro plan for > 10s)
@@ -24,6 +38,11 @@ interface ChatMessage {
   content: string;
 }
 
+interface PowSolution {
+  challenge: string;
+  nonce: number;
+}
+
 interface BriefingRequest {
   eventId: string;
   eventTitle: string;
@@ -32,6 +51,9 @@ interface BriefingRequest {
   eventLocation: string;
   question: string;
   history: ChatMessage[];
+  // Session authentication (one of these required)
+  sessionToken?: string;
+  powSolution?: PowSolution;
 }
 
 // Lazily initialize Tavily client
@@ -133,21 +155,207 @@ Sources:
 export async function POST(request: NextRequest) {
   try {
     const body: BriefingRequest = await request.json();
-    const { eventTitle, eventSummary, eventCategory, eventLocation, question, history } = body;
+    const {
+      eventId,
+      eventTitle,
+      eventSummary,
+      eventCategory,
+      eventLocation,
+      question,
+      history,
+      sessionToken,
+      powSolution,
+    } = body;
+
+    const clientIP = getClientIP(request);
+
+    // ==========================================================================
+    // STEP 1: Input Validation
+    // ==========================================================================
 
     // Validate required fields
-    if (!eventTitle || !question) {
+    if (!eventId || !eventTitle || !question) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // Step 0: Check daily limit
-    const clientIP = getClientIP(request);
+    // Validate question length
+    if (question.length > MAX_QUESTION_LENGTH) {
+      return new Response(
+        JSON.stringify({
+          error: "Question too long",
+          message: `Questions must be under ${MAX_QUESTION_LENGTH} characters.`,
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Validate history
+    if (history && Array.isArray(history)) {
+      if (history.length > MAX_HISTORY_LENGTH) {
+        return new Response(
+          JSON.stringify({
+            error: "History too long",
+            message: "Too many messages in conversation history.",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      // Validate each history message
+      for (const msg of history) {
+        if (
+          !msg.role ||
+          !msg.content ||
+          (msg.role !== "user" && msg.role !== "assistant")
+        ) {
+          return new Response(
+            JSON.stringify({ error: "Invalid history message format" }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+        if (msg.content.length > MAX_HISTORY_MESSAGE_LENGTH) {
+          return new Response(
+            JSON.stringify({
+              error: "History message too long",
+              message: "Individual messages in history are too long.",
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
+    }
+
+    // ==========================================================================
+    // STEP 2: Session Authentication (PoW or Token)
+    // ==========================================================================
+
+    let newSessionToken: string | undefined;
+
+    try {
+      if (sessionToken) {
+        // Validate existing session token
+        const isValid = await validateSessionToken(sessionToken, clientIP);
+        if (!isValid) {
+          // Token invalid or expired - need new PoW
+          const challenge = generateChallenge();
+          return new Response(
+            JSON.stringify({
+              error: "Session expired",
+              requiresPow: true,
+              challenge,
+              difficulty: POW_DIFFICULTY,
+            }),
+            {
+              status: 401,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+        // Token valid, continue with request
+        console.log("[Briefing] Valid session token");
+      } else if (powSolution) {
+        // Verify PoW solution and issue new token
+        const result = await verifySolution(
+          powSolution.challenge,
+          powSolution.nonce,
+          POW_DIFFICULTY
+        );
+
+        if (!result.valid) {
+          console.warn(`[Briefing] Invalid PoW: ${result.error}`);
+          return new Response(
+            JSON.stringify({
+              error: "Invalid proof of work",
+              message: result.error,
+              requiresPow: true,
+              challenge: generateChallenge(),
+              difficulty: POW_DIFFICULTY,
+            }),
+            {
+              status: 401,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        // PoW verified - generate and store session token
+        newSessionToken = generateSessionToken();
+        await storeSessionToken(newSessionToken, clientIP);
+        console.log("[Briefing] PoW verified, new session token issued");
+      } else {
+        // No token or solution - need to solve PoW
+        const challenge = generateChallenge();
+        return new Response(
+          JSON.stringify({
+            error: "Authentication required",
+            requiresPow: true,
+            challenge,
+            difficulty: POW_DIFFICULTY,
+          }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+    } catch (authError) {
+      console.error("[Briefing] Auth error:", authError);
+      return new Response(
+        JSON.stringify({
+          error: "Authentication failed",
+          message: "Please try again.",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // ==========================================================================
+    // STEP 3: Rate Limiting (Global + Per-IP)
+    // ==========================================================================
+
     let limitChecked = false;
 
     try {
+      // Check global rate limit first (protects against distributed attacks)
+      const globalLimit = await checkAndIncrementGlobalLimit();
+      if (!globalLimit.allowed) {
+        console.warn(
+          `[Briefing] Global rate limit exceeded: ${globalLimit.current}/${globalLimit.limit}`
+        );
+        return new Response(
+          JSON.stringify({
+            error: "Service busy",
+            message: "Too many requests right now. Please try again in a minute.",
+          }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": "60",
+            },
+          }
+        );
+      }
+
+      // Check per-IP daily limit
       const { allowed, remaining, limit } = await checkBriefingLimit(clientIP);
 
       if (!allowed) {
@@ -168,7 +376,18 @@ export async function POST(request: NextRequest) {
       limitChecked = true;
       console.log(`[Briefing] IP has ${remaining} requests remaining today`);
     } catch (redisError) {
-      console.error("[Briefing] Redis error (allowing request):", redisError);
+      // Fail CLOSED on Redis errors - deny the request
+      console.error("[Briefing] Redis error (denying request):", redisError);
+      return new Response(
+        JSON.stringify({
+          error: "Service temporarily unavailable",
+          message: "Please try again in a moment.",
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Build event context
@@ -217,6 +436,11 @@ EVENT CONTEXT:
         };
 
         try {
+          // Send new session token if one was just created
+          if (newSessionToken) {
+            sendEvent({ sessionToken: newSessionToken });
+          }
+
           const ai = getGeminiClient();
 
           // Tool calling loop
