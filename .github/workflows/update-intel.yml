@@ -2,7 +2,7 @@ name: Update Intelligence
 
 on:
   schedule:
-    - cron: "*/15 * * * *" # Every 15 minutes (96 runs/day, under NewsAPI 100 req limit)
+    - cron: "0 * * * *" # Every hour (24 runs/day)
   workflow_dispatch: # Manual trigger button
 
 jobs:

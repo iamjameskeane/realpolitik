@@ -1905,7 +1905,7 @@ async def fetch_hybrid_articles(
             print(f"  ⚠️ RSS fetch error: {type(e).__name__}: {e}")
     
     # NewsAPI (complementary source - 24hr delay but broader coverage)
-    # Free tier: 100 req/day, we run 96/day (every 15 min) = safe margin
+    # Free tier: 100 req/day, we run 24/day (every hour) = safe margin
     # NewsAPI catches stories from sources not in our RSS feeds
     if sources in ("newsapi", "all") and newsapi_key:
         try:
@@ -1994,7 +1994,7 @@ def main():
         "--sources",
         choices=["rss", "newsapi", "all"],
         default="all",
-        help="Which sources to fetch: rss (every 15min), newsapi (hourly), all (default)"
+        help="Which sources to fetch: rss, newsapi, or all (default)"
     )
     parser.add_argument(
         "--output",
