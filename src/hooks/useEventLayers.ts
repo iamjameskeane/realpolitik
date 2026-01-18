@@ -28,6 +28,15 @@ import { EVENT_LAYERS } from "./eventLayerConfigs";
 
 // Re-export for consumers
 export { getLocationKey } from "./buildEventGeoJSON";
+export type { ClusterData };
+
+/** Data passed to cluster interaction callbacks */
+interface ClusterData {
+  events: GeoEvent[];
+  locationLabel: string;
+  coordinates: [number, number];
+  clusterId: number;
+}
 
 interface UseEventLayersOptions {
   events: GeoEvent[];
@@ -35,6 +44,16 @@ interface UseEventLayersOptions {
   onEventClick?: (event: GeoEvent) => void;
   onSingleEventClick: (event: GeoEvent) => void;
   onStackedEventClick: (events: GeoEvent[]) => void;
+  /** Long press on cluster (mobile) - returns events in cluster and location label */
+  onClusterLongPress?: (events: GeoEvent[], locationLabel: string) => void;
+  /** Right-click on cluster (desktop) - show context menu at cursor position */
+  onClusterRightClick?: (data: ClusterData, cursorPosition: { x: number; y: number }) => void;
+  /** Shift+click on cluster (desktop) - show cluster details popup */
+  onClusterShiftClick?: (data: ClusterData) => void;
+  /** Hover on cluster (desktop) - show tooltip after delay */
+  onClusterHover?: (data: ClusterData | null, cursorPosition: { x: number; y: number } | null) => void;
+  /** Trigger zoom to cluster (called from context menu) */
+  zoomToCluster?: (clusterId: number, coordinates: [number, number]) => void;
   recordInteraction: () => void;
   mapReady?: boolean;
   reactions?: Record<string, EnrichedReactionData>;
@@ -158,6 +177,10 @@ export function useEventLayers(
     eventsByLocation,
     onSingleEventClick,
     onStackedEventClick,
+    onClusterLongPress,
+    onClusterRightClick,
+    onClusterShiftClick,
+    onClusterHover,
     recordInteraction,
     mapReady,
     reactions = {},
@@ -183,6 +206,34 @@ export function useEventLayers(
   useEffect(() => {
     onStackedEventClickRef.current = onStackedEventClick;
   }, [onStackedEventClick]);
+
+  // Ref for cluster long press callback
+  const onClusterLongPressRef = useRef(onClusterLongPress);
+  useEffect(() => {
+    onClusterLongPressRef.current = onClusterLongPress;
+  }, [onClusterLongPress]);
+
+  // Refs for desktop cluster callbacks
+  const onClusterRightClickRef = useRef(onClusterRightClick);
+  useEffect(() => {
+    onClusterRightClickRef.current = onClusterRightClick;
+  }, [onClusterRightClick]);
+
+  const onClusterShiftClickRef = useRef(onClusterShiftClick);
+  useEffect(() => {
+    onClusterShiftClickRef.current = onClusterShiftClick;
+  }, [onClusterShiftClick]);
+
+  const onClusterHoverRef = useRef(onClusterHover);
+  useEffect(() => {
+    onClusterHoverRef.current = onClusterHover;
+  }, [onClusterHover]);
+
+  // Ref for events (needed to find events by ID from cluster leaves)
+  const eventsRef = useRef(events);
+  useEffect(() => {
+    eventsRef.current = events;
+  }, [events]);
 
   // Build GeoJSON from events (memoized via useCallback)
   const getGeoJSON = useCallback(() => {
@@ -234,23 +285,192 @@ export function useEventLayers(
   // Setup click handlers for clusters and events
   const setupClickHandlers = useCallback(
     (map: mapboxgl.Map) => {
-      // Click handler for clusters - zoom in until they break apart
-      map.on("click", "clusters", (e) => {
-        if (!e.features?.[0]) return;
+      // ===== CLUSTER LONG-PRESS DETECTION (Mobile) =====
+      const LONG_PRESS_DURATION = 500; // ms
+      let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+      let longPressTriggered = false;
+      let touchStartPoint: { x: number; y: number } | null = null;
 
-        const feature = e.features[0];
+      const clearLongPress = () => {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      };
+
+      const canvas = map.getCanvas();
+
+      const handleTouchStart = (e: TouchEvent) => {
+        if (e.touches.length !== 1) return;
+
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const point: [number, number] = [touch.clientX - rect.left, touch.clientY - rect.top];
+        touchStartPoint = { x: point[0], y: point[1] };
+        longPressTriggered = false;
+
+        // Check if touching a cluster
+        const features = map.queryRenderedFeatures(point, { layers: ["clusters"] });
+        if (!features || features.length === 0) return;
+
+        const feature = features[0];
         const clusterId = feature.properties?.cluster_id;
         const source = map.getSource("events") as mapboxgl.GeoJSONSource;
 
         if (!clusterId || !source) return;
 
+        // Start long press timer
+        longPressTimer = setTimeout(() => {
+          longPressTriggered = true;
+
+          // Get all events in this cluster
+          source.getClusterLeaves(clusterId, 100, 0, (err, leaves) => {
+            if (err || !leaves) return;
+
+            // Map cluster leaves back to full event objects
+            const clusterEvents: GeoEvent[] = [];
+            const eventMap = new Map(eventsRef.current.map((e) => [e.id, e]));
+
+            for (const leaf of leaves) {
+              const eventId = leaf.properties?.id;
+              if (eventId && eventMap.has(eventId)) {
+                clusterEvents.push(eventMap.get(eventId)!);
+              }
+            }
+
+            if (clusterEvents.length === 0) return;
+
+            // Get location label from highest severity event
+            const topEvent = [...clusterEvents].sort((a, b) => b.severity - a.severity)[0];
+            const location = topEvent.location_name?.split(",")[0]?.trim() || "Unknown";
+
+            // Call the long press callback
+            onClusterLongPressRef.current?.(clusterEvents, location);
+            recordInteraction();
+          });
+        }, LONG_PRESS_DURATION);
+      };
+
+      const handleTouchMove = (e: TouchEvent) => {
+        if (!touchStartPoint || !longPressTimer) return;
+
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const dx = touch.clientX - rect.left - touchStartPoint.x;
+        const dy = touch.clientY - rect.top - touchStartPoint.y;
+
+        // Cancel if moved too far (15px threshold)
+        if (Math.sqrt(dx * dx + dy * dy) > 15) {
+          clearLongPress();
+        }
+      };
+
+      const handleTouchEnd = () => {
+        clearLongPress();
+        touchStartPoint = null;
+      };
+
+      canvas.addEventListener("touchstart", handleTouchStart, { passive: true });
+      canvas.addEventListener("touchmove", handleTouchMove, { passive: true });
+      canvas.addEventListener("touchend", handleTouchEnd, { passive: true });
+      canvas.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+      // ===== HELPER: Get cluster data =====
+      const getClusterData = (
+        clusterId: number,
+        coordinates: [number, number],
+        callback: (data: ClusterData) => void
+      ) => {
+        const source = map.getSource("events") as mapboxgl.GeoJSONSource;
+        if (!source) return;
+
+        source.getClusterLeaves(clusterId, 100, 0, (err, leaves) => {
+          if (err || !leaves) return;
+
+          // Map cluster leaves back to full event objects
+          const clusterEvents: GeoEvent[] = [];
+          const eventMap = new Map(eventsRef.current.map((e) => [e.id, e]));
+
+          for (const leaf of leaves) {
+            const eventId = leaf.properties?.id;
+            if (eventId && eventMap.has(eventId)) {
+              clusterEvents.push(eventMap.get(eventId)!);
+            }
+          }
+
+          if (clusterEvents.length === 0) return;
+
+          // Get location label from highest severity event
+          const topEvent = [...clusterEvents].sort((a, b) => b.severity - a.severity)[0];
+          const locationLabel = topEvent.location_name?.split(",")[0]?.trim() || "Unknown";
+
+          callback({
+            events: clusterEvents,
+            locationLabel,
+            coordinates,
+            clusterId,
+          });
+        });
+      };
+
+      // ===== TRACK SHIFT KEY STATE =====
+      // Mapbox's boxZoom can interfere with shift+click detection on the originalEvent
+      // Track shift key state separately for more reliable detection
+      let isShiftPressed = false;
+      
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Shift") {
+          isShiftPressed = true;
+        }
+      };
+      
+      const handleKeyUp = (e: KeyboardEvent) => {
+        if (e.key === "Shift") {
+          isShiftPressed = false;
+        }
+      };
+      
+      document.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("keyup", handleKeyUp);
+
+      // ===== CLUSTER CLICK HANDLER =====
+      // Click handler for clusters - zoom in until they break apart
+      // Skip if long press was just triggered (prevents zoom after long press)
+      // Shift+click opens cluster details popup instead
+      map.on("click", "clusters", (e) => {
+        // Check both our tracked state and the original event (belt and suspenders)
+        const shiftKey = isShiftPressed || e.originalEvent.shiftKey;
+        
+        if (longPressTriggered) {
+          longPressTriggered = false;
+          return;
+        }
+        if (!e.features?.[0]) return;
+
+        const feature = e.features[0];
+        const clusterId = feature.properties?.cluster_id;
+        const source = map.getSource("events") as mapboxgl.GeoJSONSource;
+        const coordinates = (feature.geometry as GeoJSON.Point).coordinates as [number, number];
+
+        if (!clusterId || !source) return;
+
+        // Shift+click: show cluster details popup
+        if (shiftKey && onClusterShiftClickRef.current) {
+          getClusterData(clusterId, coordinates, (data) => {
+            onClusterShiftClickRef.current?.(data);
+            recordInteraction();
+          });
+          return;
+        }
+
+        // Normal click: zoom in
         source.getClusterExpansionZoom(clusterId, (err, expansionZoom) => {
           if (err) return;
 
           const targetZoom = Math.min((expansionZoom ?? 4) + 0.5, 12);
 
           map.flyTo({
-            center: (feature.geometry as GeoJSON.Point).coordinates as [number, number],
+            center: coordinates,
             zoom: targetZoom,
             duration: 600,
             padding: MAP_PADDING,
@@ -258,6 +478,95 @@ export function useEventLayers(
 
           recordInteraction();
         });
+      });
+
+      // ===== CLUSTER RIGHT-CLICK HANDLER (Context Menu) =====
+      map.on("contextmenu", "clusters", (e) => {
+        e.preventDefault();
+        if (!e.features?.[0]) return;
+
+        const feature = e.features[0];
+        const clusterId = feature.properties?.cluster_id;
+        const coordinates = (feature.geometry as GeoJSON.Point).coordinates as [number, number];
+
+        if (!clusterId) return;
+
+        const cursorPosition = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+
+        getClusterData(clusterId, coordinates, (data) => {
+          onClusterRightClickRef.current?.(data, cursorPosition);
+          recordInteraction();
+        });
+      });
+
+      // ===== CLUSTER HOVER HANDLER (Tooltip with delay) =====
+      let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+      let currentHoveredClusterId: number | null = null;
+      const HOVER_DELAY = 500; // ms before showing tooltip
+
+      map.on("mouseenter", "clusters", (e) => {
+        if (!e.features?.[0]) return;
+
+        const feature = e.features[0];
+        const clusterId = feature.properties?.cluster_id;
+        const coordinates = (feature.geometry as GeoJSON.Point).coordinates as [number, number];
+
+        if (!clusterId) return;
+
+        // Clear any existing timeout
+        if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+        }
+
+        currentHoveredClusterId = clusterId;
+
+        // Start delay timer for tooltip
+        hoverTimeout = setTimeout(() => {
+          // Only show if still hovering same cluster
+          if (currentHoveredClusterId === clusterId) {
+            const cursorPosition = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+            getClusterData(clusterId, coordinates, (data) => {
+              onClusterHoverRef.current?.(data, cursorPosition);
+            });
+          }
+        }, HOVER_DELAY);
+      });
+
+      map.on("mousemove", "clusters", (e) => {
+        // Update cursor position for tooltip
+        if (!e.features?.[0]) return;
+        const clusterId = e.features[0].properties?.cluster_id;
+        
+        // If hovering a different cluster, reset
+        if (clusterId !== currentHoveredClusterId) {
+          if (hoverTimeout) {
+            clearTimeout(hoverTimeout);
+          }
+          onClusterHoverRef.current?.(null, null);
+          currentHoveredClusterId = clusterId;
+          
+          if (clusterId) {
+            const coordinates = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
+            hoverTimeout = setTimeout(() => {
+              if (currentHoveredClusterId === clusterId) {
+                const cursorPosition = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+                getClusterData(clusterId, coordinates, (data) => {
+                  onClusterHoverRef.current?.(data, cursorPosition);
+                });
+              }
+            }, HOVER_DELAY);
+          }
+        }
+      });
+
+      map.on("mouseleave", "clusters", () => {
+        if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+          hoverTimeout = null;
+        }
+        currentHoveredClusterId = null;
+        onClusterHoverRef.current?.(null, null);
+        map.getCanvas().style.cursor = "";
       });
 
       // Double-click on cluster zooms in
@@ -323,13 +632,12 @@ export function useEventLayers(
         recordInteraction();
       });
 
-      // Cursor styles
+      // Cursor styles (cluster cursor is set in mouseenter above, clear in mouseleave above)
+      // Set pointer cursor on cluster enter (already handled above, but ensure it's set)
       map.on("mouseenter", "clusters", () => {
         map.getCanvas().style.cursor = "pointer";
       });
-      map.on("mouseleave", "clusters", () => {
-        map.getCanvas().style.cursor = "";
-      });
+
       map.on("mouseenter", "events-circles", () => {
         map.getCanvas().style.cursor = "pointer";
       });

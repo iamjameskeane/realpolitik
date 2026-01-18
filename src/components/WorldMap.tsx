@@ -13,8 +13,11 @@ import mapboxgl from "mapbox-gl";
 import { GeoEvent } from "@/types/events";
 import { useAutoRotate } from "@/hooks/useAutoRotate";
 import { usePopupPosition } from "@/hooks/usePopupPosition";
-import { useEventLayers, getLocationKey } from "@/hooks/useEventLayers";
+import { useEventLayers, getLocationKey, ClusterData } from "@/hooks/useEventLayers";
 import { EventPopup } from "@/components/map/EventPopup";
+import { ClusterPopup } from "@/components/map/ClusterPopup";
+import { ClusterContextMenu } from "@/components/map/ClusterContextMenu";
+import { ClusterTooltip } from "@/components/map/ClusterTooltip";
 import { MAP_PADDING } from "@/lib/constants";
 
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -47,6 +50,10 @@ interface WorldMapProps {
   eventStateMap?: Map<string, EventVisualState>;
   /** Whether the sidebar is open (affects fly-to centering) */
   sidebarOpen?: boolean;
+  /** Long press on cluster (mobile) - returns events in cluster and location label */
+  onClusterLongPress?: (events: GeoEvent[], locationLabel: string) => void;
+  /** Start flyover mode with cluster events (desktop) */
+  onClusterFlyover?: (events: GeoEvent[]) => void;
   /** External stack control (for catch up mode) - overrides location-based stacking */
   externalStack?: {
     events: GeoEvent[];
@@ -75,6 +82,8 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     reactions = {},
     eventStateMap,
     sidebarOpen = false,
+    onClusterLongPress,
+    onClusterFlyover,
     externalStack,
   },
   ref
@@ -97,6 +106,20 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   } | null>(null);
   const [isFlying, setIsFlying] = useState(false);
 
+  // Cluster interaction state (desktop)
+  const [clusterPopup, setClusterPopup] = useState<{
+    data: ClusterData;
+    position: { x: number; y: number };
+  } | null>(null);
+  const [clusterContextMenu, setClusterContextMenu] = useState<{
+    data: ClusterData;
+    position: { x: number; y: number };
+  } | null>(null);
+  const [clusterTooltip, setClusterTooltip] = useState<{
+    data: ClusterData;
+    position: { x: number; y: number };
+  } | null>(null);
+
   // Keep ref in sync with state
   useEffect(() => {
     selectedEventRef.current = selectedEvent;
@@ -115,10 +138,13 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   }, [events]);
 
   // Hooks
+  // Block auto-rotation when any cluster UI is open (popup, context menu, or tooltip)
+  const hasClusterUIOpen = clusterPopup !== null || clusterContextMenu !== null || clusterTooltip !== null;
+  
   const { startAutoRotate, stopAutoRotate, recordInteraction, lastInteractionRef } = useAutoRotate(
     map,
     selectedEventRef,
-    { is2DMode, hasExternalSelection }
+    { is2DMode, hasExternalSelection: hasExternalSelection || hasClusterUIOpen }
   );
 
   const { updatePopupPosition, getPopupStyle } = usePopupPosition(
@@ -159,6 +185,163 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     [onEventClick]
   );
 
+  // ===== CLUSTER INTERACTION HANDLERS (Desktop) =====
+
+  // Show cluster details popup (shift+click or from context menu)
+  const handleClusterShiftClick = useCallback((data: ClusterData) => {
+    // Clear any existing popups first
+    setSelectedEvent(null);
+    setPopupPosition(null);
+    setClusterContextMenu(null);
+    setClusterTooltip(null);
+
+    // Get position on map for the popup
+    if (map.current) {
+      const point = map.current.project(data.coordinates);
+      setClusterPopup({ data, position: { x: point.x, y: point.y } });
+    }
+  }, []);
+
+  // Show context menu (right-click)
+  const handleClusterRightClick = useCallback(
+    (data: ClusterData, cursorPosition: { x: number; y: number }) => {
+      // Clear tooltip
+      setClusterTooltip(null);
+      // Show context menu at cursor position
+      setClusterContextMenu({ data, position: cursorPosition });
+    },
+    []
+  );
+
+  // Show/hide tooltip (hover with delay)
+  const handleClusterHover = useCallback(
+    (data: ClusterData | null, cursorPosition: { x: number; y: number } | null) => {
+      // Don't show tooltip if context menu or popup is open
+      if (clusterContextMenu || clusterPopup) {
+        setClusterTooltip(null);
+        return;
+      }
+
+      if (data && cursorPosition) {
+        setClusterTooltip({ data, position: cursorPosition });
+      } else {
+        setClusterTooltip(null);
+      }
+    },
+    [clusterContextMenu, clusterPopup]
+  );
+
+  // Close cluster popup
+  const handleCloseClusterPopup = useCallback(() => {
+    setClusterPopup(null);
+  }, []);
+
+  // Handle event click from cluster popup - fly to event
+  const handleClusterEventClick = useCallback(
+    (event: GeoEvent) => {
+      // Clear any existing event popup and set flying state FIRST
+      // This prevents a flash of the old popup when cluster popup closes
+      setSelectedEvent(null);
+      setPopupPosition(null);
+      setIsFlying(true);
+      
+      // Close cluster popup
+      setClusterPopup(null);
+      
+      // Notify parent to mark as read and update URL (but don't trigger another fly)
+      onEventClick?.(event);
+      
+      // Fly to the event
+      if (map.current) {
+        // Stop any existing animation
+        map.current.stop();
+        
+        const currentZoom = map.current.getZoom();
+        const targetZoom = Math.max(currentZoom, 4);
+        
+        map.current.flyTo({
+          center: event.coordinates,
+          zoom: targetZoom,
+          pitch: 45,
+          duration: 1200,
+          padding: {
+            ...MAP_PADDING,
+            right: sidebarOpen ? SIDEBAR_WIDTH : 0,
+          },
+        });
+        
+        // Show popup after fly completes
+        map.current.once("moveend", () => {
+          setIsFlying(false);
+          setSelectedEvent(event);
+          if (map.current) {
+            const point = map.current.project(event.coordinates);
+            setPopupPosition({ x: point.x, y: point.y });
+          }
+        });
+      }
+    },
+    [onEventClick, sidebarOpen]
+  );
+
+  // Start flyover from cluster popup
+  const handleClusterFlyover = useCallback(() => {
+    if (!clusterPopup) return;
+    
+    const { events: clusterEvents } = clusterPopup.data;
+    
+    // Close popup
+    setClusterPopup(null);
+    
+    // Trigger flyover mode via parent callback
+    if (onClusterFlyover) {
+      onClusterFlyover(clusterEvents);
+    }
+  }, [clusterPopup, onClusterFlyover]);
+
+  // Zoom to cluster (from context menu)
+  const handleZoomToCluster = useCallback(() => {
+    if (!clusterContextMenu || !map.current) return;
+
+    const { clusterId, coordinates } = clusterContextMenu.data;
+    const source = map.current.getSource("events") as mapboxgl.GeoJSONSource;
+
+    if (!source) return;
+
+    source.getClusterExpansionZoom(clusterId, (err, expansionZoom) => {
+      if (err || !map.current) return;
+
+      const targetZoom = Math.min((expansionZoom ?? 4) + 0.5, 12);
+
+      map.current.flyTo({
+        center: coordinates,
+        zoom: targetZoom,
+        duration: 600,
+        padding: MAP_PADDING,
+      });
+
+      recordInteraction();
+    });
+  }, [clusterContextMenu, recordInteraction]);
+
+  // Start flyover from context menu
+  const handleClusterFlyoverFromMenu = useCallback(() => {
+    if (!clusterContextMenu) return;
+    
+    const { events: clusterEvents } = clusterContextMenu.data;
+    
+    // Trigger flyover mode via parent callback
+    if (onClusterFlyover) {
+      onClusterFlyover(clusterEvents);
+    }
+  }, [clusterContextMenu, onClusterFlyover]);
+
+  // View details from context menu
+  const handleViewDetailsFromMenu = useCallback(() => {
+    if (!clusterContextMenu) return;
+    handleClusterShiftClick(clusterContextMenu.data);
+  }, [clusterContextMenu, handleClusterShiftClick]);
+
   // Use event layers hook - only run after map is ready
   useEventLayers(map, {
     events,
@@ -166,6 +349,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     onEventClick,
     onSingleEventClick: handleSingleEventClick,
     onStackedEventClick: handleStackedEventClick,
+    onClusterLongPress,
+    onClusterRightClick: handleClusterRightClick,
+    onClusterShiftClick: handleClusterShiftClick,
+    onClusterHover: handleClusterHover,
     recordInteraction,
     mapReady, // Pass mapReady to trigger effect when map is initialized
     reactions, // Pass reaction data for marker styling
@@ -176,13 +363,21 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
     if (!map.current) return;
 
-    const features = map.current.queryRenderedFeatures(e.point, {
+    // Check if clicking on clusters or events
+    const clusterFeatures = map.current.queryRenderedFeatures(e.point, {
+      layers: ["clusters"],
+    });
+    const eventFeatures = map.current.queryRenderedFeatures(e.point, {
       layers: ["events-circles"],
     });
 
-    if (!features || features.length === 0) {
+    // If clicking on empty space, clear all popups
+    if ((!clusterFeatures || clusterFeatures.length === 0) && 
+        (!eventFeatures || eventFeatures.length === 0)) {
       setSelectedEvent(null);
       setPopupPosition(null);
+      setClusterPopup(null);
+      setClusterContextMenu(null);
     }
   }, []);
 
@@ -260,6 +455,8 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       scrollZoom: interactive,
       touchZoomRotate: interactive,
       touchPitch: interactive,
+      // Disable boxZoom so shift+click works for cluster details
+      boxZoom: false,
       doubleClickZoom: interactive,
     });
 
@@ -352,6 +549,31 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       });
     }
   }, [is2DMode, mapReady]);
+
+  // Track cluster popup position on map (updates when map moves)
+  useEffect(() => {
+    if (!map.current || !clusterPopup || !mapReady) {
+      return;
+    }
+
+    const updateClusterPosition = () => {
+      if (!map.current || !clusterPopup) return;
+      const point = map.current.project(clusterPopup.data.coordinates);
+      setClusterPopup((prev) =>
+        prev ? { ...prev, position: { x: point.x, y: point.y } } : null
+      );
+    };
+
+    map.current.on("move", updateClusterPosition);
+    map.current.on("moveend", updateClusterPosition);
+
+    return () => {
+      if (map.current) {
+        map.current.off("move", updateClusterPosition);
+        map.current.off("moveend", updateClusterPosition);
+      }
+    };
+  }, [clusterPopup?.data.coordinates, mapReady]);
 
   // Track external stack event position on map
   useEffect(() => {
@@ -481,6 +703,41 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
             stackLabel={externalStack.label || "catching up"}
           />
         )}
+
+      {/* Cluster popup (shift+click on cluster) */}
+      {showPopups && clusterPopup && !isFlying && (
+        <ClusterPopup
+          events={clusterPopup.data.events}
+          locationLabel={clusterPopup.data.locationLabel}
+          style={getPopupStyle(clusterPopup.position)}
+          onClose={handleCloseClusterPopup}
+          onEventClick={handleClusterEventClick}
+          onStartFlyover={handleClusterFlyover}
+        />
+      )}
+
+      {/* Cluster context menu (right-click on cluster) */}
+      {showPopups && clusterContextMenu && (
+        <ClusterContextMenu
+          x={clusterContextMenu.position.x}
+          y={clusterContextMenu.position.y}
+          eventCount={clusterContextMenu.data.events.length}
+          onClose={() => setClusterContextMenu(null)}
+          onViewDetails={handleViewDetailsFromMenu}
+          onZoom={handleZoomToCluster}
+          onStartFlyover={handleClusterFlyoverFromMenu}
+        />
+      )}
+
+      {/* Cluster tooltip (hover with delay) */}
+      {showPopups && clusterTooltip && !clusterContextMenu && !clusterPopup && (
+        <ClusterTooltip
+          x={clusterTooltip.position.x}
+          y={clusterTooltip.position.y}
+          eventCount={clusterTooltip.data.events.length}
+          locationLabel={clusterTooltip.data.locationLabel}
+        />
+      )}
     </div>
   );
 });

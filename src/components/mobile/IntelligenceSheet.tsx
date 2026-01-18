@@ -77,6 +77,13 @@ interface IntelligenceSheetProps {
   // Hide seen toggle
   hideSeen?: boolean;
   onHideSeenChange?: (value: boolean) => void;
+  // Cluster view (long press on cluster shows events in that cluster)
+  clusterViewOpen?: boolean;
+  clusterViewEvents?: GeoEvent[];
+  clusterViewLabel?: string;
+  onClusterEventSelect?: (event: GeoEvent, index: number) => void;
+  onExitClusterView?: () => void;
+  onStartClusterFlyover?: () => void;
 }
 
 /**
@@ -121,6 +128,13 @@ export function IntelligenceSheet({
   onExitTouring,
   hideSeen,
   onHideSeenChange,
+  // Cluster view
+  clusterViewOpen,
+  clusterViewEvents = [],
+  clusterViewLabel = "",
+  onClusterEventSelect,
+  onExitClusterView,
+  onStartClusterFlyover,
 }: IntelligenceSheetProps) {
   const controls = useAnimation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -416,6 +430,15 @@ export function IntelligenceSheet({
     [events, onEventSelect, onPhaseChange]
   );
 
+  // Handle event selection from cluster view
+  const handleClusterEventSelect = useCallback(
+    (event: GeoEvent) => {
+      const index = clusterViewEvents.findIndex((e) => e.id === event.id);
+      onClusterEventSelect?.(event, index);
+    },
+    [clusterViewEvents, onClusterEventSelect]
+  );
+
   // Handle request briefing
   const handleRequestBriefing = useCallback(() => {
     onPhaseChange("analyst");
@@ -460,38 +483,107 @@ export function IntelligenceSheet({
           </div>
 
           {/* Header title */}
-          <div className="flex items-center justify-between px-4 pb-3">
-            <div className="flex items-center gap-2">
-              {/* Back button for pilot/analyst modes */}
-              {phase !== "scanner" && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
-                  }}
-                  className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 19l-7-7 7-7"
-                    />
-                  </svg>
-                </button>
-              )}
-              <h2 className="font-mono text-sm font-medium uppercase tracking-wider text-foreground">
-                {phase === "scanner" && (inboxOpen ? "Inbox" : "Event Feed")}
-                {phase === "pilot" &&
-                  (isTouringMode ? (catchUpMode ? "Catching Up" : "Flyover") : "Event Details")}
-                {phase === "analyst" && "AI Briefing"}
-              </h2>
-              {phase === "scanner" && (
-                <span className="font-mono text-xs text-foreground/40">
-                  {inboxOpen ? searchFilteredUnseenEvents.length : searchFilteredEvents.length}
-                </span>
-              )}
+          <div className="px-4 pb-3">
+            {/* Cluster view has a two-row layout */}
+            {phase === "scanner" && clusterViewOpen ? (
+              <div className="flex flex-col gap-1">
+                {/* Row 1: Back + Title + Flyover */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onExitClusterView?.();
+                      }}
+                      className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 19l-7-7 7-7"
+                        />
+                      </svg>
+                    </button>
+                    <h2 className="font-mono text-sm font-medium uppercase tracking-wider text-foreground">
+                      Cluster Details
+                    </h2>
+                  </div>
+                  {/* Flyover button */}
+                  {clusterViewEvents.length > 0 && onStartClusterFlyover && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStartClusterFlyover();
+                      }}
+                      className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 transition-all active:scale-95"
+                    >
+                      <svg
+                        className="h-3 w-3 text-emerald-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2.5}
+                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      <span className="font-mono text-[10px] font-medium uppercase text-emerald-400">
+                        Flyover
+                      </span>
+                    </button>
+                  )}
+                </div>
+                {/* Row 2: Location + count - ml-10 = w-7 (button) + mr-1 + gap-2 */}
+                <div className="ml-10 font-mono text-[10px] text-foreground/40">
+                  Near {clusterViewLabel} • {clusterViewEvents.length} event{clusterViewEvents.length !== 1 ? "s" : ""}
+                </div>
+              </div>
+            ) : (
+              /* Standard single-row layout for other modes */
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {/* Back button for pilot/analyst modes */}
+                  {phase !== "scanner" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
+                      }}
+                      className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 19l-7-7 7-7"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  <h2 className="font-mono text-sm font-medium uppercase tracking-wider text-foreground">
+                    {phase === "scanner" && (inboxOpen ? "Inbox" : "Event Feed")}
+                    {phase === "pilot" &&
+                      (isTouringMode ? (catchUpMode ? "Catching Up" : "Flyover") : "Event Details")}
+                    {phase === "analyst" && "AI Briefing"}
+                  </h2>
+                  {/* Event count for scanner mode */}
+                  {phase === "scanner" && (
+                    <span className="font-mono text-xs text-foreground/40">
+                      {inboxOpen ? searchFilteredUnseenEvents.length : searchFilteredEvents.length}
+                    </span>
+                  )}
               {/* Inbox actions - Catch Up and Mark All Read */}
               {phase === "scanner" && inboxOpen && unseenCount > 0 && (
                 <div className="flex items-center gap-1.5">
@@ -551,9 +643,10 @@ export function IntelligenceSheet({
                   )}
                 </div>
               )}
-              {/* Flyover button - in feed mode (not inbox) */}
+              {/* Flyover button - in feed mode (not inbox, not cluster view) */}
               {phase === "scanner" &&
                 !inboxOpen &&
+                !clusterViewOpen &&
                 searchFilteredEvents.length > 0 &&
                 onStartFlyover && (
                   <button
@@ -596,8 +689,8 @@ export function IntelligenceSheet({
               )}
             </div>
 
-            {/* Right side buttons - search + inbox */}
-            {phase === "scanner" && (
+            {/* Right side buttons - search + inbox (hidden in cluster view) */}
+            {phase === "scanner" && !clusterViewOpen && (
               <div className="flex items-center gap-2">
                 {/* Search button */}
                 <button
@@ -664,10 +757,12 @@ export function IntelligenceSheet({
                 </button>
               </div>
             )}
+              </div>
+            )}
           </div>
 
-          {/* Search bar - expandable */}
-          {phase === "scanner" && isSearchOpen && (
+          {/* Search bar - expandable (hidden in cluster view) */}
+          {phase === "scanner" && isSearchOpen && !clusterViewOpen && (
             <div className="px-4 pb-3">
               <div className="relative">
                 <svg
@@ -722,8 +817,8 @@ export function IntelligenceSheet({
         {/* Divider */}
         <div className="border-b border-foreground/10" />
 
-        {/* Filter bar - only in scanner mode, hidden when viewing inbox */}
-        {phase === "scanner" && !inboxOpen && (
+        {/* Filter bar - only in scanner mode, hidden when viewing inbox or cluster */}
+        {phase === "scanner" && !inboxOpen && !clusterViewOpen && (
           <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
             <FilterBar
               timeRangeIndex={timeRangeIndex}
@@ -749,15 +844,25 @@ export function IntelligenceSheet({
               className="custom-scrollbar h-full overflow-y-auto overscroll-contain"
               onScroll={handleScroll}
             >
-              <EventList
-                events={inboxOpen ? searchFilteredUnseenEvents : searchFilteredEvents}
-                onEventSelect={handleEventSelect}
-                eventStateMap={eventStateMap}
-                isInboxMode={inboxOpen}
-                isWhatsNewMode={!inboxOpen && sortBy === "unread"}
-                incomingCount={incomingCount}
-                onWhatsNewTap={onInboxToggle}
-              />
+              {clusterViewOpen ? (
+                // Cluster view - show events from the selected cluster
+                <EventList
+                  events={clusterViewEvents}
+                  onEventSelect={handleClusterEventSelect}
+                  eventStateMap={eventStateMap}
+                />
+              ) : (
+                // Normal feed or inbox
+                <EventList
+                  events={inboxOpen ? searchFilteredUnseenEvents : searchFilteredEvents}
+                  onEventSelect={handleEventSelect}
+                  eventStateMap={eventStateMap}
+                  isInboxMode={inboxOpen}
+                  isWhatsNewMode={!inboxOpen && sortBy === "unread"}
+                  incomingCount={incomingCount}
+                  onWhatsNewTap={onInboxToggle}
+                />
+              )}
             </div>
           )}
 

@@ -81,6 +81,13 @@ function MobileLayoutInner({
   const [flyoverMode, setFlyoverMode] = useState(false);
   const [flyoverIndex, setFlyoverIndex] = useState(0);
   const [flyoverEvents, setFlyoverEvents] = useState<GeoEvent[]>([]); // Snapshotted filtered events
+  
+  // Cluster view mode (long-press on cluster shows events in that cluster)
+  const [clusterViewOpen, setClusterViewOpen] = useState(false);
+  const [clusterViewEvents, setClusterViewEvents] = useState<GeoEvent[]>([]);
+  const [clusterViewLabel, setClusterViewLabel] = useState("");
+  // Track if we're viewing event details from within cluster view (for back navigation)
+  const [fromClusterView, setFromClusterView] = useState(false);
 
   // Calculate which time ranges have data (dynamic slider) - needed before useEventStates
   const availableTimeRanges = useMemo(() => {
@@ -319,18 +326,37 @@ function MobileLayoutInner({
   const handlePhaseChange = useCallback(
     (newPhase: SheetPhase) => {
       setPhase(newPhase);
-      // If going to scanner, clear selection and exit touring modes
+      // If going to scanner, handle navigation
       if (newPhase === "scanner") {
         clearSelection();
+        
+        // If we came from cluster view, return to cluster view (not main feed)
+        if (fromClusterView && clusterViewEvents.length > 0) {
+          setFromClusterView(false);
+          // Keep cluster view open, just exit touring modes
+          setCatchUpMode(false);
+          setCatchUpIndex(0);
+          setCatchUpEvents([]);
+          setFlyoverMode(false);
+          setFlyoverIndex(0);
+          setFlyoverEvents([]);
+          return;
+        }
+        
+        // Otherwise, exit all modes including cluster view
         setCatchUpMode(false);
         setCatchUpIndex(0);
         setCatchUpEvents([]);
         setFlyoverMode(false);
         setFlyoverIndex(0);
         setFlyoverEvents([]);
+        setClusterViewOpen(false);
+        setClusterViewEvents([]);
+        setClusterViewLabel("");
+        setFromClusterView(false);
       }
     },
-    [clearSelection]
+    [clearSelection, fromClusterView, clusterViewEvents.length]
   );
 
   // ===== CATCH UP MODE =====
@@ -463,6 +489,56 @@ function MobileLayoutInner({
     clearSelection();
   }, [clearSelection]);
 
+  // ===== CLUSTER VIEW MODE =====
+  // Long press on a cluster opens cluster details view
+
+  const handleClusterLongPress = useCallback((events: GeoEvent[], locationLabel: string) => {
+    // Sort events by severity (highest first)
+    const sortedEvents = [...events].sort((a, b) => b.severity - a.severity);
+    setClusterViewEvents(sortedEvents);
+    setClusterViewLabel(locationLabel);
+    setClusterViewOpen(true);
+    setInboxOpen(false); // Close inbox if open
+  }, []);
+
+  // Handle event selection from cluster view
+  const handleClusterEventSelect = useCallback(
+    (event: GeoEvent, index: number) => {
+      setFromClusterView(true); // Track that we came from cluster view
+      selectEvent(event, index);
+      markAsRead(event.id);
+      setPhase("pilot");
+    },
+    [selectEvent, markAsRead]
+  );
+
+  // Exit cluster view (back to main feed)
+  const exitClusterView = useCallback(() => {
+    setClusterViewOpen(false);
+    setClusterViewEvents([]);
+    setClusterViewLabel("");
+  }, []);
+
+  // Start flyover for cluster events only
+  const startClusterFlyover = useCallback(() => {
+    if (clusterViewEvents.length === 0) return;
+
+    // Use cluster events for flyover
+    setFlyoverEvents(clusterViewEvents);
+    setFlyoverMode(true);
+    setFlyoverIndex(0);
+    setFromClusterView(true); // Return to cluster view after exiting flyover
+
+    // Select first event
+    const firstEvent = clusterViewEvents[0];
+    selectEvent(
+      firstEvent,
+      filteredEvents.findIndex((e) => e.id === firstEvent.id)
+    );
+    markAsRead(firstEvent.id);
+    setPhase("pilot");
+  }, [clusterViewEvents, filteredEvents, selectEvent, markAsRead]);
+
   // Determine active touring mode (catchUp or flyover)
   const isTouringMode = catchUpMode || flyoverMode;
   const touringEvents = catchUpMode ? catchUpEvents : flyoverMode ? flyoverEvents : stackedEvents;
@@ -505,6 +581,7 @@ function MobileLayoutInner({
             showControls={false}
             interactive={true}
             onEventClick={handleMapEventClick}
+            onClusterLongPress={handleClusterLongPress}
             hasExternalSelection={selectedEvent !== null}
             eventStateMap={eventStateMap}
           />
@@ -612,6 +689,13 @@ function MobileLayoutInner({
         // Hide seen toggle
         hideSeen={hideSeen}
         onHideSeenChange={setHideSeen}
+        // Cluster view
+        clusterViewOpen={clusterViewOpen}
+        clusterViewEvents={clusterViewEvents}
+        clusterViewLabel={clusterViewLabel}
+        onClusterEventSelect={handleClusterEventSelect}
+        onExitClusterView={exitClusterView}
+        onStartClusterFlyover={startClusterFlyover}
       />
 
       {/* PWA Install Prompt - disabled for now, too aggressive */}
