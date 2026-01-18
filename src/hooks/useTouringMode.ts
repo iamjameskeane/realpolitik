@@ -1,7 +1,21 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { GeoEvent } from "@/types/events";
+
+// Distance threshold in degrees - events closer than this are considered "same location"
+// ~0.01 degrees is roughly 1km at the equator
+const SAME_LOCATION_THRESHOLD = 0.05;
+
+/**
+ * Check if two events are at the same or very nearby location
+ */
+function isSameLocation(a: GeoEvent, b: GeoEvent): boolean {
+  const [lng1, lat1] = a.coordinates;
+  const [lng2, lat2] = b.coordinates;
+  const distance = Math.sqrt(Math.pow(lng2 - lng1, 2) + Math.pow(lat2 - lat1, 2));
+  return distance < SAME_LOCATION_THRESHOLD;
+}
 
 /**
  * Options for touring mode navigation
@@ -85,14 +99,21 @@ export function useTouringMode(options: TouringModeOptions): TouringModeReturn {
   const [isActive, setIsActive] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [events, setEvents] = useState<GeoEvent[]>([]);
+  
+  // Track the current event for location comparison
+  const currentEventRef = useRef<GeoEvent | null>(null);
 
   // Navigate to a specific event (internal helper)
+  // skipFly: true when events are at the same location (no need to fly)
   const navigateToEvent = useCallback(
-    (event: GeoEvent) => {
+    (event: GeoEvent, skipFly?: boolean) => {
       onSelectEvent(event.id);
       onUpdateUrl(event.id);
       onMarkAsRead(event.id);
-      onFlyToEvent(event, { zoom });
+      if (!skipFly) {
+        onFlyToEvent(event, { zoom });
+      }
+      currentEventRef.current = event;
     },
     [onSelectEvent, onUpdateUrl, onMarkAsRead, onFlyToEvent, zoom]
   );
@@ -110,8 +131,8 @@ export function useTouringMode(options: TouringModeOptions): TouringModeReturn {
       // Call onStart callback (e.g., close sidebar)
       onStart?.();
 
-      // Navigate to first event
-      navigateToEvent(eventsToTour[0]);
+      // Navigate to first event (always fly for the first one)
+      navigateToEvent(eventsToTour[0], false);
     },
     [navigateToEvent, onStart]
   );
@@ -127,13 +148,19 @@ export function useTouringMode(options: TouringModeOptions): TouringModeReturn {
       setIsActive(false);
       setCurrentIndex(0);
       setEvents([]);
+      currentEventRef.current = null;
       onExit?.();
       return;
     }
 
+    // Check if next event is at the same location - skip fly if so
+    const currentEvent = events[currentIndex];
+    const nextEvent = events[nextIndex];
+    const skipFly = isSameLocation(currentEvent, nextEvent);
+
     // Move to next event
     setCurrentIndex(nextIndex);
-    navigateToEvent(events[nextIndex]);
+    navigateToEvent(nextEvent, skipFly);
   }, [currentIndex, events, navigateToEvent, onExit]);
 
   // Navigate to previous event
@@ -141,8 +168,14 @@ export function useTouringMode(options: TouringModeOptions): TouringModeReturn {
     if (currentIndex <= 0 || events.length === 0) return;
 
     const prevIndex = currentIndex - 1;
+    
+    // Check if previous event is at the same location - skip fly if so
+    const currentEvent = events[currentIndex];
+    const prevEvent = events[prevIndex];
+    const skipFly = isSameLocation(currentEvent, prevEvent);
+    
     setCurrentIndex(prevIndex);
-    navigateToEvent(events[prevIndex]);
+    navigateToEvent(prevEvent, skipFly);
   }, [currentIndex, events, navigateToEvent]);
 
   // Exit touring mode
@@ -150,6 +183,7 @@ export function useTouringMode(options: TouringModeOptions): TouringModeReturn {
     setIsActive(false);
     setCurrentIndex(0);
     setEvents([]);
+    currentEventRef.current = null;
     onExit?.();
   }, [onExit]);
 

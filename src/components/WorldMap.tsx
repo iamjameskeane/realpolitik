@@ -454,6 +454,27 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
         // Stop any existing flyTo animation
         map.current.stop();
+        
+        // Check if we're already near the target location (same location optimization)
+        // If so, skip the fly animation and show popup immediately
+        const currentCenter = map.current.getCenter();
+        const [targetLng, targetLat] = event.coordinates;
+        const distance = Math.sqrt(
+          Math.pow(targetLng - currentCenter.lng, 2) + 
+          Math.pow(targetLat - currentCenter.lat, 2)
+        );
+        const isNearby = distance < 0.05; // ~5km at equator
+        
+        if (isNearby) {
+          // Already at location - show popup immediately without flying
+          setIsFlying(false);
+          if (showPopups) {
+            setSelectedEvent(event);
+            const point = map.current.project(event.coordinates);
+            setPopupPosition({ x: point.x, y: point.y });
+          }
+          return;
+        }
 
         // Hide popup during fly animation
         setIsFlying(true);
