@@ -155,34 +155,99 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     { sidebarOpen }
   );
 
-  // Event layer callbacks
+  // Event layer callbacks - fly to event first, then show popup after animation
   const handleSingleEventClick = useCallback(
     (event: GeoEvent) => {
+      if (!map.current) return;
+      
+      // Clear any existing selection and prepare for fly animation
       setStackedEvents([]);
       setStackIndex(0);
-      setSelectedEvent(event);
-      if (map.current) {
-        const point = map.current.project(event.coordinates);
-        setPopupPosition({ x: point.x, y: point.y });
-      }
+      setSelectedEvent(null);
+      setPopupPosition(null);
+      setIsFlying(true);
+      
+      // Stop any existing animation
+      map.current.stop();
+      
+      // Notify parent (updates URL, marks as read)
       onEventClick?.(event);
+      
+      // Fly to the event
+      const currentZoom = map.current.getZoom();
+      const targetZoom = Math.max(currentZoom, 4);
+      const flyDuration = 1200;
+      
+      map.current.flyTo({
+        center: event.coordinates,
+        zoom: targetZoom,
+        pitch: 45,
+        duration: flyDuration,
+        padding: {
+          ...MAP_PADDING,
+          right: sidebarOpen ? SIDEBAR_WIDTH : 0,
+        },
+      });
+      
+      // Show popup after animation completes
+      setTimeout(() => {
+        setIsFlying(false);
+        setSelectedEvent(event);
+        if (map.current) {
+          const point = map.current.project(event.coordinates);
+          setPopupPosition({ x: point.x, y: point.y });
+        }
+      }, flyDuration + 100);
     },
-    [onEventClick]
+    [onEventClick, sidebarOpen]
   );
 
   const handleStackedEventClick = useCallback(
     (eventsAtLocation: GeoEvent[]) => {
-      setStackedEvents(eventsAtLocation);
-      setStackIndex(0);
-      setSelectedEvent(eventsAtLocation[0]);
-      if (map.current) {
-        const point = map.current.project(eventsAtLocation[0].coordinates);
-        setPopupPosition({ x: point.x, y: point.y });
-      }
-      // Notify parent (for mobile to switch to pilot mode)
-      onEventClick?.(eventsAtLocation[0]);
+      if (!map.current) return;
+      
+      const firstEvent = eventsAtLocation[0];
+      
+      // Clear any existing selection and prepare for fly animation
+      setSelectedEvent(null);
+      setPopupPosition(null);
+      setIsFlying(true);
+      
+      // Stop any existing animation
+      map.current.stop();
+      
+      // Notify parent (updates URL, marks as read)
+      onEventClick?.(firstEvent);
+      
+      // Fly to the events
+      const currentZoom = map.current.getZoom();
+      const targetZoom = Math.max(currentZoom, 4);
+      const flyDuration = 1200;
+      
+      map.current.flyTo({
+        center: firstEvent.coordinates,
+        zoom: targetZoom,
+        pitch: 45,
+        duration: flyDuration,
+        padding: {
+          ...MAP_PADDING,
+          right: sidebarOpen ? SIDEBAR_WIDTH : 0,
+        },
+      });
+      
+      // Show popup after animation completes
+      setTimeout(() => {
+        setIsFlying(false);
+        setStackedEvents(eventsAtLocation);
+        setStackIndex(0);
+        setSelectedEvent(firstEvent);
+        if (map.current) {
+          const point = map.current.project(firstEvent.coordinates);
+          setPopupPosition({ x: point.x, y: point.y });
+        }
+      }, flyDuration + 100);
     },
-    [onEventClick]
+    [onEventClick, sidebarOpen]
   );
 
   // ===== CLUSTER INTERACTION HANDLERS (Desktop) =====
@@ -239,47 +304,44 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Handle event click from cluster popup - fly to event
   const handleClusterEventClick = useCallback(
     (event: GeoEvent) => {
-      // Clear any existing event popup and set flying state FIRST
-      // This prevents a flash of the old popup when cluster popup closes
+      if (!map.current) return;
+      
+      // Clear everything and set flying state FIRST
       setSelectedEvent(null);
       setPopupPosition(null);
+      setClusterPopup(null);
       setIsFlying(true);
       
-      // Close cluster popup
-      setClusterPopup(null);
+      // Stop any existing animation
+      map.current.stop();
       
-      // Notify parent to mark as read and update URL (but don't trigger another fly)
+      // Notify parent to mark as read and update URL
       onEventClick?.(event);
       
-      // Fly to the event
-      if (map.current) {
-        // Stop any existing animation
-        map.current.stop();
-        
-        const currentZoom = map.current.getZoom();
-        const targetZoom = Math.max(currentZoom, 4);
-        
-        map.current.flyTo({
-          center: event.coordinates,
-          zoom: targetZoom,
-          pitch: 45,
-          duration: 1200,
-          padding: {
-            ...MAP_PADDING,
-            right: sidebarOpen ? SIDEBAR_WIDTH : 0,
-          },
-        });
-        
-        // Show popup after fly completes
-        map.current.once("moveend", () => {
-          setIsFlying(false);
-          setSelectedEvent(event);
-          if (map.current) {
-            const point = map.current.project(event.coordinates);
-            setPopupPosition({ x: point.x, y: point.y });
-          }
-        });
-      }
+      const currentZoom = map.current.getZoom();
+      const targetZoom = Math.max(currentZoom, 4);
+      const flyDuration = 1200;
+      
+      map.current.flyTo({
+        center: event.coordinates,
+        zoom: targetZoom,
+        pitch: 45,
+        duration: flyDuration,
+        padding: {
+          ...MAP_PADDING,
+          right: sidebarOpen ? SIDEBAR_WIDTH : 0,
+        },
+      });
+      
+      // Show popup only after the fly animation completes
+      setTimeout(() => {
+        setIsFlying(false);
+        setSelectedEvent(event);
+        if (map.current) {
+          const point = map.current.project(event.coordinates);
+          setPopupPosition({ x: point.x, y: point.y });
+        }
+      }, flyDuration + 100);
     },
     [onEventClick, sidebarOpen]
   );
