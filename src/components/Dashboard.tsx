@@ -499,6 +499,7 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
             onRequestBriefing={handleRequestBriefing}
             eventStateMap={eventStateMap}
             sidebarOpen={sidebarOpen}
+            onClusterFlyover={(events) => flyover.start(events)}
             externalStack={
               catchUp.isActive && catchUp.events.length > 0
                 ? {
