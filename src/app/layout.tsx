@@ -18,22 +18,26 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://realpolitik.world"),
   title: "Realpolitik | Global Situational Awareness",
-  description: "Civilization-style dashboard for real-world geopolitical events",
+  description: "Real-time geopolitical event tracking on an interactive globe. Monitor military, diplomatic, economic, and civil unrest events worldwide.",
   manifest: "/manifest.json",
-  themeColor: "#6366f1",
   icons: {
-    icon: "/icon",
-    apple: "/apple-icon",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: "Realpolitik",
-    description: "Global Situational Awareness - Real-time geopolitical monitoring",
+    title: "Realpolitik | Global Situational Awareness",
+    description: "Real-time geopolitical event tracking on an interactive globe. Monitor military, diplomatic, economic, and civil unrest events worldwide.",
     type: "website",
+    siteName: "Realpolitik",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Realpolitik",
-    description: "Global Situational Awareness",
+    title: "Realpolitik | Global Situational Awareness",
+    description: "Real-time geopolitical event tracking on an interactive globe.",
   },
 };
 
