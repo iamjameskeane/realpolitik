@@ -137,7 +137,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
                 </span>
               </div>
               <p className="mb-3 text-xs leading-relaxed text-slate-400">
-                Data aggregated from {24} open-source feeds updated every 15 minutes:
+                Data aggregated from {24} open-source feeds updated every 60 minutes:
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {[
@@ -209,6 +209,10 @@ export function AboutModal({ onClose }: AboutModalProps) {
                 <p className="text-xs leading-relaxed text-slate-400">
                   Tap{" "}
                   <span className="inline-flex whitespace-nowrap items-center rounded bg-slate-700 px-1.5 py-0.5 text-slate-300">
+                    ⋯
+                  </span>{" "}
+                  →{" "}
+                  <span className="inline-flex whitespace-nowrap items-center rounded bg-slate-700 px-1.5 py-0.5 text-slate-300">
                     <svg
                       className="mr-1 h-3 w-3"
                       fill="none"
@@ -224,7 +228,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
                     </svg>
                     Share
                   </span>{" "}
-                  then{" "}
+                  →{" "}
                   <span className="whitespace-nowrap rounded bg-slate-700 px-1.5 py-0.5 text-slate-300">
                     Add to Home Screen
                   </span>
