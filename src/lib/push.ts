@@ -304,12 +304,58 @@ async function sendToSubscription(
   }
 }
 
+// Rate limiting constants
+const RATE_LIMIT_MAX_PER_DAY = 15; // Max notifications per user per day (non-critical)
+const RATE_LIMIT_KEY_PREFIX = `push:${ENV_PREFIX}rate:`;
+const RATE_LIMIT_TTL = 86400; // 24 hours in seconds
+
+/**
+ * Check if a user has exceeded their rate limit.
+ * Returns true if they can receive a notification.
+ */
+async function checkRateLimit(
+  redis: ReturnType<typeof getRedis>,
+  endpoint: string,
+  isCritical: boolean
+): Promise<boolean> {
+  // Critical events (severity 9-10) bypass rate limits
+  if (isCritical) {
+    return true;
+  }
+
+  // Create a hash of the endpoint for the rate limit key
+  const crypto = await import("crypto");
+  const endpointHash = crypto.createHash("md5").update(endpoint).digest("hex").slice(0, 12);
+  const key = `${RATE_LIMIT_KEY_PREFIX}${endpointHash}`;
+
+  try {
+    const count = await redis.incr(key);
+    
+    // Set TTL on first increment
+    if (count === 1) {
+      await redis.expire(key, RATE_LIMIT_TTL);
+    }
+
+    if (count > RATE_LIMIT_MAX_PER_DAY) {
+      return false; // Rate limited
+    }
+
+    return true;
+  } catch (error) {
+    console.warn("[Push] Rate limit check failed, allowing:", error);
+    return true; // Fail open
+  }
+}
+
 /**
  * Send notification to all subscriptions matching the criteria.
- * Handles filtering by preferences, batch sending, and cleanup.
+ * Handles filtering by preferences, rate limiting, and cleanup.
+ * 
+ * Critical events (severity 9-10) bypass rate limits.
+ * Non-critical events are rate-limited to prevent notification fatigue.
  */
 export async function sendNotificationToAll(
-  payload: NotificationPayload,
+  payload: NotificationPayload & { critical?: boolean },
   options?: {
     category?: string;
     minSeverity?: number;
@@ -318,7 +364,10 @@ export async function sendNotificationToAll(
   console.log("[Push] sendNotificationToAll called with:", payload.title);
   
   const redis = getRedis();
+  const isCritical = payload.critical === true || (payload.severity || 0) >= 9;
+  
   console.log("[Push] Getting subscriptions...");
+  console.log(`[Push] Event: severity=${payload.severity}, critical=${isCritical}`);
   const subscriptions = await getAllSubscriptions();
   console.log("[Push] Found", subscriptions.length, "subscriptions");
 
@@ -358,14 +407,26 @@ export async function sendNotificationToAll(
     return true;
   });
 
-  console.log(`[Push] ${eligibleSubscriptions.length} subscriptions match criteria`);
+  console.log(`[Push] ${eligibleSubscriptions.length} subscriptions match preferences`);
+
+  // Check rate limits for each subscription
+  const rateLimitChecks = await Promise.all(
+    eligibleSubscriptions.map((sub) => checkRateLimit(redis, sub.endpoint, isCritical))
+  );
+
+  const rateLimitedSubscriptions = eligibleSubscriptions.filter((_, i) => rateLimitChecks[i]);
+  const rateLimitedCount = eligibleSubscriptions.length - rateLimitedSubscriptions.length;
+
+  if (rateLimitedCount > 0) {
+    console.log(`[Push] ${rateLimitedCount} subscriptions rate-limited, ${rateLimitedSubscriptions.length} will receive`);
+  }
 
   // Send in parallel batches of 50
   const BATCH_SIZE = 50;
   const toRemove: string[] = [];
 
-  for (let i = 0; i < eligibleSubscriptions.length; i += BATCH_SIZE) {
-    const batch = eligibleSubscriptions.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < rateLimitedSubscriptions.length; i += BATCH_SIZE) {
+    const batch = rateLimitedSubscriptions.slice(i, i + BATCH_SIZE);
 
     const results = await Promise.all(batch.map((sub) => sendToSubscription(sub, payload)));
 
@@ -393,8 +454,9 @@ export async function sendNotificationToAll(
   await redis.incrby(STATS_SENT_KEY, result.success);
   await redis.incrby(STATS_FAILED_KEY, result.failed);
 
+  const criticalTag = isCritical ? " 🚨 CRITICAL" : "";
   console.log(
-    `[Push] Complete: ${result.success} sent, ${result.failed} failed, ${result.removed} removed`
+    `[Push] Complete${criticalTag}: ${result.success} sent, ${result.failed} failed, ${result.removed} removed, ${rateLimitedCount} rate-limited`
   );
 
   return result;
