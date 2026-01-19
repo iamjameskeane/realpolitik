@@ -53,6 +53,12 @@ GCS_BUCKET = os.getenv("GCS_BUCKET", "")  # For production
 UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 
+# Push notification configuration
+PUSH_API_URL = os.getenv("PUSH_API_URL", "https://realpolitik.world/api/push/send")
+PUSH_API_SECRET = os.getenv("PUSH_API_SECRET", "")
+PUSH_NOTIFICATION_THRESHOLD = 8  # Only notify for severity >= this
+PUSH_MAX_AGE_HOURS = 2  # Only notify for articles published within this many hours
+
 OUTPUT_PATH = Path(__file__).parent.parent / "public" / "events.json"
 
 # Hybrid Model Strategy:
@@ -1817,6 +1823,183 @@ async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: gen
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to gs://{bucket_name}/events.json")
 
 
+# ---------------------------------------------------------------------------
+# Push Notification Integration
+# ---------------------------------------------------------------------------
+
+def send_push_notification(event: dict, notified_ids: set[str]) -> bool:
+    """
+    Send push notification for a high-severity event.
+    
+    Called after processing new events when severity >= threshold.
+    Returns True if notification was sent successfully.
+    
+    Args:
+        event: Event dict with id, title, summary, severity, category, timestamp
+        notified_ids: Set of event IDs already notified (for deduplication)
+    """
+    import requests
+    from datetime import datetime, timezone
+    
+    if not PUSH_API_SECRET:
+        print("   ⚠️ PUSH_API_SECRET not set, skipping notification")
+        return False
+    
+    event_id = event.get("id", "")
+    
+    # Skip if already notified for this event
+    if event_id in notified_ids:
+        print(f"   ⏭️ Already notified for event {event_id[:12]}...")
+        return False
+    
+    severity = event.get("severity", 0)
+    if severity < PUSH_NOTIFICATION_THRESHOLD:
+        return False
+    
+    # Check article age - only notify for recent news
+    # Use the most recent source timestamp if available
+    sources = event.get("sources", [])
+    if sources:
+        # Get the most recent source timestamp
+        latest_source = max(sources, key=lambda s: s.get("timestamp", ""))
+        timestamp_str = latest_source.get("timestamp", event.get("timestamp", ""))
+    else:
+        timestamp_str = event.get("timestamp", "")
+    
+    if timestamp_str:
+        try:
+            # Parse ISO timestamp
+            if timestamp_str.endswith("Z"):
+                timestamp_str = timestamp_str[:-1] + "+00:00"
+            event_time = datetime.fromisoformat(timestamp_str)
+            if event_time.tzinfo is None:
+                event_time = event_time.replace(tzinfo=timezone.utc)
+            
+            age_hours = (datetime.now(timezone.utc) - event_time).total_seconds() / 3600
+            
+            if age_hours > PUSH_MAX_AGE_HOURS:
+                print(f"   ⏭️ Skipping old event ({age_hours:.1f}h old): {event.get('title', '')[:40]}...")
+                return False
+        except (ValueError, TypeError) as e:
+            print(f"   ⚠️ Could not parse timestamp '{timestamp_str}': {e}")
+            # Continue anyway for events with unparseable timestamps
+    
+    # Truncate body for notification display
+    summary = event.get("summary", "")
+    if len(summary) > 200:
+        summary = summary[:197] + "..."
+    
+    payload = {
+        "title": event.get("title", "Breaking: Geopolitical Event"),
+        "body": summary,
+        "url": f"/?event={event_id}",
+        "id": event_id,
+        "severity": severity,
+        "category": event.get("category"),
+    }
+    
+    try:
+        response = requests.post(
+            PUSH_API_URL,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {PUSH_API_SECRET}",
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+        
+        if response.ok:
+            result = response.json()
+            print(f"   🔔 Push sent: {result.get('sent', 0)} delivered, {result.get('failed', 0)} failed")
+            notified_ids.add(event_id)  # Mark as notified
+            return True
+        else:
+            print(f"   ⚠️ Push failed: HTTP {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"   ⚠️ Push error: {type(e).__name__}: {e}")
+        return False
+
+
+def notify_high_severity_events(events: list[dict]) -> int:
+    """
+    Check events and send push notifications for high-severity ones.
+    
+    Tracks notified event IDs in Redis to prevent duplicate notifications
+    when the same event is processed multiple times.
+    
+    Args:
+        events: List of event dicts to check
+        
+    Returns:
+        Number of notifications sent
+    """
+    import requests
+    
+    if not PUSH_API_SECRET:
+        return 0
+    
+    # Load previously notified event IDs from Redis via API
+    notified_ids: set[str] = set()
+    try:
+        # Use the debug endpoint to get existing notified IDs (via a dedicated key)
+        upstash_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
+        upstash_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+        
+        if upstash_url and upstash_token:
+            # Get the set of notified IDs from Redis
+            response = requests.get(
+                f"{upstash_url}/smembers/push:notified_ids",
+                headers={"Authorization": f"Bearer {upstash_token}"},
+                timeout=5,
+            )
+            if response.ok:
+                result = response.json().get("result", [])
+                notified_ids = set(result) if result else set()
+                print(f"   📋 Loaded {len(notified_ids)} previously notified event IDs")
+    except Exception as e:
+        print(f"   ⚠️ Could not load notified IDs: {e}")
+    
+    notified_count = 0
+    new_notified_ids: list[str] = []
+    
+    for event in events:
+        severity = event.get("severity", 0)
+        if severity >= PUSH_NOTIFICATION_THRESHOLD:
+            if send_push_notification(event, notified_ids):
+                notified_count += 1
+                new_notified_ids.append(event.get("id", ""))
+    
+    # Save newly notified IDs to Redis (batched - single call)
+    if new_notified_ids:
+        try:
+            upstash_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
+            upstash_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+            
+            if upstash_url and upstash_token:
+                # Batch SADD: add all IDs in a single call
+                # Upstash REST API: POST /sadd/key/member1/member2/member3
+                members_path = "/".join(new_notified_ids)
+                requests.post(
+                    f"{upstash_url}/sadd/push:notified_ids/{members_path}",
+                    headers={"Authorization": f"Bearer {upstash_token}"},
+                    timeout=10,
+                )
+                # Set expiry on the set (7 days)
+                requests.post(
+                    f"{upstash_url}/expire/push:notified_ids/604800",
+                    headers={"Authorization": f"Bearer {upstash_token}"},
+                    timeout=5,
+                )
+                print(f"   💾 Saved {len(new_notified_ids)} notified IDs to Redis")
+        except Exception as e:
+            print(f"   ⚠️ Could not save notified IDs: {e}")
+    
+    return notified_count
+
+
 async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
     """Write events to Cloudflare R2 (S3-compatible storage)."""
     import boto3
@@ -1978,6 +2161,23 @@ async def async_main(sources: str = "all"):
         await write_gcs(events, GCS_BUCKET, gemini_client)
     else:
         await write_local(events, OUTPUT_PATH, gemini_client)
+    
+    # Send push notifications for high-severity NEW events
+    # Only notify for events that were just created (not all historical events)
+    if events and PUSH_API_SECRET:
+        print("\n🔔 Checking for high-severity events to notify...")
+        high_severity_events = [
+            e.model_dump() if hasattr(e, 'model_dump') else e
+            for e in events
+            if (e.severity if hasattr(e, 'severity') else e.get('severity', 0)) >= PUSH_NOTIFICATION_THRESHOLD
+        ]
+        
+        if high_severity_events:
+            notified = notify_high_severity_events(high_severity_events)
+            if notified > 0:
+                print(f"   📨 Sent {notified} push notification(s)")
+        else:
+            print("   No events above severity threshold")
     
     print("\n✅ Done!")
     print("=" * 60)
