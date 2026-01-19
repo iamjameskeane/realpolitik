@@ -1,7 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Outfit, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+
+// Viewport configuration for edge-to-edge display
+// This makes the Android navigation bar transparent, allowing our background to show through
+export const viewport: Viewport = {
+  themeColor: "#020617",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover", // Critical for Android nav bar transparency
+  colorScheme: "dark", // Forces light nav buttons on dark background (prevents Android contrast override)
+};
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -49,13 +60,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
-        {/* iOS Safari: extend to full screen, enable safe area insets */}
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        {/* iOS Safari: enable standalone PWA mode */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Realpolitik" />
-        {/* Android: theme color for status bar and navigation bar */}
-        <meta name="theme-color" content="#020617" />
         {/* Explicit apple-touch-icon links - static fallback for crawlers */}
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
       </head>
