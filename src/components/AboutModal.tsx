@@ -263,6 +263,18 @@ export function AboutModal({ onClose }: AboutModalProps) {
         {/* Footer Section - Links */}
         <div className="border-t border-slate-700/50 px-6 py-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/* Feedback Link */}
+            <a
+              href="https://docs.google.com/forms/d/e/1FAIpQLScGAtiNz-mvp6b8c3MZa9tK9Aa8GLsrjRmLIPJOzQ10rNtEbw/viewform"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs text-emerald-400 transition-colors hover:text-emerald-300"
+            >
+              📝 FEEDBACK
+            </a>
+
+            <span className="text-slate-600">•</span>
+
             {/* Privacy Link */}
             <a
               href="/privacy"
