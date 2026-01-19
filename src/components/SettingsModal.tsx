@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback } from "react";
+import { NotificationSettings } from "./NotificationSettings";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -133,6 +134,14 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                   />
                 </button>
               </div>
+            </div>
+
+            {/* Push Notifications */}
+            <div>
+              <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-foreground/50 mb-3">
+                Notifications
+              </h3>
+              <NotificationSettings />
             </div>
           </div>
         </div>
