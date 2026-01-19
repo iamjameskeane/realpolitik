@@ -26,6 +26,7 @@ jobs:
           echo "   NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY != '' && '✓' || '✗ MISSING' }}"
           echo "   R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME != '' && '✓' || '✗ MISSING' }}"
           echo "   UPSTASH_REDIS: ${{ secrets.UPSTASH_REDIS_REST_URL != '' && '✓' || '✗ MISSING' }}"
+          echo "   PUSH_API_SECRET: ${{ secrets.PUSH_API_SECRET != '' && '✓' || '✗ MISSING' }}"
 
       - name: Install dependencies
         run: |
@@ -44,6 +45,9 @@ jobs:
           # Upstash Redis for rate limiting
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          # Push notifications
+          PUSH_API_SECRET: ${{ secrets.PUSH_API_SECRET }}
+          PUSH_API_URL: "https://realpolitik.world/api/push/send"
         run: |
           echo "🚀 Starting worker..."
           python worker/main.py

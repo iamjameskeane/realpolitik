@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import { GeoEvent, CATEGORY_COLORS } from "@/types/events";
 import { useBatchReactions } from "@/hooks/useBatchReactions";
 import { EventVisualState } from "@/hooks/useEventStates";
@@ -17,11 +18,14 @@ interface EventListProps {
   incomingCount?: number;
   /** Callback when What's New puck is tapped */
   onWhatsNewTap?: () => void;
+  /** Callback when event is swiped to dismiss (inbox mode only) */
+  onDismiss?: (eventId: string) => void;
 }
 
 /**
  * Compact vertical list of events for Scanner Mode.
  * Shows category dot, headline, severity, and reaction indicators.
+ * In inbox mode, events can be swiped to dismiss.
  */
 export function EventList({
   events,
@@ -31,11 +35,13 @@ export function EventList({
   isWhatsNewMode,
   incomingCount,
   onWhatsNewTap,
+  onDismiss,
 }: EventListProps) {
   const { reactions } = useBatchReactions();
 
-  // Get trending events (hot or critical consensus)
+  // Get trending events (hot or critical consensus) - skip in inbox mode
   const trendingEvents = useMemo(() => {
+    if (isInboxMode) return [];
     return events
       .filter((e) => {
         const r = reactions[e.id];
@@ -44,20 +50,19 @@ export function EventList({
       .sort((a, b) => {
         const aR = reactions[a.id];
         const bR = reactions[b.id];
-        // Critical consensus first
         if (aR?.consensus === "critical" && bR?.consensus !== "critical") return -1;
         if (bR?.consensus === "critical" && aR?.consensus !== "critical") return 1;
-        // Then by vote count
         return (bR?.total || 0) - (aR?.total || 0);
       })
       .slice(0, 3);
-  }, [events, reactions]);
+  }, [events, reactions, isInboxMode]);
 
   // Get non-trending events
   const regularEvents = useMemo(() => {
+    if (isInboxMode) return events;
     const trendingIds = new Set(trendingEvents.map((e) => e.id));
     return events.filter((e) => !trendingIds.has(e.id));
-  }, [events, trendingEvents]);
+  }, [events, trendingEvents, isInboxMode]);
 
   if (events.length === 0) {
     return (
@@ -83,8 +88,8 @@ export function EventList({
 
   return (
     <div style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}>
-      {/* Trending Section */}
-      {trendingEvents.length > 0 && (
+      {/* Trending Section - hidden in inbox mode */}
+      {!isInboxMode && trendingEvents.length > 0 && (
         <div className="border-b border-foreground/10 bg-gradient-to-b from-amber-500/5 to-transparent">
           <div className="flex items-center gap-2 px-4 py-2">
             <span className="text-sm">🔥</span>
@@ -107,17 +112,28 @@ export function EventList({
         </div>
       )}
 
-      {/* Regular Events */}
+      {/* Regular Events / Inbox Items */}
       <div className="divide-y divide-foreground/5">
-        {regularEvents.map((event) => (
-          <EventRow
-            key={event.id}
-            event={event}
-            reaction={reactions[event.id]}
-            onSelect={onEventSelect}
-            visualState={eventStateMap?.get(event.id)}
-          />
-        ))}
+        {regularEvents.map((event) =>
+          isInboxMode && onDismiss ? (
+            <SwipeableEventRow
+              key={event.id}
+              event={event}
+              reaction={reactions[event.id]}
+              onSelect={onEventSelect}
+              onDismiss={onDismiss}
+              visualState={eventStateMap?.get(event.id)}
+            />
+          ) : (
+            <EventRow
+              key={event.id}
+              event={event}
+              reaction={reactions[event.id]}
+              onSelect={onEventSelect}
+              visualState={eventStateMap?.get(event.id)}
+            />
+          )
+        )}
       </div>
     </div>
   );
@@ -135,6 +151,10 @@ interface EventRowProps {
   visualState?: EventVisualState;
 }
 
+interface SwipeableEventRowProps extends EventRowProps {
+  onDismiss: (eventId: string) => void;
+}
+
 /**
  * Get sources from an event, handling both new and legacy formats.
  */
@@ -148,7 +168,69 @@ function getEventSources(event: GeoEvent) {
   return [];
 }
 
+/**
+ * Swipeable event row for inbox mode - swipe right to dismiss
+ */
+function SwipeableEventRow({ event, reaction, onSelect, onDismiss, visualState }: SwipeableEventRowProps) {
+  const x = useMotionValue(0);
+  const opacity = useTransform(x, [0, 150], [1, 0]);
+  const scale = useTransform(x, [0, 150], [1, 0.95]);
+  const bgOpacity = useTransform(x, [0, 100], [0, 1]);
+
+  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (info.offset.x > 100) {
+      // Swiped far enough - dismiss
+      onDismiss(event.id);
+    }
+  };
+
+  return (
+    <div className="relative overflow-hidden">
+      {/* Background reveal on swipe */}
+      <motion.div
+        className="absolute inset-0 flex items-center bg-emerald-500/20 pl-4"
+        style={{ opacity: bgOpacity }}
+      >
+        <div className="flex items-center gap-2 text-emerald-400">
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="font-mono text-xs font-medium uppercase">Dismiss</span>
+        </div>
+      </motion.div>
+
+      {/* Swipeable content */}
+      <motion.div
+        drag="x"
+        dragConstraints={{ left: 0, right: 150 }}
+        dragElastic={0.1}
+        onDragEnd={handleDragEnd}
+        style={{ x, opacity, scale }}
+        className="relative bg-background"
+      >
+        <EventRowContent
+          event={event}
+          reaction={reaction}
+          onSelect={onSelect}
+          visualState={visualState}
+        />
+      </motion.div>
+    </div>
+  );
+}
+
 function EventRow({ event, reaction, onSelect, visualState }: EventRowProps) {
+  return (
+    <EventRowContent
+      event={event}
+      reaction={reaction}
+      onSelect={onSelect}
+      visualState={visualState}
+    />
+  );
+}
+
+function EventRowContent({ event, reaction, onSelect, visualState }: EventRowProps) {
   const isNoise = reaction?.consensus === "noise";
   const isCritical = reaction?.consensus === "critical";
   const isMarket = reaction?.consensus === "market";

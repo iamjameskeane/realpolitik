@@ -1938,7 +1938,17 @@ def notify_high_severity_events(events: list[dict]) -> int:
     """
     import requests
     
+    print("\n" + "=" * 60)
+    print("📲 PUSH NOTIFICATIONS")
+    print("=" * 60)
+    print(f"   API URL: {PUSH_API_URL}")
+    print(f"   Secret configured: {'✓' if PUSH_API_SECRET else '✗ MISSING'}")
+    print(f"   Severity threshold: {PUSH_NOTIFICATION_THRESHOLD}+")
+    print(f"   Max age: {PUSH_MAX_AGE_HOURS} hours")
+    print(f"   Events to check: {len(events)}")
+    
     if not PUSH_API_SECRET:
+        print("   ⚠️ PUSH_API_SECRET not set - skipping all notifications")
         return 0
     
     # Load previously notified event IDs from Redis via API
@@ -1965,9 +1975,15 @@ def notify_high_severity_events(events: list[dict]) -> int:
     notified_count = 0
     new_notified_ids: list[str] = []
     
+    # Count eligible events
+    eligible = [e for e in events if e.get("severity", 0) >= PUSH_NOTIFICATION_THRESHOLD]
+    print(f"   🎯 Events at severity {PUSH_NOTIFICATION_THRESHOLD}+: {len(eligible)}")
+    
     for event in events:
         severity = event.get("severity", 0)
         if severity >= PUSH_NOTIFICATION_THRESHOLD:
+            title = event.get("title", "Unknown")[:50]
+            print(f"\n   📍 [{severity}] {title}...")
             if send_push_notification(event, notified_ids):
                 notified_count += 1
                 new_notified_ids.append(event.get("id", ""))
@@ -1996,6 +2012,10 @@ def notify_high_severity_events(events: list[dict]) -> int:
                 print(f"   💾 Saved {len(new_notified_ids)} notified IDs to Redis")
         except Exception as e:
             print(f"   ⚠️ Could not save notified IDs: {e}")
+    
+    # Summary
+    print(f"\n   {'─' * 40}")
+    print(f"   📊 PUSH SUMMARY: {notified_count} sent, {len(eligible) - notified_count} skipped")
     
     return notified_count
 
@@ -2163,21 +2183,15 @@ async def async_main(sources: str = "all"):
         await write_local(events, OUTPUT_PATH, gemini_client)
     
     # Send push notifications for high-severity NEW events
-    # Only notify for events that were just created (not all historical events)
-    if events and PUSH_API_SECRET:
-        print("\n🔔 Checking for high-severity events to notify...")
-        high_severity_events = [
+    if events:
+        # Convert to dicts for notification processing
+        event_dicts = [
             e.model_dump() if hasattr(e, 'model_dump') else e
             for e in events
-            if (e.severity if hasattr(e, 'severity') else e.get('severity', 0)) >= PUSH_NOTIFICATION_THRESHOLD
         ]
-        
-        if high_severity_events:
-            notified = notify_high_severity_events(high_severity_events)
-            if notified > 0:
-                print(f"   📨 Sent {notified} push notification(s)")
-        else:
-            print("   No events above severity threshold")
+        notify_high_severity_events(event_dicts)
+    else:
+        print("\n📲 PUSH NOTIFICATIONS: No events to process")
     
     print("\n✅ Done!")
     print("=" * 60)

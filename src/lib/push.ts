@@ -27,10 +27,13 @@ function ensureVapidConfigured() {
   }
 }
 
-// Redis key patterns
-const SUBSCRIPTION_PREFIX = "push:sub:";
-const STATS_SENT_KEY = "push:stats:sent";
-const STATS_FAILED_KEY = "push:stats:failed";
+// Environment prefix to separate dev/staging/prod subscriptions
+const ENV_PREFIX = process.env.VERCEL_ENV === "production" ? "prod" : "dev";
+
+// Redis key patterns (environment-scoped to prevent cross-env notifications)
+const SUBSCRIPTION_PREFIX = `push:${ENV_PREFIX}:sub:`;
+const STATS_SENT_KEY = `push:${ENV_PREFIX}:stats:sent`;
+const STATS_FAILED_KEY = `push:${ENV_PREFIX}:stats:failed`;
 
 // Subscription TTL: 90 days (subscriptions that haven't been used)
 const SUBSCRIPTION_TTL_SECONDS = 90 * 24 * 60 * 60;

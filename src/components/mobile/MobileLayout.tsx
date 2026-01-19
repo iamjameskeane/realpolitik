@@ -11,6 +11,8 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useEventSelection } from "@/hooks/useEventSelection";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
+import { useNotificationInbox } from "@/hooks/useNotificationInbox";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { TIME_DISPLAY_UPDATE_MS, TIME_RANGES, MIN_TIME_RANGE_OPTIONS } from "@/lib/constants";
 import { formatRelativeTime } from "@/lib/formatters";
 import { AnimatePresence } from "framer-motion";
@@ -134,12 +136,34 @@ function MobileLayoutInner({
   const {
     incomingEvents,
     incomingCount,
-    unseenEvents,
-    unseenCount,
     eventStateMap,
     markAsRead,
-    markAllUnseenAsRead,
   } = useEventStates(timeFilteredEvents);
+
+  // Notification inbox - tracks events that arrived via push notifications
+  const {
+    inboxEvents,
+    inboxCount,
+    removeFromInbox,
+    clearInbox: clearNotificationInbox,
+  } = useNotificationInbox(timeFilteredEvents);
+
+  // Push notification subscription status
+  const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
+    usePushNotifications();
+
+  // Smart default sort: "What's New" if there are incoming events, else "Hot"
+  const hasSetInitialSort = useRef(false);
+  useEffect(() => {
+    if (hasSetInitialSort.current) return;
+    if (incomingCount > 0) {
+      setSortBy("unread");
+      hasSetInitialSort.current = true;
+    } else if (timeFilteredEvents.length > 0) {
+      // If we have events but none are new, mark as initialized
+      hasSetInitialSort.current = true;
+    }
+  }, [incomingCount, timeFilteredEvents.length]);
 
   // Update displayed time
   useEffect(() => {
@@ -363,12 +387,12 @@ function MobileLayoutInner({
   // Start catch up - fly through all unseen events in inbox
 
   const startCatchUp = useCallback(() => {
-    if (unseenEvents.length === 0) return;
+    if (inboxEvents.length === 0) return;
 
-    setCatchUpEvents(unseenEvents);
+    setCatchUpEvents(inboxEvents);
 
     // Start with first event
-    const firstEvent = unseenEvents[0];
+    const firstEvent = inboxEvents[0];
     setCatchUpMode(true);
     setCatchUpIndex(0);
     setInboxOpen(false); // Close inbox view
@@ -380,7 +404,7 @@ function MobileLayoutInner({
     );
     markAsRead(firstEvent.id);
     setPhase("pilot");
-  }, [unseenEvents, filteredEvents, selectEvent, markAsRead]);
+  }, [inboxEvents, filteredEvents, selectEvent, markAsRead]);
 
   // Navigate to next event in catch up mode
   const catchUpNext = useCallback(() => {
@@ -670,15 +694,19 @@ function MobileLayoutInner({
         categoryCounts={categoryCounts}
         // Event visual states
         eventStateMap={eventStateMap}
-        // Inbox - shows all unseen events (purple dots)
-        unseenEvents={unseenEvents}
-        unseenCount={unseenCount}
+        // Inbox - shows events from push notifications
+        inboxEvents={inboxEvents}
+        inboxCount={inboxCount}
+        removeFromInbox={removeFromInbox}
+        clearNotificationInbox={clearNotificationInbox}
+        notificationsEnabled={notificationsEnabled}
+        notificationsLoading={notificationsLoading}
+        onOpenSettings={() => setSettingsOpen(true)}
         // What's New - shows only new events since last visit
         incomingEvents={incomingEvents}
         incomingCount={incomingCount}
         inboxOpen={inboxOpen}
         onInboxToggle={() => setInboxOpen(!inboxOpen)}
-        onMarkAllRead={markAllUnseenAsRead}
         // Touring modes (catch up or flyover)
         isTouringMode={isTouringMode}
         catchUpMode={catchUpMode}

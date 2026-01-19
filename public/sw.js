@@ -7,6 +7,41 @@
 // VAPID public key - set by main app via postMessage
 let VAPID_PUBLIC_KEY = null;
 
+// IndexedDB for pending notifications (iOS workaround)
+const DB_NAME = 'realpolitik-notifications';
+const DB_VERSION = 1;
+const STORE_NAME = 'pending';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'eventId' });
+      }
+    };
+  });
+}
+
+async function addPendingNotification(eventId, title, timestamp) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.put({ eventId, title, timestamp });
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.log('[SW] Failed to store pending notification:', e);
+  }
+}
+
 // =============================================================================
 // PUSH EVENT - Fires when server sends a push notification
 // =============================================================================
@@ -65,9 +100,38 @@ self.addEventListener('push', (event) => {
     ],
   };
 
-  // Show the notification
+  // Show the notification, set badge, store to IndexedDB, and notify open clients
   event.waitUntil(
-    self.registration.showNotification(`${categoryBadge} ${data.title}`, options)
+    (async () => {
+      // Show the notification
+      await self.registration.showNotification(`${categoryBadge} ${data.title}`, options);
+      
+      // iOS WORKAROUND: Store to IndexedDB so app can sync on visibility change
+      // This works even when postMessage fails (which is common on iOS)
+      if (data.id) {
+        await addPendingNotification(data.id, data.title, Date.now());
+      }
+      
+      // Try to notify any open app windows (works on Android/Desktop, often fails on iOS)
+      const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of allClients) {
+        client.postMessage({
+          type: 'NOTIFICATION_RECEIVED',
+          eventId: data.id,
+          title: data.title,
+          timestamp: Date.now(),
+        });
+      }
+      
+      // Set app badge (iOS 16.4+, desktop browsers)
+      if (navigator.setAppBadge) {
+        try {
+          await navigator.setAppBadge();
+        } catch (e) {
+          // Badge API may fail silently on some platforms
+        }
+      }
+    })()
   );
 });
 
@@ -77,31 +141,37 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || '/';
-  
   // Handle action buttons
   if (event.action === 'dismiss') {
     return; // Just close, don't navigate
   }
 
-  // Open or focus the app
+  const eventId = event.notification.data?.eventId;
+  const baseUrl = event.notification.data?.url || '/';
+  
+  // iOS WORKAROUND: Include source=notification in URL so the app knows this came from a notification
+  // This is more reliable than postMessage which often fails on iOS
+  const urlWithSource = eventId 
+    ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}from=notification&notif_event=${eventId}`
+    : baseUrl;
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Check if app is already open
+      // Try to find and focus existing window (works on Android/Desktop, often fails on iOS)
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
-          // Navigate existing window to the event
+          // Try to navigate via postMessage (best effort - may fail on iOS)
           client.postMessage({
             type: 'NOTIFICATION_CLICK',
-            url: urlToOpen,
-            eventId: event.notification.data?.eventId,
+            url: urlWithSource,
+            eventId: eventId,
           });
           return client.focus();
         }
       }
-      // App not open, open new window
+      // No window found or iOS hid it - open new window with URL params
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
+        return clients.openWindow(urlWithSource);
       }
     })
   );
