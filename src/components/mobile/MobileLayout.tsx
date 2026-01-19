@@ -9,7 +9,6 @@ import { IntelligenceSheet, SheetPhase } from "./IntelligenceSheet";
 import { SortOption } from "./FilterBar";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useEventSelection } from "@/hooks/useEventSelection";
-// import { InstallPrompt } from "./InstallPrompt"; // Disabled - too aggressive
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
 import { TIME_DISPLAY_UPDATE_MS, TIME_RANGES, MIN_TIME_RANGE_OPTIONS } from "@/lib/constants";
@@ -698,8 +697,6 @@ function MobileLayoutInner({
         onStartClusterFlyover={startClusterFlyover}
       />
 
-      {/* PWA Install Prompt - disabled for now, too aggressive */}
-      {/* <InstallPrompt /> */}
 
       {/* About Modal */}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
