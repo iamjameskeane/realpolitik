@@ -1,0 +1,96 @@
+/**
+ * POST /api/push/send
+ *
+ * INTERNAL ENDPOINT - Sends push notifications to all matching subscriptions.
+ * Called by Python worker when new high-severity events are detected.
+ *
+ * Authentication: Bearer token in Authorization header (PUSH_API_SECRET)
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { sendNotificationToAll, NotificationPayload } from "@/lib/push";
+
+export async function POST(request: NextRequest) {
+  console.log("[Send] Received push send request");
+  
+  try {
+    // Authenticate request
+    const authHeader = request.headers.get("authorization");
+    const secret = process.env.PUSH_API_SECRET;
+    const expectedToken = `Bearer ${secret}`;
+    
+    // Debug logging (mask secret for security)
+    console.log("[Send] Auth check:", { 
+      hasAuthHeader: !!authHeader, 
+      hasSecret: !!secret,
+      secretLength: secret?.length,
+      secretPrefix: secret?.substring(0, 5),
+      authHeaderPrefix: authHeader?.substring(0, 12),
+      match: authHeader === expectedToken
+    });
+
+    if (!authHeader || authHeader !== expectedToken) {
+      console.warn("[Send] Unauthorized - headers don't match");
+      console.warn("[Send] Expected length:", expectedToken.length, "Got length:", authHeader?.length);
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+
+    // Validate payload
+    const {
+      title,
+      body: notifBody,
+      url,
+      id,
+      severity,
+      category,
+    } = body as {
+      title?: string;
+      body?: string;
+      url?: string;
+      id?: string;
+      severity?: number;
+      category?: string;
+    };
+
+    if (!title || !notifBody) {
+      console.log("[Send] Missing title or body");
+      return NextResponse.json({ error: "Missing title or body" }, { status: 400 });
+    }
+
+    console.log("[Send] Payload:", { title, severity, category });
+
+    const payload: NotificationPayload = {
+      title,
+      body: notifBody,
+      url: url || "/",
+      id,
+      severity: severity || 5,
+      category,
+      icon: "/android-chrome-192x192.png",
+      tag: id || `event-${Date.now()}`,
+    };
+
+    // Send to all matching subscriptions
+    console.log("[Send] Calling sendNotificationToAll...");
+    const result = await sendNotificationToAll(payload, {
+      category,
+      minSeverity: severity,
+    });
+
+    console.log("[Send] Result:", result);
+
+    return NextResponse.json({
+      success: true,
+      sent: result.success,
+      failed: result.failed,
+      removed: result.removed,
+    });
+  } catch (error) {
+    console.error("[Send] Error:", error);
+    // Include more error details
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: "Failed to send notifications", details: errorMessage }, { status: 500 });
+  }
+}

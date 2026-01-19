@@ -28,7 +28,8 @@
     "react-dom": "19.2.3",
     "react-map-gl": "^8.1.0",
     "react-markdown": "^10.1.0",
-    "swr": "^2.3.8"
+    "swr": "^2.3.8",
+    "web-push": "^3.6.7"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
@@ -44,6 +45,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "eslint-config-prettier": "^10.1.8",

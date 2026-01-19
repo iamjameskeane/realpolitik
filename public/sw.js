@@ -1,0 +1,187 @@
+// =============================================================================
+// REALPOLITIK SERVICE WORKER - Push Notifications
+// =============================================================================
+// This file MUST be at the root of public/ to have scope over entire app.
+// Do NOT put this in src/ - it must be served as a static file.
+
+// VAPID public key - set by main app via postMessage
+let VAPID_PUBLIC_KEY = null;
+
+// =============================================================================
+// PUSH EVENT - Fires when server sends a push notification
+// =============================================================================
+self.addEventListener('push', (event) => {
+  // iOS CRITICAL: You MUST call showNotification() for every push event.
+  // If you don't, iOS may revoke your push subscription silently.
+  
+  let data = {
+    title: 'Realpolitik Alert',
+    body: 'New geopolitical event detected',
+    icon: '/android-chrome-192x192.png',
+    badge: '/favicon-32x32.png',
+    url: '/',
+    tag: 'default',
+    severity: 5,
+  };
+
+  // Parse push payload if available
+  if (event.data) {
+    try {
+      const payload = event.data.json();
+      data = { ...data, ...payload };
+    } catch (e) {
+      // If not JSON, try text
+      data.body = event.data.text() || data.body;
+    }
+  }
+
+  // Category badge matching app UI colors
+  const categoryBadges = {
+    'MILITARY': '🔴',
+    'DIPLOMACY': '🔵',
+    'ECONOMY': '🟢',
+    'UNREST': '🟠',
+  };
+  const categoryBadge = categoryBadges[data.category] || '⚪';
+  
+  const options = {
+    body: data.body,
+    icon: data.icon,
+    badge: data.badge,
+    tag: data.tag || data.id || 'realpolitik-notification', // Prevents duplicates
+    renotify: true, // Vibrate even if replacing existing notification with same tag
+    requireInteraction: data.severity >= 8, // High severity stays until dismissed
+    silent: false, // Request sound (though iOS may ignore)
+    vibrate: data.severity >= 8 ? [200, 100, 200, 100, 200] : [200, 100, 200],
+    data: {
+      url: data.url || '/',
+      eventId: data.id,
+      timestamp: Date.now(),
+    },
+    // Action buttons (desktop only, ignored on mobile)
+    actions: [
+      { action: 'view', title: 'View Event', icon: '/favicon-32x32.png' },
+      { action: 'dismiss', title: 'Dismiss' },
+    ],
+  };
+
+  // Show the notification
+  event.waitUntil(
+    self.registration.showNotification(`${categoryBadge} ${data.title}`, options)
+  );
+});
+
+// =============================================================================
+// NOTIFICATION CLICK - User taps/clicks the notification
+// =============================================================================
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const urlToOpen = event.notification.data?.url || '/';
+  
+  // Handle action buttons
+  if (event.action === 'dismiss') {
+    return; // Just close, don't navigate
+  }
+
+  // Open or focus the app
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // Check if app is already open
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          // Navigate existing window to the event
+          client.postMessage({
+            type: 'NOTIFICATION_CLICK',
+            url: urlToOpen,
+            eventId: event.notification.data?.eventId,
+          });
+          return client.focus();
+        }
+      }
+      // App not open, open new window
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});
+
+// =============================================================================
+// PUSH SUBSCRIPTION CHANGE - Subscription expired or was revoked
+// =============================================================================
+self.addEventListener('pushsubscriptionchange', (event) => {
+  // This fires when:
+  // - Browser/OS revokes subscription
+  // - Subscription expires
+  // - User clears browser data
+  
+  event.waitUntil(
+    (async () => {
+      try {
+        // Only attempt resubscribe if we have VAPID key
+        if (!VAPID_PUBLIC_KEY) {
+          console.log('[SW] No VAPID key, cannot resubscribe');
+          return;
+        }
+
+        // Convert base64 to Uint8Array
+        const urlBase64ToUint8Array = (base64String) => {
+          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = atob(base64);
+          const outputArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+          }
+          return outputArray;
+        };
+
+        // Try to resubscribe
+        const subscription = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+        
+        // Send new subscription to server
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscription: subscription.toJSON(),
+            resubscribe: true, // Flag that this is a resubscription
+          }),
+        });
+        
+        console.log('[SW] Resubscribed after pushsubscriptionchange');
+      } catch (error) {
+        console.error('[SW] Failed to resubscribe:', error);
+      }
+    })()
+  );
+});
+
+// =============================================================================
+// INSTALL & ACTIVATE - Standard service worker lifecycle
+// =============================================================================
+self.addEventListener('install', (event) => {
+  console.log('[SW] Installing service worker...');
+  // Skip waiting to activate immediately
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('[SW] Activating service worker...');
+  // Claim all clients immediately
+  event.waitUntil(clients.claim());
+});
+
+// =============================================================================
+// MESSAGE HANDLER - Communication from main app
+// =============================================================================
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SET_VAPID_KEY') {
+    VAPID_PUBLIC_KEY = event.data.key;
+    console.log('[SW] VAPID key set');
+  }
+});
