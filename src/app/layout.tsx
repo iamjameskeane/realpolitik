@@ -54,6 +54,8 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Realpolitik" />
+        {/* Android: theme color for status bar and navigation bar */}
+        <meta name="theme-color" content="#020617" />
         {/* Explicit apple-touch-icon links - static fallback for crawlers */}
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
       </head>

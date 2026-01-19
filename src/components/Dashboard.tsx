@@ -7,6 +7,7 @@ import { SplashScreen } from "./SplashScreen";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { MapFallback } from "./map/MapFallback";
 import { BriefingModal } from "./BriefingModal";
+import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "./AboutModal";
 import { SettingsModal } from "./SettingsModal";
 import { GeoEvent, CATEGORY_COLORS, CATEGORY_DESCRIPTIONS, EventCategory } from "@/types/events";
@@ -745,16 +746,20 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
         )}
 
         {/* About Modal */}
-        {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+        <AnimatePresence>
+          {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+        </AnimatePresence>
 
         {/* Settings Modal */}
-        {settingsOpen && (
-          <SettingsModal
-            onClose={() => setSettingsOpen(false)}
-            is2DMode={is2DMode}
-            onToggle2DMode={() => setIs2DMode(!is2DMode)}
-          />
-        )}
+        <AnimatePresence>
+          {settingsOpen && (
+            <SettingsModal
+              onClose={() => setSettingsOpen(false)}
+              is2DMode={is2DMode}
+              onToggle2DMode={() => setIs2DMode(!is2DMode)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </BatchReactionsProvider>
   );

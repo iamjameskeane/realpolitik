@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback, useRef } from "react";
+import { motion } from "framer-motion";
 
 interface AboutModalProps {
   onClose: () => void;
@@ -51,17 +52,25 @@ export function AboutModal({ onClose }: AboutModalProps) {
       aria-labelledby="about-modal-title"
     >
       {/* Backdrop with blur */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      <motion.div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
       />
 
       {/* Modal Card */}
-      <div
+      <motion.div
         ref={modalRef}
         tabIndex={-1}
-        className="relative w-full max-w-[450px] rounded-lg border border-slate-700 bg-slate-900 shadow-2xl outline-none animate-in fade-in zoom-in-95 duration-200"
+        className="relative w-full max-w-[450px] rounded-lg border border-slate-700 bg-slate-900 shadow-2xl outline-none"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
       >
         {/* Close Button */}
         <button
@@ -332,7 +341,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             </a>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
