@@ -26,7 +26,7 @@ export const metadata: Metadata = {
       { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
     ],
-    apple: "/apple-touch-icon.png",
+    apple: "/apple-icon", // Dynamic generator for iOS
   },
   openGraph: {
     title: "Realpolitik | Global Situational Awareness",
@@ -53,6 +53,9 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Realpolitik" />
+        {/* Explicit apple-touch-icon links - static fallback for crawlers */}
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
       </head>
       <body
         className={`${outfit.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground`}
