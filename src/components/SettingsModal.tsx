@@ -45,7 +45,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
       aria-modal="true"
       aria-labelledby="settings-title"
     >
-      <div className="relative mx-4 w-full max-w-sm animate-in zoom-in-95 duration-200">
+      <div className="relative mx-4 w-full max-w-sm animate-in fade-in zoom-in-95 duration-200">
         {/* Card */}
         <div className="rounded-2xl bg-slate-900 border border-slate-700/50 shadow-2xl overflow-hidden">
           {/* Header */}
