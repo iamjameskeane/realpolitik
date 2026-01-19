@@ -14,8 +14,8 @@ const cspDirectives = [
   "img-src 'self' data: https: blob:",
   // Fonts: Google Fonts
   "font-src 'self' https://fonts.gstatic.com",
-  // API connections: self, Mapbox, Upstash, R2 bucket, Vercel
-  "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com wss://*.tiles.mapbox.com https://*.upstash.io https://*.r2.dev https://vercel.live",
+  // API connections: self, Mapbox, Upstash, R2 bucket, Vercel, Push services
+  "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com wss://*.tiles.mapbox.com https://*.upstash.io https://*.r2.dev https://vercel.live https://*.push.apple.com https://fcm.googleapis.com https://updates.push.services.mozilla.com",
   // Workers: Mapbox uses web workers
   "worker-src 'self' blob:",
   // Prevent clickjacking

@@ -249,4 +249,10 @@ export const STORAGE_KEYS = {
   LAST_VISIT: "realpolitik:lastVisit",
   /** Array of event IDs the user has read (for "Unread" tracking) */
   READ_IDS: "realpolitik:readIds",
+  /** Push notification preferences (enabled, minSeverity, categories) */
+  PUSH_PREFERENCES: "realpolitik:push:preferences",
+  /** When user dismissed the install prompt (value: "permanent") */
+  INSTALL_PROMPT_DISMISSED: "realpolitik:installPromptDismissed",
+  /** When user dismissed the notification prompt (value: "permanent" or "subscribed") */
+  NOTIFICATION_PROMPT_DISMISSED: "realpolitik:notificationPromptDismissed",
 } as const;

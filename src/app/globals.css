@@ -2,6 +2,9 @@
 @plugin "@tailwindcss/typography";
 
 :root {
+  /* Force dark color scheme - tells Android to use light nav buttons */
+  color-scheme: dark;
+  
   /* Viewport height unit - JS will override for older iOS Safari */
   --vh: 1vh;
 
@@ -51,9 +54,11 @@ body {
   height: 100%;
 }
 
-/* iOS Safari full-height fix */
+/* iOS Safari full-height fix + Edge-to-edge Android nav bar fix */
 html {
   height: -webkit-fill-available;
+  /* Critical: Apply background to root element for transparent nav bar */
+  background-color: var(--background);
 }
 
 body {

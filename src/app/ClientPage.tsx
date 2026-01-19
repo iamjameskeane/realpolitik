@@ -4,6 +4,8 @@ import { Suspense, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { Dashboard } from "@/components/Dashboard";
 import { MobileLayout } from "@/components/mobile";
+import { InstallPrompt } from "@/components/InstallPrompt";
+import { NotificationPrompt } from "@/components/NotificationPrompt";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useEvents } from "@/hooks/useEvents";
 import { STORAGE_KEYS } from "@/lib/constants";
@@ -39,6 +41,31 @@ function HomeContent({ initialEvents }: ClientPageProps) {
       window.location.href = "/";
     }
   }, [searchParams]);
+
+  // Listen for notification clicks from service worker (when app is already open)
+  useEffect(() => {
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === "NOTIFICATION_CLICK") {
+        const { url, eventId } = event.data;
+        // Navigate to the event URL
+        if (url && url !== window.location.pathname + window.location.search) {
+          window.location.href = url;
+        } else if (eventId) {
+          // If same page, just update the URL param to trigger event selection
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.set("event", eventId);
+          window.history.pushState({}, "", newUrl.toString());
+          // Dispatch a custom event to notify components
+          window.dispatchEvent(new CustomEvent("notification-event-select", { detail: { eventId } }));
+        }
+      }
+    };
+
+    navigator.serviceWorker?.addEventListener("message", handleServiceWorkerMessage);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
+    };
+  }, []);
 
   // Deep linking - get event ID from URL
   const initialEventId = searchParams.get("event");
@@ -107,6 +134,8 @@ export function ClientPage({ initialEvents }: ClientPageProps) {
   return (
     <Suspense fallback={<LoadingFallback />}>
       <HomeContent initialEvents={initialEvents} />
+      <InstallPrompt />
+      <NotificationPrompt />
     </Suspense>
   );
 }
