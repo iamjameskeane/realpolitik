@@ -335,18 +335,19 @@ async function sendToSubscription(
 
 
 /**
- * Mark a subscription as notified for an event.
- * Adds the subscription hash to the event's SET and sets TTL.
+ * Mark multiple subscriptions as notified for an event (batched).
+ * Adds all subscription hashes to the event's SET in a single call.
  */
-async function markSubscriptionNotified(
+async function markSubscriptionsNotified(
   redis: ReturnType<typeof getRedis>,
   eventId: string,
-  endpointHash: string
+  endpointHashes: string[]
 ): Promise<void> {
-  if (!eventId) return;
+  if (!eventId || endpointHashes.length === 0) return;
   const key = `${NOTIFIED_KEY_PREFIX}${eventId}`;
-  await redis.sadd(key, endpointHash);
-  // Refresh TTL on every add (ensures cleanup after 7 days of no new notifications)
+  // Single SADD with all members + single EXPIRE = 2 calls total (not 2×N)
+  // Cast to tuple type to satisfy TypeScript
+  await (redis.sadd as (key: string, ...members: string[]) => Promise<number>)(key, ...endpointHashes);
   await redis.expire(key, NOTIFIED_TTL_SECONDS);
 }
 
@@ -477,13 +478,10 @@ export async function sendNotificationToAll(
   await redis.incrby(STATS_SENT_KEY, result.success);
   await redis.incrby(STATS_FAILED_KEY, result.failed);
 
-  // Mark successful subscriptions as notified for this event (per-subscription dedup)
+  // Mark successful subscriptions as notified for this event (batched - 2 Redis calls total)
   if (payload.id && successfulEndpoints.length > 0) {
-    await Promise.all(
-      successfulEndpoints.map((endpoint) => 
-        markSubscriptionNotified(redis, payload.id!, hashEndpoint(endpoint))
-      )
-    );
+    const hashes = successfulEndpoints.map((endpoint) => hashEndpoint(endpoint));
+    await markSubscriptionsNotified(redis, payload.id, hashes);
   }
 
   console.log(
