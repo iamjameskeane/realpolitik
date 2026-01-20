@@ -6,22 +6,32 @@
  * - Platform detection (iOS standalone, etc.)
  * - Permission management
  * - Subscription lifecycle
- * - Preference updates
+ * - Preference updates (both legacy and new rule-based)
  */
 
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type {
+  NotificationPreferences,
+  NotificationRule,
+  LegacyPreferences,
+} from "@/types/notifications";
+import {
+  DEFAULT_PREFERENCES,
+  migrateLegacyPreferences,
+  DEFAULT_RULE,
+} from "@/types/notifications";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-export interface PushPreferences {
-  enabled: boolean;
-  minSeverity: number;
-  categories: ("MILITARY" | "DIPLOMACY" | "ECONOMY" | "UNREST")[];
-}
+// Re-export legacy type for backwards compatibility
+export type PushPreferences = LegacyPreferences;
+
+// New unified preferences type
+export type UnifiedPreferences = NotificationPreferences;
 
 export interface PushState {
   isSupported: boolean;
@@ -31,13 +41,15 @@ export interface PushState {
   isSubscribed: boolean;
   isLoading: boolean;
   error: string | null;
-  preferences: PushPreferences;
+  preferences: NotificationPreferences;
+  isFirstTimeSetup: boolean; // True if user hasn't configured preferences yet
 }
 
 export interface UsePushNotificationsReturn extends PushState {
-  subscribe: () => Promise<boolean>;
+  subscribe: (initialRules?: NotificationRule[]) => Promise<boolean>;
   unsubscribe: () => Promise<boolean>;
-  updatePreferences: (prefs: Partial<PushPreferences>) => Promise<boolean>;
+  updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<boolean>;
+  updateRules: (rules: NotificationRule[]) => Promise<boolean>;
   requestPermission: () => Promise<NotificationPermission>;
 }
 
@@ -131,18 +143,61 @@ function isPushSupported(): boolean {
 }
 
 // =============================================================================
-// DEFAULT STATE
+// STORAGE HELPERS
 // =============================================================================
-
-const DEFAULT_PREFERENCES: PushPreferences = {
-  enabled: false,
-  minSeverity: 8,
-  categories: ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"],
-};
 
 import { STORAGE_KEYS } from "@/lib/constants";
 
 const STORAGE_KEY = STORAGE_KEYS.PUSH_PREFERENCES;
+const SETUP_COMPLETE_KEY = "realpolitik_notification_setup_complete";
+
+// Helper to check if stored preferences are in new format
+function isNewFormat(prefs: unknown): prefs is NotificationPreferences {
+  return (
+    typeof prefs === "object" &&
+    prefs !== null &&
+    "rules" in prefs &&
+    Array.isArray((prefs as NotificationPreferences).rules)
+  );
+}
+
+// Load and migrate preferences from storage
+function loadStoredPreferences(): { prefs: NotificationPreferences; isNew: boolean } {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      return { prefs: DEFAULT_PREFERENCES, isNew: true };
+    }
+    
+    const parsed = JSON.parse(stored);
+    
+    if (isNewFormat(parsed)) {
+      return { prefs: parsed, isNew: false };
+    }
+    
+    // Migrate legacy format
+    const migrated = migrateLegacyPreferences(parsed);
+    return { prefs: migrated, isNew: false };
+  } catch {
+    return { prefs: DEFAULT_PREFERENCES, isNew: true };
+  }
+}
+
+function isSetupComplete(): boolean {
+  try {
+    return localStorage.getItem(SETUP_COMPLETE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function markSetupComplete(): void {
+  try {
+    localStorage.setItem(SETUP_COMPLETE_KEY, "true");
+  } catch {
+    // Ignore
+  }
+}
 
 // Custom event for subscription state changes (to sync multiple hook instances)
 const SUBSCRIPTION_CHANGE_EVENT = "push-subscription-change";
@@ -161,6 +216,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     isLoading: true,
     error: null,
     preferences: DEFAULT_PREFERENCES,
+    isFirstTimeSetup: true,
   });
 
   // ---------------------------------------------------------------------------
@@ -206,16 +262,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
       console.log("[Push] Init:", { isSupported, isStandalone, isIOS });
 
-      // Load saved preferences
-      let savedPrefs = DEFAULT_PREFERENCES;
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          savedPrefs = { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) };
-        }
-      } catch {
-        // Ignore localStorage errors
-      }
+      // Load saved preferences (handles migration from legacy format)
+      const { prefs: savedPrefs, isNew } = loadStoredPreferences();
+      const setupComplete = isSetupComplete();
+      const isFirstTimeSetup = isNew || !setupComplete;
 
       if (!isSupported) {
         setState({
@@ -230,6 +280,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
               ? "Add to Home Screen to enable notifications"
               : "Push notifications not supported",
           preferences: savedPrefs,
+          isFirstTimeSetup,
         });
         return;
       }
@@ -252,7 +303,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         console.log("[Push] Error checking subscription:", e);
       }
 
-      console.log("[Push] Setting final state:", { isSupported, permission, isSubscribed });
+      console.log("[Push] Setting final state:", { isSupported, permission, isSubscribed, isFirstTimeSetup });
 
       setState({
         isSupported: true,
@@ -263,6 +314,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         isLoading: false,
         error: null,
         preferences: { ...savedPrefs, enabled: isSubscribed },
+        isFirstTimeSetup: isSubscribed ? false : isFirstTimeSetup,
       });
     };
 
@@ -318,7 +370,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   // SUBSCRIBE
   // ---------------------------------------------------------------------------
 
-  const subscribe = useCallback(async (): Promise<boolean> => {
+  const subscribe = useCallback(async (initialRules?: NotificationRule[]): Promise<boolean> => {
     if (!state.isSupported) {
       setState((prev) => ({ ...prev, error: "Push not supported" }));
       return false;
@@ -369,16 +421,20 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
       });
 
+      // Build new preferences with initial rules if provided
+      const newPrefs: NotificationPreferences = {
+        ...state.preferences,
+        enabled: true,
+        rules: initialRules ?? state.preferences.rules ?? [DEFAULT_RULE],
+      };
+
       // Send subscription to server
       const response = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subscription: subscription.toJSON(),
-          preferences: {
-            ...state.preferences,
-            enabled: true,
-          },
+          preferences: newPrefs,
         }),
       });
 
@@ -387,8 +443,8 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       }
 
       // Save preferences locally
-      const newPrefs = { ...state.preferences, enabled: true };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+      markSetupComplete();
 
       setState((prev) => ({
         ...prev,
@@ -396,6 +452,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         isLoading: false,
         error: null,
         preferences: newPrefs,
+        isFirstTimeSetup: false,
       }));
 
       // Notify other instances that subscription state changed
@@ -470,8 +527,11 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   // ---------------------------------------------------------------------------
 
   const updatePreferences = useCallback(
-    async (newPrefs: Partial<PushPreferences>): Promise<boolean> => {
-      const updatedPrefs = { ...state.preferences, ...newPrefs };
+    async (newPrefs: Partial<NotificationPreferences>): Promise<boolean> => {
+      const updatedPrefs: NotificationPreferences = { ...state.preferences, ...newPrefs };
+
+      // Clear any previous error
+      setState((prev) => ({ ...prev, error: null }));
 
       try {
         // If subscribed, update server
@@ -480,7 +540,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           const subscription = await registration.pushManager.getSubscription();
 
           if (subscription) {
-            await fetch("/api/push/subscribe", {
+            const response = await fetch("/api/push/subscribe", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -488,20 +548,41 @@ export function usePushNotifications(): UsePushNotificationsReturn {
                 preferences: updatedPrefs,
               }),
             });
+
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}));
+              const errorMsg = data.error || `Server error: ${response.status}`;
+              setState((prev) => ({ ...prev, error: errorMsg }));
+              console.error("[Push] Update preferences failed:", errorMsg);
+              return false;
+            }
           }
         }
 
         // Save locally
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedPrefs));
-        setState((prev) => ({ ...prev, preferences: updatedPrefs }));
+        setState((prev) => ({ ...prev, preferences: updatedPrefs, error: null }));
 
         return true;
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Failed to update preferences";
         console.error("[Push] Update preferences failed:", error);
+        setState((prev) => ({ ...prev, error: errorMsg }));
         return false;
       }
     },
     [state.preferences, state.isSubscribed]
+  );
+
+  // ---------------------------------------------------------------------------
+  // UPDATE RULES (convenience method)
+  // ---------------------------------------------------------------------------
+
+  const updateRules = useCallback(
+    async (rules: NotificationRule[]): Promise<boolean> => {
+      return updatePreferences({ rules });
+    },
+    [updatePreferences]
   );
 
   // ---------------------------------------------------------------------------
@@ -513,6 +594,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     subscribe,
     unsubscribe,
     updatePreferences,
+    updateRules,
     requestPermission,
   };
 }

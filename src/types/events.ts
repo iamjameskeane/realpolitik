@@ -1,4 +1,8 @@
+import type { RegionName } from "./notifications";
+
 export type EventCategory = "MILITARY" | "DIPLOMACY" | "ECONOMY" | "UNREST";
+
+export type EventRegion = RegionName | "OTHER";
 
 export interface EventSource {
   id: string;
@@ -15,6 +19,7 @@ export interface GeoEvent {
   category: EventCategory;
   coordinates: [number, number]; // [lng, lat]
   location_name: string; // Human-readable location, e.g. "Kyiv, Ukraine"
+  region?: EventRegion; // Geographic region for filtering (e.g. EUROPE, MIDDLE_EAST)
   severity: number; // 1-10
   summary: string; // Synthesized summary
   timestamp: string; // Earliest source timestamp (ISO 8601)

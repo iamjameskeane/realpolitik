@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
       id,
       severity,
       category,
+      region,
+      location_name,
+      sources_count,
+      critical,
     } = body as {
       title?: string;
       body?: string;
@@ -52,6 +56,10 @@ export async function POST(request: NextRequest) {
       id?: string;
       severity?: number;
       category?: string;
+      region?: string;
+      location_name?: string;
+      sources_count?: number;
+      critical?: boolean;
     };
 
     if (!title || !notifBody) {
@@ -59,7 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing title or body" }, { status: 400 });
     }
 
-    console.log("[Send] Payload:", { title, severity, category });
+    console.log("[Send] Payload:", { title, severity, category, region, sources_count });
 
     const payload: NotificationPayload = {
       title,
@@ -68,8 +76,12 @@ export async function POST(request: NextRequest) {
       id,
       severity: severity || 5,
       category,
+      region,
+      location_name,
+      sources_count,
       icon: "/android-chrome-192x192.png",
       tag: id || `event-${Date.now()}`,
+      critical,
     };
 
     // Send to all matching subscriptions

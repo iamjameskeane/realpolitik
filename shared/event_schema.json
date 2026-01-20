@@ -42,6 +42,11 @@
       "description": "Human-readable location name",
       "maxLength": 100
     },
+    "region": {
+      "type": "string",
+      "enum": ["MIDDLE_EAST", "EAST_ASIA", "SOUTHEAST_ASIA", "SOUTH_ASIA", "EUROPE", "AFRICA", "AMERICAS", "CENTRAL_ASIA", "OCEANIA", "OTHER"],
+      "description": "Geographic region for notification filtering"
+    },
     "severity": {
       "type": "integer",
       "minimum": 1,
@@ -114,5 +119,5 @@
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }

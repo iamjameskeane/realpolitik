@@ -3,11 +3,20 @@
  *
  * Uses web-push library for VAPID authentication and encryption.
  * Subscriptions stored in Upstash Redis.
+ *
+ * Supports both legacy preferences (minSeverity + categories) and
+ * new rule-based preferences for granular notification filtering.
  */
 
 import webpush from "web-push";
 import { getRedis } from "./redis";
 import crypto from "crypto";
+import type {
+  NotificationPreferences,
+  LegacyPreferences,
+} from "@/types/notifications";
+import { migrateLegacyPreferences, DEFAULT_PREFERENCES } from "@/types/notifications";
+import { shouldNotify, type EventForMatching } from "./notificationRules";
 
 // =============================================================================
 // CONFIGURATION
@@ -34,13 +43,33 @@ const ENV_PREFIX = process.env.VERCEL_ENV === "production" ? "prod" : "dev";
 const SUBSCRIPTION_PREFIX = `push:${ENV_PREFIX}:sub:`;
 const STATS_SENT_KEY = `push:${ENV_PREFIX}:stats:sent`;
 const STATS_FAILED_KEY = `push:${ENV_PREFIX}:stats:failed`;
+const NOTIFIED_KEY_PREFIX = `push:${ENV_PREFIX}:notified:`;
 
 // Subscription TTL: 90 days (subscriptions that haven't been used)
 const SUBSCRIPTION_TTL_SECONDS = 90 * 24 * 60 * 60;
 
+// Event notification dedup TTL: 7 days
+const NOTIFIED_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 // =============================================================================
 // TYPES
 // =============================================================================
+
+// Unified preferences type that works with both legacy and new formats
+export type StoredPreferences = NotificationPreferences | LegacyPreferences;
+
+// Helper to check if preferences are in new format
+function isNewPreferencesFormat(prefs: StoredPreferences): prefs is NotificationPreferences {
+  return "rules" in prefs && Array.isArray(prefs.rules);
+}
+
+// Normalize preferences to new format
+function normalizePreferences(prefs: StoredPreferences): NotificationPreferences {
+  if (isNewPreferencesFormat(prefs)) {
+    return prefs;
+  }
+  return migrateLegacyPreferences(prefs);
+}
 
 export interface PushSubscriptionData {
   endpoint: string;
@@ -48,11 +77,7 @@ export interface PushSubscriptionData {
     p256dh: string;
     auth: string;
   };
-  preferences: {
-    enabled: boolean;
-    minSeverity: number; // 1-10, only notify if event severity >= this
-    categories: ("MILITARY" | "DIPLOMACY" | "ECONOMY" | "UNREST")[];
-  };
+  preferences: StoredPreferences;
   userAgent: string;
   createdAt: string;
   lastUsedAt: string;
@@ -65,8 +90,12 @@ export interface NotificationPayload {
   id?: string;
   severity?: number;
   category?: string;
+  region?: string;
+  location_name?: string;
+  sources_count?: number;
   icon?: string;
   tag?: string;
+  critical?: boolean;
 }
 
 export interface SendResult {
@@ -304,55 +333,46 @@ async function sendToSubscription(
   }
 }
 
-// Rate limiting constants
-const RATE_LIMIT_MAX_PER_DAY = 15; // Max notifications per user per day (non-critical)
-const RATE_LIMIT_KEY_PREFIX = `push:${ENV_PREFIX}rate:`;
-const RATE_LIMIT_TTL = 86400; // 24 hours in seconds
 
 /**
- * Check if a user has exceeded their rate limit.
- * Returns true if they can receive a notification.
+ * Mark a subscription as notified for an event.
+ * Adds the subscription hash to the event's SET and sets TTL.
  */
-async function checkRateLimit(
+async function markSubscriptionNotified(
   redis: ReturnType<typeof getRedis>,
-  endpoint: string,
-  isCritical: boolean
-): Promise<boolean> {
-  // Critical events (severity 9-10) bypass rate limits
-  if (isCritical) {
-    return true;
-  }
+  eventId: string,
+  endpointHash: string
+): Promise<void> {
+  if (!eventId) return;
+  const key = `${NOTIFIED_KEY_PREFIX}${eventId}`;
+  await redis.sadd(key, endpointHash);
+  // Refresh TTL on every add (ensures cleanup after 7 days of no new notifications)
+  await redis.expire(key, NOTIFIED_TTL_SECONDS);
+}
 
-  // Create a hash of the endpoint for the rate limit key
-  const crypto = await import("crypto");
-  const endpointHash = crypto.createHash("md5").update(endpoint).digest("hex").slice(0, 12);
-  const key = `${RATE_LIMIT_KEY_PREFIX}${endpointHash}`;
-
-  try {
-    const count = await redis.incr(key);
-    
-    // Set TTL on first increment
-    if (count === 1) {
-      await redis.expire(key, RATE_LIMIT_TTL);
-    }
-
-    if (count > RATE_LIMIT_MAX_PER_DAY) {
-      return false; // Rate limited
-    }
-
-    return true;
-  } catch (error) {
-    console.warn("[Push] Rate limit check failed, allowing:", error);
-    return true; // Fail open
-  }
+/**
+ * Batch check which subscriptions have already been notified for an event.
+ * Returns a Set of endpoint hashes that have been notified.
+ */
+async function getNotifiedSubscriptions(
+  redis: ReturnType<typeof getRedis>,
+  eventId: string
+): Promise<Set<string>> {
+  if (!eventId) return new Set();
+  const key = `${NOTIFIED_KEY_PREFIX}${eventId}`;
+  const members = await redis.smembers(key);
+  return new Set(members);
 }
 
 /**
  * Send notification to all subscriptions matching the criteria.
- * Handles filtering by preferences, rate limiting, and cleanup.
+ * Uses rule-based matching for granular filtering.
  * 
- * Critical events (severity 9-10) bypass rate limits.
- * Non-critical events are rate-limited to prevent notification fatigue.
+ * Deduplication is per-subscription: each subscription tracks which events
+ * it has been notified about, so new subscribers can receive past events
+ * that match their rules.
+ * 
+ * No rate limiting - users control notification volume through their rules.
  */
 export async function sendNotificationToAll(
   payload: NotificationPayload & { critical?: boolean },
@@ -364,10 +384,9 @@ export async function sendNotificationToAll(
   console.log("[Push] sendNotificationToAll called with:", payload.title);
   
   const redis = getRedis();
-  const isCritical = payload.critical === true || (payload.severity || 0) >= 9;
   
   console.log("[Push] Getting subscriptions...");
-  console.log(`[Push] Event: severity=${payload.severity}, critical=${isCritical}`);
+  console.log(`[Push] Event: severity=${payload.severity}, category=${payload.category}, region=${payload.region}`);
   const subscriptions = await getAllSubscriptions();
   console.log("[Push] Found", subscriptions.length, "subscriptions");
 
@@ -382,67 +401,61 @@ export async function sendNotificationToAll(
     return result;
   }
 
-  console.log(`[Push] Sending to ${subscriptions.length} subscriptions...`);
+  console.log(`[Push] Evaluating ${subscriptions.length} subscriptions against rules...`);
 
-  // Filter subscriptions based on their preferences
+  // Build event object for rule matching
+  const eventForMatching: EventForMatching = {
+    id: payload.id || "",
+    title: payload.title,
+    category: payload.category || options?.category || "MILITARY",
+    location_name: payload.location_name || "",
+    region: payload.region,
+    severity: payload.severity || 5,
+    sources: payload.sources_count 
+      ? Array.from({ length: payload.sources_count }, (_, i) => ({ id: `src-${i}` }))
+      : [{ id: "default" }],
+  };
+
+  // Get already-notified subscriptions for this event (batch lookup)
+  const alreadyNotified = payload.id 
+    ? await getNotifiedSubscriptions(redis, payload.id)
+    : new Set<string>();
+  
+  if (alreadyNotified.size > 0) {
+    console.log(`[Push] ${alreadyNotified.size} subscriptions already notified for this event`);
+  }
+
+  // Filter subscriptions based on their preferences and deduplication
   const eligibleSubscriptions = subscriptions.filter((sub) => {
-    const endpointShort = sub.endpoint.substring(0, 50);
+    // Check per-subscription deduplication
+    const endpointHash = hashEndpoint(sub.endpoint);
+    if (alreadyNotified.has(endpointHash)) {
+      return false; // Already notified this subscription
+    }
     
-    // Must be enabled
-    if (!sub.preferences.enabled) {
-      console.log(`[Push] Filtered out (disabled): ${endpointShort}`);
-      return false;
-    }
-
-    // Check severity threshold
-    const eventSeverity = payload.severity || 5;
-    if (eventSeverity < sub.preferences.minSeverity) {
-      console.log(`[Push] Filtered out (severity ${eventSeverity} < ${sub.preferences.minSeverity}): ${endpointShort}`);
-      return false;
-    }
-
-    // Check category filter
-    if (options?.category && sub.preferences.categories.length > 0) {
-      if (
-        !sub.preferences.categories.includes(
-          options.category as "MILITARY" | "DIPLOMACY" | "ECONOMY" | "UNREST"
-        )
-      ) {
-        console.log(`[Push] Filtered out (category ${options.category} not in [${sub.preferences.categories}]): ${endpointShort}`);
-        return false;
-      }
-    }
-
-    console.log(`[Push] Eligible: ${endpointShort} (sev>=${sub.preferences.minSeverity}, cats=[${sub.preferences.categories}])`);
-    return true;
+    // Normalize preferences to new format
+    const normalizedPrefs = normalizePreferences(sub.preferences);
+    
+    // Use rule-based matching
+    return shouldNotify(eventForMatching, normalizedPrefs);
   });
 
-  console.log(`[Push] ${eligibleSubscriptions.length}/${subscriptions.length} subscriptions match preferences`);
-
-  // Check rate limits for each subscription
-  const rateLimitChecks = await Promise.all(
-    eligibleSubscriptions.map((sub) => checkRateLimit(redis, sub.endpoint, isCritical))
-  );
-
-  const rateLimitedSubscriptions = eligibleSubscriptions.filter((_, i) => rateLimitChecks[i]);
-  const rateLimitedCount = eligibleSubscriptions.length - rateLimitedSubscriptions.length;
-
-  if (rateLimitedCount > 0) {
-    console.log(`[Push] ${rateLimitedCount} subscriptions rate-limited, ${rateLimitedSubscriptions.length} will receive`);
-  }
+  console.log(`[Push] ${eligibleSubscriptions.length} subscriptions match rules and haven't been notified`);
 
   // Send in parallel batches of 50
   const BATCH_SIZE = 50;
   const toRemove: string[] = [];
+  const successfulEndpoints: string[] = [];
 
-  for (let i = 0; i < rateLimitedSubscriptions.length; i += BATCH_SIZE) {
-    const batch = rateLimitedSubscriptions.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < eligibleSubscriptions.length; i += BATCH_SIZE) {
+    const batch = eligibleSubscriptions.slice(i, i + BATCH_SIZE);
 
     const results = await Promise.all(batch.map((sub) => sendToSubscription(sub, payload)));
 
     for (let j = 0; j < results.length; j++) {
       if (results[j].success) {
         result.success++;
+        successfulEndpoints.push(batch[j].endpoint);
       } else {
         result.failed++;
       }
@@ -464,9 +477,17 @@ export async function sendNotificationToAll(
   await redis.incrby(STATS_SENT_KEY, result.success);
   await redis.incrby(STATS_FAILED_KEY, result.failed);
 
-  const criticalTag = isCritical ? " 🚨 CRITICAL" : "";
+  // Mark successful subscriptions as notified for this event (per-subscription dedup)
+  if (payload.id && successfulEndpoints.length > 0) {
+    await Promise.all(
+      successfulEndpoints.map((endpoint) => 
+        markSubscriptionNotified(redis, payload.id!, hashEndpoint(endpoint))
+      )
+    );
+  }
+
   console.log(
-    `[Push] Complete${criticalTag}: ${result.success} sent, ${result.failed} failed, ${result.removed} removed, ${rateLimitedCount} rate-limited`
+    `[Push] Complete: ${result.success} sent, ${result.failed} failed, ${result.removed} removed`
   );
 
   return result;

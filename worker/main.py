@@ -41,6 +41,9 @@ from sources.rss_feeds import fetch_rss_articles, dedupe_articles
 # Import location reference for geocoding accuracy
 from locations import LOCATIONS, get_location_prompt_context
 
+# Import region extraction for notification filtering
+from regions import get_region
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -54,12 +57,11 @@ UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 
 # Push notification configuration
-PUSH_API_URL = os.getenv("PUSH_API_URL", "")
+PUSH_API_URL = os.getenv("PUSH_API_URL", "https://realpolitik.world/api/push/send")
 PUSH_API_SECRET = os.getenv("PUSH_API_SECRET", "")
-PUSH_NOTIFICATION_THRESHOLD = 5  # Minimum severity to consider (user prefs filter further)
-PUSH_CRITICAL_THRESHOLD = 9  # Critical events bypass rate limits
+PUSH_NOTIFICATION_THRESHOLD = 1  # Minimum severity - user rules handle filtering
+PUSH_CRITICAL_THRESHOLD = 9  # Severity threshold for "critical" flag
 PUSH_MAX_AGE_HOURS = 4  # Only notify for articles published within this many hours
-PUSH_FINGERPRINT_BUCKET_HOURS = 6  # Time bucket size for deduplication
 
 OUTPUT_PATH = Path(__file__).parent.parent / "public" / "events.json"
 
@@ -601,7 +603,6 @@ class EventSource(BaseModel):
     source_name: str
     source_url: str
     timestamp: str  # ISO 8601
-    original_severity: int = Field(default=5, description="Severity from enrichment step")
 
 
 class GeoEvent(BaseModel):
@@ -611,6 +612,7 @@ class GeoEvent(BaseModel):
     category: Literal["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"]
     coordinates: tuple[float, float]  # [lng, lat]
     location_name: str
+    region: str = "OTHER"  # Geographic region for notification filtering
     severity: int
     summary: str  # Synthesized summary
     timestamp: str  # Earliest source timestamp
@@ -702,55 +704,12 @@ STEP 3: Categorization
 - ECONOMY: Trade wars, sanctions impact, currency crises, major policy shifts
 - UNREST: Mass protests, coups, civil disorder, political violence
 
-STEP 4: Severity (1-10) - USE CATEGORY-SPECIFIC CALIBRATION
-
-The severity scale measures GLOBAL STRATEGIC IMPACT. Ask: "How much does this change the geopolitical landscape?"
-
-MILITARY (armed conflict, defense):
-  3: Routine exercise, minor border incident (no casualties)
-  4: Localized skirmish, single strike, 1-5 casualties
-  5: Multi-target strike, base attack, 5-20 casualties  
-  6: Major offensive, city bombardment, 20-100 casualties
-  7: Strategic infrastructure destroyed, mass casualties (100+)
-  8: Capital under sustained attack, military unit collapses
-  9: Government HQ destroyed, full-scale invasion launched
-  10: Nuclear weapon used, formal war between major powers
-
-DIPLOMACY (international relations):
-  3: Routine summit, ambassador recalled
-  4: Diplomatic protest, minor individual sanctions
-  5: Ambassador expelled, limited sectoral sanctions
-  6: Embassy closure, broad economic sanctions  
-  7: All ties severed, coalition sanctions imposed
-  8: UN Security Council emergency session, peacekeepers deploy
-  9: Military alliance invoked (Article 5, mutual defense)
-  10: Major power enters conflict, new world order moment
-
-ECONOMY (trade, finance):
-  3: Trade dispute filed, tariff threats
-  4: Tariffs on <$1B goods, single company sanctioned
-  5: Sector tariffs ($1-10B), major company sanctioned
-  6: Comprehensive restrictions ($10B+), currency intervention
-  7: Full embargo, SWIFT cut, market circuit breakers
-  8: Sovereign default, currency collapse (>30% drop)
-  9: Global contagion, multiple market crashes
-  10: Reserve currency crisis, Bretton Woods-level event
-
-UNREST (civil disorder, political violence):
-  3: Local protest (<1000), minor clashes
-  4: City-wide protests, dozens arrested
-  5: Nationwide protests, government buildings occupied
-  6: General strike, security forces deployed, casualties
-  7: State of emergency, internet blackout
-  8: Military vs civilians, mass casualties
-  9: Government collapses, coup, leader flees
-  10: Civil war begins, genocide underway
-
-RULES:
-- When uncertain, choose LOWER severity
-- Ongoing wars: new incidents are 1-2 points lower than war-starting events
-- Major powers (US, China, Russia, EU) add +1 to base severity
-- Casualties set a FLOOR: 100+ dead is at least severity 7
+STEP 4: Severity (1-10) - BE CONSERVATIVE
+1-3: Should rarely be used. If severity is this low, consider is_geopolitical=false
+4-5: Notable but contained; single country affected
+6-7: Significant; regional implications or international attention
+8-9: Major crisis; multiple countries involved, international response
+10: Extremely rare; war declarations, nuclear events, regime changes
 
 STEP 5: Summary
 - summary: One factual sentence describing what happened (FACTS ONLY, no predictions)
@@ -784,32 +743,8 @@ Your task:
    - Consider international response, regional stability, economic impact
    - For single-source events, still provide your best prediction
 
-4. SEVERITY: Score 1-10 using calibrated assessment
-   
-   Each source includes an "Enrichment severity" from initial analysis.
-   Use these as calibration signals, not mandates:
-   - If sources agree (all 7-8) → your score should be in that range
-   - If sources disagree (5 vs 8) → prefer the credible source's assessment
-   - You may adjust ±1 based on synthesis insights
-   
-   ANCHORS (reference points):
-   - 4-5: Single country, contained incident, routine for region
-   - 6-7: Regional implications, international statements issued
-   - 8-9: Multi-country response, military/economic actions taken
-   - 10: Generational event (benchmarks: 9/11, Ukraine invasion, COVID)
-   
-   SOURCE CONFIDENCE:
-   - 3+ credible sources agreeing → can use full 1-10 range
-   - 1-2 sources only → cap at severity 7 unless major breaking news
-   - Sources disagree → use most credible source's framing
-   
-   CATEGORY MATTERS:
-   - MILITARY: Anchor on casualties and strategic impact
-   - DIPLOMACY: Anchor on relationship damage and alliance effects  
-   - ECONOMY: Anchor on dollar amounts and market contagion
-   - UNREST: Anchor on scale and government response
-   
-   Don't inflate based on unverified claims or sensational headlines.
+4. SEVERITY: Score 1-10 based on credibly-sourced information
+   - Don't inflate based on unverified claims
 
 Return valid JSON matching the schema."""
 
@@ -1228,7 +1163,6 @@ async def synthesize_incident(
     client: genai.Client,
     sources: list[EventSource],
     location_name: str = "",
-    fallback_severity: int = 5,
 ) -> SynthesizedEvent | None:
     """
     Synthesize a unified event from multiple sources about the same incident.
@@ -1241,9 +1175,6 @@ async def synthesize_incident(
     
     Always generates fallout prediction, even for single-source events.
     Includes timeout to prevent hanging.
-    
-    Args:
-        fallback_severity: Severity to use if synthesis fails (typically max from sources)
     """
     
     # Sort by credibility (highest first), then by timestamp (earliest first for tie-breaking)
@@ -1253,14 +1184,13 @@ async def synthesize_incident(
     
     sorted_sources = sorted(sources, key=source_sort_key)
     
-    # Build the timeline with credibility labels and original severity assessments
+    # Build the timeline with credibility labels
     timeline_parts = []
     for i, s in enumerate(sorted_sources):
         cred = get_source_credibility(s.source_name)
         label = _get_credibility_label(cred)
-        severity_note = f"   Enrichment severity: {s.original_severity}/10"
         timeline_parts.append(
-            f"{i+1}. [{s.source_name}] ({label}) {s.timestamp}\n   Headline: {s.headline}\n   Summary: {s.summary}\n{severity_note}"
+            f"{i+1}. [{s.source_name}] ({label}) {s.timestamp}\n   Headline: {s.headline}\n   Summary: {s.summary}"
         )
     timeline = "\n".join(timeline_parts)
     
@@ -1291,13 +1221,13 @@ async def synthesize_incident(
         return synthesized
         
     except asyncio.TimeoutError:
-        print(f"  ⚠️ Synthesis timeout: {location_name} (using fallback severity {fallback_severity})")
+        print(f"  ⚠️ Synthesis timeout: {location_name}")
         src = sorted_sources[0]
         return SynthesizedEvent(
             title=src.headline,
             summary=src.summary,
             fallout_prediction="",
-            severity=fallback_severity,
+            severity=5,
         )
     except Exception as e:
         # Log detailed error info for debugging
@@ -1306,13 +1236,13 @@ async def synthesize_incident(
         print(f"      Error: {error_detail}")
         if 'response_text' in dir() and response_text:
             print(f"      Response preview: {response_text[:150]}...")
-        # Fallback to first source, using max severity from enrichment
+        # Fallback to first source
         src = sorted_sources[0]
         return SynthesizedEvent(
             title=src.headline,
             summary=src.summary,
             fallout_prediction="",
-            severity=fallback_severity,
+            severity=5,
         )
 
 
@@ -1447,7 +1377,6 @@ def group_by_incident(
             source_name=source_name or "Unknown",
             source_url=source_url or "",
             timestamp=timestamp,
-            original_severity=enriched.severity,
         )
         
         # Find matching group
@@ -1495,47 +1424,6 @@ def _get_article_hash(article: dict) -> str:
     title = article.get("title", "")
     url = article.get("url", "")
     return generate_source_id(title, url)
-
-
-def _log_severity_distribution(events: list[GeoEvent]) -> None:
-    """
-    Log severity distribution for calibration monitoring.
-    
-    Helps detect if the model is clustering too tightly (e.g., everything at 5-6)
-    or if the distribution has drifted over time.
-    """
-    from collections import Counter
-    
-    severities = [e.severity for e in events]
-    dist = Counter(severities)
-    
-    # Build distribution string: "4:2, 5:8, 6:5, 7:3"
-    dist_str = ", ".join(f"{sev}:{count}" for sev, count in sorted(dist.items()))
-    
-    # Calculate stats
-    mean_sev = sum(severities) / len(severities)
-    sorted_sevs = sorted(severities)
-    median_sev = sorted_sevs[len(sorted_sevs) // 2]
-    mode_sev = dist.most_common(1)[0][0] if dist else 5
-    
-    # Category breakdown
-    by_category: dict[str, list[int]] = {}
-    for e in events:
-        by_category.setdefault(e.category, []).append(e.severity)
-    
-    cat_means = {cat: sum(sevs)/len(sevs) for cat, sevs in by_category.items()}
-    cat_str = ", ".join(f"{cat[:3]}:{mean:.1f}" for cat, mean in sorted(cat_means.items()))
-    
-    print(f"\n📊 SEVERITY DISTRIBUTION (n={len(events)})")
-    print(f"   Distribution: {dist_str}")
-    print(f"   Mean: {mean_sev:.1f}, Median: {median_sev}, Mode: {mode_sev}")
-    print(f"   By category: {cat_str}")
-    
-    # Warn if clustering detected
-    if len(dist) <= 2 and len(events) >= 5:
-        print(f"   ⚠️ WARNING: Severity clustering detected - only {len(dist)} unique values")
-    if mode_sev == 5 and dist.get(5, 0) > len(events) * 0.5:
-        print(f"   ⚠️ WARNING: >50% of events at severity 5 - possible under-differentiation")
 
 
 async def process_articles(
@@ -1605,7 +1493,7 @@ async def process_articles(
     print(f"\n🔄 Synthesizing {len(incident_groups)} incidents (title + fallout)...")
     
     synthesis_tasks = [
-        synthesize_incident(gemini_client, g.sources, g.location_name, g.get_max_severity())
+        synthesize_incident(gemini_client, g.sources, g.location_name)
         for g in incident_groups
     ]
     
@@ -1640,12 +1528,16 @@ async def process_articles(
             group.category, group.lng, group.lat, earliest
         )
         
+        # Extract geographic region for notification filtering
+        region = get_region(group.location_name)
+        
         event = GeoEvent(
             id=incident_id,
             title=title,
             category=group.category,
             coordinates=(group.lng, group.lat),
             location_name=group.location_name,
+            region=region,
             severity=severity,
             summary=summary,
             timestamp=earliest,
@@ -1654,10 +1546,6 @@ async def process_articles(
             sources=group.sources,
         )
         events.append(event)
-    
-    # Log severity distribution for calibration monitoring
-    if events:
-        _log_severity_distribution(events)
     
     return events
 
@@ -1827,8 +1715,6 @@ async def merge_with_existing(
         synthesis_tasks = []
         for event in events_needing_synthesis:
             # Convert source dicts to EventSource objects for synthesis
-            # Use original_severity if available, otherwise use event's severity as estimate
-            event_severity = event.get("severity", 5)
             sources = [
                 EventSource(
                     id=s["id"],
@@ -1837,13 +1723,11 @@ async def merge_with_existing(
                     source_name=s["source_name"],
                     source_url=s["source_url"],
                     timestamp=s["timestamp"],
-                    original_severity=s.get("original_severity", event_severity),
                 )
                 for s in event["sources"]
             ]
-            # Use existing event severity as fallback if synthesis fails
             synthesis_tasks.append(
-                synthesize_incident(gemini_client, sources, event.get("location_name", ""), event_severity)
+                synthesize_incident(gemini_client, sources, event.get("location_name", ""))
             )
         
         synthesis_results = await asyncio.gather(*synthesis_tasks)
@@ -1879,8 +1763,8 @@ async def merge_with_existing(
     return final_events
 
 
-async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> list[dict]:
-    """Write events to local JSON file, merging with existing events. Returns final merged events."""
+async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> None:
+    """Write events to local JSON file, merging with existing events."""
     import shutil
     
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1912,6 +1796,10 @@ async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.C
                 "timestamp": event.get("timestamp", ""),
             }]
             event["last_updated"] = event.get("timestamp", "")
+        
+        # Add region field to events that don't have it
+        if "region" not in event:
+            event["region"] = get_region(event.get("location_name", ""))
     
     # Merge with existing (re-synthesizes when new sources added)
     final_events = await merge_with_existing(events, existing_data, gemini_client)
@@ -1921,12 +1809,10 @@ async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.C
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"💾 Wrote {len(final_events)} incidents ({total_sources} total sources) to {path}")
-    
-    return final_events
 
 
-async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> list[dict]:
-    """Write events to Google Cloud Storage. Returns final merged events."""
+async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> None:
+    """Write events to Google Cloud Storage."""
     from google.cloud import storage
     
     client = storage.Client()
@@ -1948,93 +1834,39 @@ async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: gen
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to gs://{bucket_name}/events.json")
-    
-    return final_events
 
 
 # ---------------------------------------------------------------------------
 # Push Notification Integration
 # ---------------------------------------------------------------------------
 
-def generate_event_fingerprint(event: dict) -> str:
+def send_push_notification(event: dict) -> bool:
     """
-    Generate a fingerprint for an event based on location, category, and time bucket.
+    Send push notification for an event to the API.
     
-    This prevents duplicate notifications for the same incident reported by different
-    sources or in different worker runs. Events with the same fingerprint are considered
-    the same incident.
-    
-    Fingerprint format: {location_normalized}|{category}|{time_bucket}
-    Time bucket: floor(timestamp / PUSH_FINGERPRINT_BUCKET_HOURS)
-    """
-    from datetime import datetime, timezone
-    
-    # Normalize location (lowercase, strip whitespace)
-    location = event.get("location_name", "unknown").lower().strip()
-    # Remove common suffixes for better matching
-    for suffix in [", ukraine", ", russia", ", israel", ", gaza", ", iran"]:
-        if location.endswith(suffix):
-            location = location[:-len(suffix)].strip()
-    
-    category = event.get("category", "UNKNOWN").upper()
-    
-    # Get timestamp and calculate time bucket
-    timestamp_str = event.get("timestamp", "")
-    try:
-        if timestamp_str:
-            if timestamp_str.endswith("Z"):
-                timestamp_str = timestamp_str[:-1] + "+00:00"
-            event_time = datetime.fromisoformat(timestamp_str)
-            if event_time.tzinfo is None:
-                event_time = event_time.replace(tzinfo=timezone.utc)
-            # Calculate time bucket (e.g., every 6 hours)
-            epoch_hours = int(event_time.timestamp() / 3600)
-            time_bucket = epoch_hours // PUSH_FINGERPRINT_BUCKET_HOURS
-        else:
-            # Use current time bucket if no timestamp
-            time_bucket = int(datetime.now(timezone.utc).timestamp() / 3600) // PUSH_FINGERPRINT_BUCKET_HOURS
-    except (ValueError, TypeError):
-        time_bucket = int(datetime.now(timezone.utc).timestamp() / 3600) // PUSH_FINGERPRINT_BUCKET_HOURS
-    
-    fingerprint = f"{location}|{category}|{time_bucket}"
-    return hashlib.md5(fingerprint.encode()).hexdigest()[:16]
-
-
-def send_push_notification(event: dict, notified_fingerprints: set[str]) -> tuple[bool, str]:
-    """
-    Send push notification for a significant event.
-    
-    Uses fingerprint-based deduplication to prevent duplicate notifications
-    for the same incident reported by different sources.
+    The API handles per-subscription deduplication, ensuring each subscriber
+    only receives each event once, even if this function is called multiple times.
+    User-defined rules filter which events each subscriber receives.
     
     Args:
         event: Event dict with id, title, summary, severity, category, timestamp
-        notified_fingerprints: Set of fingerprints already notified
         
     Returns:
-        Tuple of (success: bool, fingerprint: str)
+        True if sent successfully, False otherwise
     """
     import requests
     from datetime import datetime, timezone
     
     if not PUSH_API_SECRET:
         print("   ⚠️ PUSH_API_SECRET not set, skipping notification")
-        return False, ""
+        return False
     
     event_id = event.get("id", "")
     severity = event.get("severity", 0)
     
-    # Check severity threshold
+    # Basic severity filter - user rules handle granular filtering
     if severity < PUSH_NOTIFICATION_THRESHOLD:
-        return False, ""
-    
-    # Generate fingerprint for this event
-    fingerprint = generate_event_fingerprint(event)
-    
-    # Skip if already notified for this incident (fingerprint match)
-    if fingerprint in notified_fingerprints:
-        print(f"   ⏭️ Already notified for this incident (fingerprint: {fingerprint})")
-        return False, ""
+        return False
     
     # Check article age - only notify for recent news
     sources = event.get("sources", [])
@@ -2056,7 +1888,7 @@ def send_push_notification(event: dict, notified_fingerprints: set[str]) -> tupl
             
             if age_hours > PUSH_MAX_AGE_HOURS:
                 print(f"   ⏭️ Skipping old event ({age_hours:.1f}h old): {event.get('title', '')[:40]}...")
-                return False, ""
+                return False
         except (ValueError, TypeError) as e:
             print(f"   ⚠️ Could not parse timestamp '{timestamp_str}': {e}")
     
@@ -2065,8 +1897,17 @@ def send_push_notification(event: dict, notified_fingerprints: set[str]) -> tupl
     if len(summary) > 200:
         summary = summary[:197] + "..."
     
-    # Mark if this is a critical event (bypasses user rate limits)
+    # Mark if this is a critical event
     is_critical = severity >= PUSH_CRITICAL_THRESHOLD
+    
+    # Get region for rule-based filtering (extract if not present)
+    region = event.get("region")
+    if not region:
+        region = get_region(event.get("location_name", ""))
+    
+    # Count sources for multi-source confirmation rules
+    sources = event.get("sources", [])
+    sources_count = len(sources) if sources else 1
     
     payload = {
         "title": event.get("title", "Breaking: Geopolitical Event"),
@@ -2075,55 +1916,44 @@ def send_push_notification(event: dict, notified_fingerprints: set[str]) -> tupl
         "id": event_id,
         "severity": severity,
         "category": event.get("category"),
-        "critical": is_critical,  # API uses this to bypass rate limits
+        "region": region,
+        "location_name": event.get("location_name", ""),
+        "sources_count": sources_count,
+        "critical": is_critical,
     }
     
-    # Retry with exponential backoff for rate limiting
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(
-                PUSH_API_URL,
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {PUSH_API_SECRET}",
-                    "Content-Type": "application/json",
-                    "x-vercel-protection-bypass": PUSH_API_SECRET,
-                },
-                timeout=10,
-            )
+    try:
+        response = requests.post(
+            PUSH_API_URL,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {PUSH_API_SECRET}",
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+        
+        if response.ok:
+            result = response.json()
+            critical_tag = " 🚨 CRITICAL" if is_critical else ""
+            print(f"   🔔 Push sent{critical_tag}: {result.get('sent', 0)} delivered, {result.get('failed', 0)} failed")
+            return True
+        else:
+            print(f"   ⚠️ Push failed: HTTP {response.status_code}")
+            return False
             
-            if response.ok:
-                result = response.json()
-                critical_tag = " 🚨 CRITICAL" if is_critical else ""
-                print(f"   🔔 Push sent{critical_tag}: {result.get('sent', 0)} delivered, {result.get('failed', 0)} failed")
-                return True, fingerprint
-            elif response.status_code == 429:
-                # Rate limited - wait and retry
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
-                print(f"   ⏳ Rate limited, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                import time
-                time.sleep(wait_time)
-                continue
-            else:
-                print(f"   ⚠️ Push failed: HTTP {response.status_code}")
-                return False, ""
-                
-        except Exception as e:
-            print(f"   ⚠️ Push error: {type(e).__name__}: {e}")
-            return False, ""
-    
-    print(f"   ⚠️ Push failed after {max_retries} retries (rate limited)")
-    return False, ""
+    except Exception as e:
+        print(f"   ⚠️ Push error: {type(e).__name__}: {e}")
+        return False
 
 
 def notify_high_severity_events(events: list[dict]) -> int:
     """
     Check events and send push notifications for significant ones.
     
-    Uses fingerprint-based deduplication to prevent duplicate notifications
-    for the same incident across worker runs. Fingerprints are based on
-    location + category + time bucket, not event IDs.
+    The API handles per-subscription deduplication, ensuring each subscriber
+    only receives each event once. User-defined rules control which events
+    each subscriber receives based on severity, category, region, etc.
     
     Args:
         events: List of event dicts to check
@@ -2131,8 +1961,6 @@ def notify_high_severity_events(events: list[dict]) -> int:
     Returns:
         Number of notifications sent
     """
-    import requests
-    
     print("\n" + "=" * 60)
     print("📲 PUSH NOTIFICATIONS")
     print("=" * 60)
@@ -2140,40 +1968,13 @@ def notify_high_severity_events(events: list[dict]) -> int:
     print(f"   Secret configured: {'✓' if PUSH_API_SECRET else '✗ MISSING'}")
     print(f"   Severity threshold: {PUSH_NOTIFICATION_THRESHOLD}+ (critical: {PUSH_CRITICAL_THRESHOLD}+)")
     print(f"   Max age: {PUSH_MAX_AGE_HOURS} hours")
-    print(f"   Fingerprint bucket: {PUSH_FINGERPRINT_BUCKET_HOURS} hours")
     print(f"   Events to check: {len(events)}")
     
     if not PUSH_API_SECRET:
         print("   ⚠️ PUSH_API_SECRET not set - skipping all notifications")
         return 0
     
-    # Load previously notified fingerprints from Redis
-    notified_fingerprints: set[str] = set()
-    upstash_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
-    upstash_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
-    FINGERPRINT_KEY = "push:notified_fingerprints"
-    FINGERPRINT_TTL = 86400 * 7  # 7 days (longer than before to prevent duplicates)
-    
-    if not upstash_url or not upstash_token:
-        print("   ⚠️ Upstash credentials not set - fingerprint deduplication disabled!")
-    else:
-        try:
-            response = requests.get(
-                f"{upstash_url}/smembers/{FINGERPRINT_KEY}",
-                headers={"Authorization": f"Bearer {upstash_token}"},
-                timeout=5,
-            )
-            if response.ok:
-                result = response.json().get("result", [])
-                notified_fingerprints = set(result) if result else set()
-                print(f"   📋 Loaded {len(notified_fingerprints)} previously notified fingerprints")
-            else:
-                print(f"   ⚠️ Failed to load fingerprints: HTTP {response.status_code}")
-        except Exception as e:
-            print(f"   ⚠️ Could not load notified fingerprints: {e}")
-    
     notified_count = 0
-    new_fingerprints: list[str] = []
     
     # Count eligible events by severity tier
     eligible = [e for e in events if e.get("severity", 0) >= PUSH_NOTIFICATION_THRESHOLD]
@@ -2182,62 +1983,20 @@ def notify_high_severity_events(events: list[dict]) -> int:
     
     # Sort by severity descending so critical events are processed first
     sorted_events = sorted(
-        [e for e in events if e.get("severity", 0) >= PUSH_NOTIFICATION_THRESHOLD],
+        eligible,
         key=lambda e: e.get("severity", 0),
         reverse=True
     )
     
-    # Limit notifications per run to avoid overwhelming the API
-    MAX_NOTIFICATIONS_PER_RUN = 5
-    sent_this_run = 0
-    
     for event in sorted_events:
-        # Stop if we've sent enough this run
-        if sent_this_run >= MAX_NOTIFICATIONS_PER_RUN:
-            remaining = len(sorted_events) - sorted_events.index(event)
-            print(f"\n   ⏸️ Rate limit: sent {MAX_NOTIFICATIONS_PER_RUN} this run, {remaining} events deferred to next run")
-            break
-            
         severity = event.get("severity", 0)
         title = event.get("title", "Unknown")[:50]
         is_critical = severity >= PUSH_CRITICAL_THRESHOLD
         critical_tag = "🚨" if is_critical else "📍"
         print(f"\n   {critical_tag} [{severity}] {title}...")
         
-        success, fingerprint = send_push_notification(event, notified_fingerprints)
-        if success:
+        if send_push_notification(event):
             notified_count += 1
-            sent_this_run += 1
-            if fingerprint:
-                new_fingerprints.append(fingerprint)
-                notified_fingerprints.add(fingerprint)  # Add to set for this run
-            
-            # Add delay between successful sends to avoid rate limiting
-            import time
-            time.sleep(1)  # 1 second between sends
-    
-    # Save newly notified fingerprints to Redis (batched)
-    if new_fingerprints and upstash_url and upstash_token:
-        try:
-            # Batch SADD: add all fingerprints in a single call
-            members_path = "/".join(new_fingerprints)
-            save_response = requests.post(
-                f"{upstash_url}/sadd/{FINGERPRINT_KEY}/{members_path}",
-                headers={"Authorization": f"Bearer {upstash_token}"},
-                timeout=10,
-            )
-            if save_response.ok:
-                # Set expiry on the set (7 days to ensure no duplicates)
-                requests.post(
-                    f"{upstash_url}/expire/{FINGERPRINT_KEY}/{FINGERPRINT_TTL}",
-                    headers={"Authorization": f"Bearer {upstash_token}"},
-                    timeout=5,
-                )
-                print(f"   💾 Saved {len(new_fingerprints)} fingerprints to Redis (TTL: 7 days)")
-            else:
-                print(f"   ⚠️ Failed to save fingerprints: HTTP {save_response.status_code}")
-        except Exception as e:
-            print(f"   ⚠️ Could not save fingerprints: {e}")
     
     # Summary
     print(f"\n   {'─' * 40}")
@@ -2246,8 +2005,8 @@ def notify_high_severity_events(events: list[dict]) -> int:
     return notified_count
 
 
-async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> list[dict]:
-    """Write events to Cloudflare R2 (S3-compatible storage). Returns final merged events."""
+async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
+    """Write events to Cloudflare R2 (S3-compatible storage)."""
     import boto3
     
     endpoint_url = os.getenv("R2_ENDPOINT_URL")
@@ -2299,8 +2058,6 @@ async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> list[
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to R2")
-    
-    return final_events
 
 
 # ---------------------------------------------------------------------------
@@ -2401,19 +2158,23 @@ async def async_main(sources: str = "all"):
     
     print(f"\n⏱️  Processing completed in {elapsed:.1f}s")
     
-    # Output - write events (returns final merged events)
+    # Output - write events
     storage_mode = os.getenv("STORAGE_MODE", "local")
     if storage_mode == "r2":
-        final_events = await write_r2(events, gemini_client)
+        await write_r2(events, gemini_client)
     elif GCS_BUCKET:
-        final_events = await write_gcs(events, GCS_BUCKET, gemini_client)
+        await write_gcs(events, GCS_BUCKET, gemini_client)
     else:
-        final_events = await write_local(events, OUTPUT_PATH, gemini_client)
+        await write_local(events, OUTPUT_PATH, gemini_client)
     
-    # Send push notifications for high-severity events using FINAL merged event IDs
-    # This ensures notification IDs match what's actually in events.json
-    if final_events:
-        notify_high_severity_events(final_events)
+    # Send push notifications for high-severity NEW events
+    if events:
+        # Convert to dicts for notification processing
+        event_dicts = [
+            e.model_dump() if hasattr(e, 'model_dump') else e
+            for e in events
+        ]
+        notify_high_severity_events(event_dicts)
     else:
         print("\n📲 PUSH NOTIFICATIONS: No events to process")
     
