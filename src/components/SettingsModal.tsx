@@ -71,20 +71,20 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
         transition={{ duration: 0.2 }}
       >
         {/* Close Button */}
-        <button
-          onClick={onClose}
+            <button
+              onClick={onClose}
           className="absolute right-3 top-3 rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-          aria-label="Close settings"
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
+              aria-label="Close settings"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
 
         {/* Header Section */}
         <div className="border-b border-slate-700/50 px-6 py-5">
@@ -97,7 +97,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
           <p className="mt-1 font-mono text-sm tracking-wide text-slate-400">
             Configure your experience
           </p>
-        </div>
+          </div>
 
         {/* Content - Scrollable */}
         <div className="custom-scrollbar max-h-[60vh] overflow-y-auto">
@@ -119,7 +119,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                   />
                 </svg>
                 <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-                  Map View
+                Map View
                 </span>
               </div>
 
@@ -197,7 +197,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                   />
                 </svg>
                 <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-                  Notifications
+                Notifications
                 </span>
               </div>
               <NotificationSettings />

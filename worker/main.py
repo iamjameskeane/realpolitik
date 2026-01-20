@@ -54,10 +54,12 @@ UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 
 # Push notification configuration
-PUSH_API_URL = os.getenv("PUSH_API_URL", "https://realpolitik.world/api/push/send")
+PUSH_API_URL = os.getenv("PUSH_API_URL", "")
 PUSH_API_SECRET = os.getenv("PUSH_API_SECRET", "")
-PUSH_NOTIFICATION_THRESHOLD = 8  # Only notify for severity >= this
-PUSH_MAX_AGE_HOURS = 2  # Only notify for articles published within this many hours
+PUSH_NOTIFICATION_THRESHOLD = 5  # Minimum severity to consider (user prefs filter further)
+PUSH_CRITICAL_THRESHOLD = 9  # Critical events bypass rate limits
+PUSH_MAX_AGE_HOURS = 4  # Only notify for articles published within this many hours
+PUSH_FINGERPRINT_BUCKET_HOURS = 6  # Time bucket size for deduplication
 
 OUTPUT_PATH = Path(__file__).parent.parent / "public" / "events.json"
 
@@ -1754,8 +1756,8 @@ async def merge_with_existing(
     return final_events
 
 
-async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> None:
-    """Write events to local JSON file, merging with existing events."""
+async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> list[dict]:
+    """Write events to local JSON file, merging with existing events. Returns final merged events."""
     import shutil
     
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1796,10 +1798,12 @@ async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.C
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"💾 Wrote {len(final_events)} incidents ({total_sources} total sources) to {path}")
+    
+    return final_events
 
 
-async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> None:
-    """Write events to Google Cloud Storage."""
+async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> list[dict]:
+    """Write events to Google Cloud Storage. Returns final merged events."""
     from google.cloud import storage
     
     client = storage.Client()
@@ -1821,46 +1825,97 @@ async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: gen
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to gs://{bucket_name}/events.json")
+    
+    return final_events
 
 
 # ---------------------------------------------------------------------------
 # Push Notification Integration
 # ---------------------------------------------------------------------------
 
-def send_push_notification(event: dict, notified_ids: set[str]) -> bool:
+def generate_event_fingerprint(event: dict) -> str:
     """
-    Send push notification for a high-severity event.
+    Generate a fingerprint for an event based on location, category, and time bucket.
     
-    Called after processing new events when severity >= threshold.
-    Returns True if notification was sent successfully.
+    This prevents duplicate notifications for the same incident reported by different
+    sources or in different worker runs. Events with the same fingerprint are considered
+    the same incident.
+    
+    Fingerprint format: {location_normalized}|{category}|{time_bucket}
+    Time bucket: floor(timestamp / PUSH_FINGERPRINT_BUCKET_HOURS)
+    """
+    from datetime import datetime, timezone
+    
+    # Normalize location (lowercase, strip whitespace)
+    location = event.get("location_name", "unknown").lower().strip()
+    # Remove common suffixes for better matching
+    for suffix in [", ukraine", ", russia", ", israel", ", gaza", ", iran"]:
+        if location.endswith(suffix):
+            location = location[:-len(suffix)].strip()
+    
+    category = event.get("category", "UNKNOWN").upper()
+    
+    # Get timestamp and calculate time bucket
+    timestamp_str = event.get("timestamp", "")
+    try:
+        if timestamp_str:
+            if timestamp_str.endswith("Z"):
+                timestamp_str = timestamp_str[:-1] + "+00:00"
+            event_time = datetime.fromisoformat(timestamp_str)
+            if event_time.tzinfo is None:
+                event_time = event_time.replace(tzinfo=timezone.utc)
+            # Calculate time bucket (e.g., every 6 hours)
+            epoch_hours = int(event_time.timestamp() / 3600)
+            time_bucket = epoch_hours // PUSH_FINGERPRINT_BUCKET_HOURS
+        else:
+            # Use current time bucket if no timestamp
+            time_bucket = int(datetime.now(timezone.utc).timestamp() / 3600) // PUSH_FINGERPRINT_BUCKET_HOURS
+    except (ValueError, TypeError):
+        time_bucket = int(datetime.now(timezone.utc).timestamp() / 3600) // PUSH_FINGERPRINT_BUCKET_HOURS
+    
+    fingerprint = f"{location}|{category}|{time_bucket}"
+    return hashlib.md5(fingerprint.encode()).hexdigest()[:16]
+
+
+def send_push_notification(event: dict, notified_fingerprints: set[str]) -> tuple[bool, str]:
+    """
+    Send push notification for a significant event.
+    
+    Uses fingerprint-based deduplication to prevent duplicate notifications
+    for the same incident reported by different sources.
     
     Args:
         event: Event dict with id, title, summary, severity, category, timestamp
-        notified_ids: Set of event IDs already notified (for deduplication)
+        notified_fingerprints: Set of fingerprints already notified
+        
+    Returns:
+        Tuple of (success: bool, fingerprint: str)
     """
     import requests
     from datetime import datetime, timezone
     
     if not PUSH_API_SECRET:
         print("   ⚠️ PUSH_API_SECRET not set, skipping notification")
-        return False
+        return False, ""
     
     event_id = event.get("id", "")
-    
-    # Skip if already notified for this event
-    if event_id in notified_ids:
-        print(f"   ⏭️ Already notified for event {event_id[:12]}...")
-        return False
-    
     severity = event.get("severity", 0)
+    
+    # Check severity threshold
     if severity < PUSH_NOTIFICATION_THRESHOLD:
-        return False
+        return False, ""
+    
+    # Generate fingerprint for this event
+    fingerprint = generate_event_fingerprint(event)
+    
+    # Skip if already notified for this incident (fingerprint match)
+    if fingerprint in notified_fingerprints:
+        print(f"   ⏭️ Already notified for this incident (fingerprint: {fingerprint})")
+        return False, ""
     
     # Check article age - only notify for recent news
-    # Use the most recent source timestamp if available
     sources = event.get("sources", [])
     if sources:
-        # Get the most recent source timestamp
         latest_source = max(sources, key=lambda s: s.get("timestamp", ""))
         timestamp_str = latest_source.get("timestamp", event.get("timestamp", ""))
     else:
@@ -1868,7 +1923,6 @@ def send_push_notification(event: dict, notified_ids: set[str]) -> bool:
     
     if timestamp_str:
         try:
-            # Parse ISO timestamp
             if timestamp_str.endswith("Z"):
                 timestamp_str = timestamp_str[:-1] + "+00:00"
             event_time = datetime.fromisoformat(timestamp_str)
@@ -1879,15 +1933,17 @@ def send_push_notification(event: dict, notified_ids: set[str]) -> bool:
             
             if age_hours > PUSH_MAX_AGE_HOURS:
                 print(f"   ⏭️ Skipping old event ({age_hours:.1f}h old): {event.get('title', '')[:40]}...")
-                return False
+                return False, ""
         except (ValueError, TypeError) as e:
             print(f"   ⚠️ Could not parse timestamp '{timestamp_str}': {e}")
-            # Continue anyway for events with unparseable timestamps
     
     # Truncate body for notification display
     summary = event.get("summary", "")
     if len(summary) > 200:
         summary = summary[:197] + "..."
+    
+    # Mark if this is a critical event (bypasses user rate limits)
+    is_critical = severity >= PUSH_CRITICAL_THRESHOLD
     
     payload = {
         "title": event.get("title", "Breaking: Geopolitical Event"),
@@ -1896,39 +1952,55 @@ def send_push_notification(event: dict, notified_ids: set[str]) -> bool:
         "id": event_id,
         "severity": severity,
         "category": event.get("category"),
+        "critical": is_critical,  # API uses this to bypass rate limits
     }
     
-    try:
-        response = requests.post(
-            PUSH_API_URL,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {PUSH_API_SECRET}",
-                "Content-Type": "application/json",
-            },
-            timeout=10,
-        )
-        
-        if response.ok:
-            result = response.json()
-            print(f"   🔔 Push sent: {result.get('sent', 0)} delivered, {result.get('failed', 0)} failed")
-            notified_ids.add(event_id)  # Mark as notified
-            return True
-        else:
-            print(f"   ⚠️ Push failed: HTTP {response.status_code}")
-            return False
+    # Retry with exponential backoff for rate limiting
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                PUSH_API_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {PUSH_API_SECRET}",
+                    "Content-Type": "application/json",
+                    "x-vercel-protection-bypass": PUSH_API_SECRET,
+                },
+                timeout=10,
+            )
             
-    except Exception as e:
-        print(f"   ⚠️ Push error: {type(e).__name__}: {e}")
-        return False
+            if response.ok:
+                result = response.json()
+                critical_tag = " 🚨 CRITICAL" if is_critical else ""
+                print(f"   🔔 Push sent{critical_tag}: {result.get('sent', 0)} delivered, {result.get('failed', 0)} failed")
+                return True, fingerprint
+            elif response.status_code == 429:
+                # Rate limited - wait and retry
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                print(f"   ⏳ Rate limited, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+                import time
+                time.sleep(wait_time)
+                continue
+            else:
+                print(f"   ⚠️ Push failed: HTTP {response.status_code}")
+                return False, ""
+                
+        except Exception as e:
+            print(f"   ⚠️ Push error: {type(e).__name__}: {e}")
+            return False, ""
+    
+    print(f"   ⚠️ Push failed after {max_retries} retries (rate limited)")
+    return False, ""
 
 
 def notify_high_severity_events(events: list[dict]) -> int:
     """
-    Check events and send push notifications for high-severity ones.
+    Check events and send push notifications for significant ones.
     
-    Tracks notified event IDs in Redis to prevent duplicate notifications
-    when the same event is processed multiple times.
+    Uses fingerprint-based deduplication to prevent duplicate notifications
+    for the same incident across worker runs. Fingerprints are based on
+    location + category + time bucket, not event IDs.
     
     Args:
         events: List of event dicts to check
@@ -1938,70 +2010,121 @@ def notify_high_severity_events(events: list[dict]) -> int:
     """
     import requests
     
+    print("\n" + "=" * 60)
+    print("📲 PUSH NOTIFICATIONS")
+    print("=" * 60)
+    print(f"   API URL: {PUSH_API_URL}")
+    print(f"   Secret configured: {'✓' if PUSH_API_SECRET else '✗ MISSING'}")
+    print(f"   Severity threshold: {PUSH_NOTIFICATION_THRESHOLD}+ (critical: {PUSH_CRITICAL_THRESHOLD}+)")
+    print(f"   Max age: {PUSH_MAX_AGE_HOURS} hours")
+    print(f"   Fingerprint bucket: {PUSH_FINGERPRINT_BUCKET_HOURS} hours")
+    print(f"   Events to check: {len(events)}")
+    
     if not PUSH_API_SECRET:
+        print("   ⚠️ PUSH_API_SECRET not set - skipping all notifications")
         return 0
     
-    # Load previously notified event IDs from Redis via API
-    notified_ids: set[str] = set()
-    try:
-        # Use the debug endpoint to get existing notified IDs (via a dedicated key)
-        upstash_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
-        upstash_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
-        
-        if upstash_url and upstash_token:
-            # Get the set of notified IDs from Redis
+    # Load previously notified fingerprints from Redis
+    notified_fingerprints: set[str] = set()
+    upstash_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
+    upstash_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+    FINGERPRINT_KEY = "push:notified_fingerprints"
+    FINGERPRINT_TTL = 86400 * 7  # 7 days (longer than before to prevent duplicates)
+    
+    if not upstash_url or not upstash_token:
+        print("   ⚠️ Upstash credentials not set - fingerprint deduplication disabled!")
+    else:
+        try:
             response = requests.get(
-                f"{upstash_url}/smembers/push:notified_ids",
+                f"{upstash_url}/smembers/{FINGERPRINT_KEY}",
                 headers={"Authorization": f"Bearer {upstash_token}"},
                 timeout=5,
             )
             if response.ok:
                 result = response.json().get("result", [])
-                notified_ids = set(result) if result else set()
-                print(f"   📋 Loaded {len(notified_ids)} previously notified event IDs")
-    except Exception as e:
-        print(f"   ⚠️ Could not load notified IDs: {e}")
+                notified_fingerprints = set(result) if result else set()
+                print(f"   📋 Loaded {len(notified_fingerprints)} previously notified fingerprints")
+            else:
+                print(f"   ⚠️ Failed to load fingerprints: HTTP {response.status_code}")
+        except Exception as e:
+            print(f"   ⚠️ Could not load notified fingerprints: {e}")
     
     notified_count = 0
-    new_notified_ids: list[str] = []
+    new_fingerprints: list[str] = []
     
-    for event in events:
-        severity = event.get("severity", 0)
-        if severity >= PUSH_NOTIFICATION_THRESHOLD:
-            if send_push_notification(event, notified_ids):
-                notified_count += 1
-                new_notified_ids.append(event.get("id", ""))
+    # Count eligible events by severity tier
+    eligible = [e for e in events if e.get("severity", 0) >= PUSH_NOTIFICATION_THRESHOLD]
+    critical = [e for e in eligible if e.get("severity", 0) >= PUSH_CRITICAL_THRESHOLD]
+    print(f"   🎯 Events at severity {PUSH_NOTIFICATION_THRESHOLD}+: {len(eligible)} ({len(critical)} critical)")
     
-    # Save newly notified IDs to Redis (batched - single call)
-    if new_notified_ids:
-        try:
-            upstash_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
-            upstash_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+    # Sort by severity descending so critical events are processed first
+    sorted_events = sorted(
+        [e for e in events if e.get("severity", 0) >= PUSH_NOTIFICATION_THRESHOLD],
+        key=lambda e: e.get("severity", 0),
+        reverse=True
+    )
+    
+    # Limit notifications per run to avoid overwhelming the API
+    MAX_NOTIFICATIONS_PER_RUN = 5
+    sent_this_run = 0
+    
+    for event in sorted_events:
+        # Stop if we've sent enough this run
+        if sent_this_run >= MAX_NOTIFICATIONS_PER_RUN:
+            remaining = len(sorted_events) - sorted_events.index(event)
+            print(f"\n   ⏸️ Rate limit: sent {MAX_NOTIFICATIONS_PER_RUN} this run, {remaining} events deferred to next run")
+            break
             
-            if upstash_url and upstash_token:
-                # Batch SADD: add all IDs in a single call
-                # Upstash REST API: POST /sadd/key/member1/member2/member3
-                members_path = "/".join(new_notified_ids)
+        severity = event.get("severity", 0)
+        title = event.get("title", "Unknown")[:50]
+        is_critical = severity >= PUSH_CRITICAL_THRESHOLD
+        critical_tag = "🚨" if is_critical else "📍"
+        print(f"\n   {critical_tag} [{severity}] {title}...")
+        
+        success, fingerprint = send_push_notification(event, notified_fingerprints)
+        if success:
+            notified_count += 1
+            sent_this_run += 1
+            if fingerprint:
+                new_fingerprints.append(fingerprint)
+                notified_fingerprints.add(fingerprint)  # Add to set for this run
+            
+            # Add delay between successful sends to avoid rate limiting
+            import time
+            time.sleep(1)  # 1 second between sends
+    
+    # Save newly notified fingerprints to Redis (batched)
+    if new_fingerprints and upstash_url and upstash_token:
+        try:
+            # Batch SADD: add all fingerprints in a single call
+            members_path = "/".join(new_fingerprints)
+            save_response = requests.post(
+                f"{upstash_url}/sadd/{FINGERPRINT_KEY}/{members_path}",
+                headers={"Authorization": f"Bearer {upstash_token}"},
+                timeout=10,
+            )
+            if save_response.ok:
+                # Set expiry on the set (7 days to ensure no duplicates)
                 requests.post(
-                    f"{upstash_url}/sadd/push:notified_ids/{members_path}",
-                    headers={"Authorization": f"Bearer {upstash_token}"},
-                    timeout=10,
-                )
-                # Set expiry on the set (7 days)
-                requests.post(
-                    f"{upstash_url}/expire/push:notified_ids/604800",
+                    f"{upstash_url}/expire/{FINGERPRINT_KEY}/{FINGERPRINT_TTL}",
                     headers={"Authorization": f"Bearer {upstash_token}"},
                     timeout=5,
                 )
-                print(f"   💾 Saved {len(new_notified_ids)} notified IDs to Redis")
+                print(f"   💾 Saved {len(new_fingerprints)} fingerprints to Redis (TTL: 7 days)")
+            else:
+                print(f"   ⚠️ Failed to save fingerprints: HTTP {save_response.status_code}")
         except Exception as e:
-            print(f"   ⚠️ Could not save notified IDs: {e}")
+            print(f"   ⚠️ Could not save fingerprints: {e}")
+    
+    # Summary
+    print(f"\n   {'─' * 40}")
+    print(f"   📊 PUSH SUMMARY: {notified_count} sent, {len(eligible) - notified_count} skipped")
     
     return notified_count
 
 
-async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
-    """Write events to Cloudflare R2 (S3-compatible storage)."""
+async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> list[dict]:
+    """Write events to Cloudflare R2 (S3-compatible storage). Returns final merged events."""
     import boto3
     
     endpoint_url = os.getenv("R2_ENDPOINT_URL")
@@ -2053,6 +2176,8 @@ async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to R2")
+    
+    return final_events
 
 
 # ---------------------------------------------------------------------------
@@ -2153,31 +2278,21 @@ async def async_main(sources: str = "all"):
     
     print(f"\n⏱️  Processing completed in {elapsed:.1f}s")
     
-    # Output - write events
+    # Output - write events (returns final merged events)
     storage_mode = os.getenv("STORAGE_MODE", "local")
     if storage_mode == "r2":
-        await write_r2(events, gemini_client)
+        final_events = await write_r2(events, gemini_client)
     elif GCS_BUCKET:
-        await write_gcs(events, GCS_BUCKET, gemini_client)
+        final_events = await write_gcs(events, GCS_BUCKET, gemini_client)
     else:
-        await write_local(events, OUTPUT_PATH, gemini_client)
+        final_events = await write_local(events, OUTPUT_PATH, gemini_client)
     
-    # Send push notifications for high-severity NEW events
-    # Only notify for events that were just created (not all historical events)
-    if events and PUSH_API_SECRET:
-        print("\n🔔 Checking for high-severity events to notify...")
-        high_severity_events = [
-            e.model_dump() if hasattr(e, 'model_dump') else e
-            for e in events
-            if (e.severity if hasattr(e, 'severity') else e.get('severity', 0)) >= PUSH_NOTIFICATION_THRESHOLD
-        ]
-        
-        if high_severity_events:
-            notified = notify_high_severity_events(high_severity_events)
-            if notified > 0:
-                print(f"   📨 Sent {notified} push notification(s)")
-        else:
-            print("   No events above severity threshold")
+    # Send push notifications for high-severity events using FINAL merged event IDs
+    # This ensures notification IDs match what's actually in events.json
+    if final_events:
+        notify_high_severity_events(final_events)
+    else:
+        print("\n📲 PUSH NOTIFICATIONS: No events to process")
     
     print("\n✅ Done!")
     print("=" * 60)

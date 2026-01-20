@@ -144,6 +144,9 @@ import { STORAGE_KEYS } from "@/lib/constants";
 
 const STORAGE_KEY = STORAGE_KEYS.PUSH_PREFERENCES;
 
+// Custom event for subscription state changes (to sync multiple hook instances)
+const SUBSCRIPTION_CHANGE_EVENT = "push-subscription-change";
+
 // =============================================================================
 // HOOK
 // =============================================================================
@@ -159,6 +162,37 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     error: null,
     preferences: DEFAULT_PREFERENCES,
   });
+
+  // ---------------------------------------------------------------------------
+  // SYNC SUBSCRIPTION STATE ACROSS INSTANCES
+  // ---------------------------------------------------------------------------
+  
+  // Re-check subscription status when another instance changes it
+  useEffect(() => {
+    const handleSubscriptionChange = async () => {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        if (registrations.length > 0) {
+          const registration = await navigator.serviceWorker.ready;
+          const subscription = await registration.pushManager.getSubscription();
+          const isSubscribed = !!subscription;
+          
+          setState((prev) => {
+            if (prev.isSubscribed !== isSubscribed) {
+              console.log("[Push] Syncing subscription state:", isSubscribed);
+              return { ...prev, isSubscribed, preferences: { ...prev.preferences, enabled: isSubscribed } };
+            }
+            return prev;
+          });
+        }
+      } catch (e) {
+        console.log("[Push] Error syncing subscription:", e);
+      }
+    };
+
+    window.addEventListener(SUBSCRIPTION_CHANGE_EVENT, handleSubscriptionChange);
+    return () => window.removeEventListener(SUBSCRIPTION_CHANGE_EVENT, handleSubscriptionChange);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // INITIALIZATION
@@ -364,6 +398,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         preferences: newPrefs,
       }));
 
+      // Notify other instances that subscription state changed
+      window.dispatchEvent(new CustomEvent(SUBSCRIPTION_CHANGE_EVENT));
+
       return true;
     } catch (error: unknown) {
       console.error("[Push] Subscribe failed:", error);
@@ -411,6 +448,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         error: null,
         preferences: newPrefs,
       }));
+
+      // Notify other instances that subscription state changed
+      window.dispatchEvent(new CustomEvent(SUBSCRIPTION_CHANGE_EVENT));
 
       return true;
     } catch (error: unknown) {

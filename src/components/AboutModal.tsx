@@ -173,7 +173,6 @@ export function AboutModal({ onClose }: AboutModalProps) {
                   "CBS News",
                   "Breaking Defense",
                   "Foreign Affairs",
-                  "NewsAPI",
                 ].map((source) => (
                   <span
                     key={source}

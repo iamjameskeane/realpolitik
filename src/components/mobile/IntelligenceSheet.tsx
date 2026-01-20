@@ -58,15 +58,19 @@ interface IntelligenceSheetProps {
   categoryCounts: Record<EventCategory, number>;
   // Event visual states
   eventStateMap?: Map<string, EventVisualState>;
-  // Inbox - shows all unseen events (purple dots)
-  unseenEvents: GeoEvent[];
-  unseenCount: number;
+  // Notification inbox - events from push notifications
+  inboxEvents: GeoEvent[];
+  inboxCount: number;
+  removeFromInbox?: (eventId: string) => void;
+  clearNotificationInbox?: () => void;
+  notificationsEnabled?: boolean;
+  notificationsLoading?: boolean;
+  onOpenSettings?: () => void;
   // What's New - only new events since last visit (for Catch Up)
   incomingEvents: GeoEvent[];
   incomingCount: number;
   inboxOpen: boolean;
   onInboxToggle: () => void;
-  onMarkAllRead?: () => void;
   // Touring modes (catch up through inbox or flyover through filtered events)
   isTouringMode?: boolean;
   catchUpMode?: boolean;
@@ -113,13 +117,17 @@ export function IntelligenceSheet({
   onToggleCategory,
   categoryCounts,
   eventStateMap,
-  unseenEvents,
-  unseenCount,
+  inboxEvents,
+  inboxCount,
+  removeFromInbox,
+  clearNotificationInbox,
+  notificationsEnabled,
+  notificationsLoading,
+  onOpenSettings,
   incomingEvents: _incomingEvents,
   incomingCount,
   inboxOpen,
   onInboxToggle,
-  onMarkAllRead,
   isTouringMode,
   catchUpMode,
   flyoverMode,
@@ -173,17 +181,17 @@ export function IntelligenceSheet({
     );
   }, [events, searchQuery]);
 
-  // Filter unseenEvents by search query as well
-  const searchFilteredUnseenEvents = useMemo(() => {
-    if (!searchQuery.trim()) return unseenEvents;
+  // Filter inboxEvents by search query as well
+  const searchFilteredInboxEvents = useMemo(() => {
+    if (!searchQuery.trim()) return inboxEvents;
     const query = searchQuery.toLowerCase();
-    return unseenEvents.filter(
+    return inboxEvents.filter(
       (e) =>
         e.title.toLowerCase().includes(query) ||
         e.summary.toLowerCase().includes(query) ||
         (e.location_name && e.location_name.toLowerCase().includes(query))
     );
-  }, [unseenEvents, searchQuery]);
+  }, [inboxEvents, searchQuery]);
 
   // Animate to current height (uses --vh for keyboard-aware sizing)
   useEffect(() => {
@@ -418,6 +426,10 @@ export function IntelligenceSheet({
   // Handle event selection from list
   const handleEventSelect = useCallback(
     (event: GeoEvent) => {
+      // If in inbox mode, remove the event from inbox when clicked
+      if (inboxOpen && removeFromInbox) {
+        removeFromInbox(event.id);
+      }
       // Find index in the full (non-search-filtered) events list for proper navigation
       const index = events.findIndex((e) => e.id === event.id);
       onEventSelect(event, index);
@@ -427,7 +439,7 @@ export function IntelligenceSheet({
       setIsSearchOpen(false);
       setIsSearchFocused(false);
     },
-    [events, onEventSelect, onPhaseChange]
+    [events, onEventSelect, onPhaseChange, inboxOpen, removeFromInbox]
   );
 
   // Handle event selection from cluster view
@@ -553,12 +565,18 @@ export function IntelligenceSheet({
               /* Standard single-row layout for other modes */
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {/* Back button for pilot/analyst modes */}
-                  {phase !== "scanner" && (
+                  {/* Back button for pilot/analyst modes OR inbox mode */}
+                  {(phase !== "scanner" || inboxOpen) && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
+                        if (phase === "scanner" && inboxOpen) {
+                          // In inbox view, back closes inbox
+                          onInboxToggle();
+                        } else if (phase !== "scanner") {
+                          // In pilot/analyst, go back to previous view (inbox stays open if it was)
+                          onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
+                        }
                       }}
                       className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
                     >
@@ -573,76 +591,17 @@ export function IntelligenceSheet({
                     </button>
                   )}
                   <h2 className="font-mono text-sm font-medium uppercase tracking-wider text-foreground">
-                    {phase === "scanner" && (inboxOpen ? "Inbox" : "Event Feed")}
+                    {phase === "scanner" && (inboxOpen ? "Notifications" : "Event Feed")}
                     {phase === "pilot" &&
                       (isTouringMode ? (catchUpMode ? "Catching Up" : "Flyover") : "Event Details")}
                     {phase === "analyst" && "AI Briefing"}
                   </h2>
-                  {/* Event count for scanner mode */}
-                  {phase === "scanner" && (
+                  {/* Event count for scanner mode - only show in feed, not inbox */}
+                  {phase === "scanner" && !inboxOpen && (
                     <span className="font-mono text-xs text-foreground/40">
-                      {inboxOpen ? searchFilteredUnseenEvents.length : searchFilteredEvents.length}
+                      {searchFilteredEvents.length}
                     </span>
                   )}
-              {/* Inbox actions - Catch Up and Mark All Read */}
-              {phase === "scanner" && inboxOpen && unseenCount > 0 && (
-                <div className="flex items-center gap-1.5">
-                  {/* Catch Up button */}
-                  {onStartCatchUp && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStartCatchUp();
-                      }}
-                      className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 transition-all active:scale-95"
-                    >
-                      <svg
-                        className="h-3 w-3 text-accent"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2.5}
-                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                        />
-                      </svg>
-                      <span className="font-mono text-[10px] font-medium uppercase text-accent">
-                        Catch Up
-                      </span>
-                    </button>
-                  )}
-                  {/* Mark All Read button */}
-                  {onMarkAllRead && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onMarkAllRead();
-                      }}
-                      className="flex items-center gap-1 rounded-full border border-foreground/20 bg-foreground/5 px-2 py-0.5 transition-all active:scale-95"
-                    >
-                      <svg
-                        className="h-3 w-3 text-foreground/60"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      <span className="font-mono text-[10px] font-medium uppercase text-foreground/60">
-                        Read All
-                      </span>
-                    </button>
-                  )}
-                </div>
-              )}
               {/* Flyover button - in feed mode (not inbox, not cluster view) */}
               {phase === "scanner" &&
                 !inboxOpen &&
@@ -689,80 +648,91 @@ export function IntelligenceSheet({
               )}
             </div>
 
-            {/* Right side buttons - search + inbox (hidden in cluster view) */}
+            {/* Right side buttons */}
             {phase === "scanner" && !clusterViewOpen && (
               <div className="flex items-center gap-2">
-                {/* Search button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!isSearchOpen) {
-                      // Opening search - expand sheet to show results
-                      setSheetHeight("expanded");
-                    } else {
-                      // Closing search - clear state
-                      setSearchQuery("");
-                      setIsSearchFocused(false);
-                    }
-                    setIsSearchOpen(!isSearchOpen);
-                  }}
-                  className={`flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
-                    isSearchOpen ? "bg-accent/20" : "bg-foreground/10"
-                  }`}
-                >
-                  <svg
-                    className={`h-4 w-4 ${isSearchOpen ? "text-accent" : "text-foreground/40"}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </button>
-
-                {/* Inbox bell button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onInboxToggle();
-                  }}
-                  className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
-                    inboxOpen ? "bg-accent/20" : "bg-foreground/10"
-                  }`}
-                >
-                  <svg
-                    className={`h-4 w-4 ${inboxOpen || unseenCount > 0 ? "text-accent" : "text-foreground/40"}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                    />
-                  </svg>
-                  {/* Badge - show count of unseen events */}
-                  {unseenCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
-                      {unseenCount > 9 ? "9+" : unseenCount}
-                    </span>
-                  )}
-                </button>
+                {inboxOpen ? (
+                  /* Inbox mode: show Catch Up + Read All */
+                  <>
+                    {inboxCount > 0 && onStartCatchUp && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onStartCatchUp();
+                        }}
+                        className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 transition-all active:scale-95"
+                      >
+                        <svg className="h-3.5 w-3.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        </svg>
+                        <span className="font-mono text-[10px] font-medium uppercase text-accent">Catch Up</span>
+                      </button>
+                    )}
+                    {inboxCount > 0 && clearNotificationInbox && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearNotificationInbox();
+                        }}
+                        className="flex items-center gap-1 rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-1 transition-all active:scale-95"
+                      >
+                        <svg className="h-3.5 w-3.5 text-foreground/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="font-mono text-[10px] font-medium uppercase text-foreground/60">Read All</span>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  /* Feed mode: show Search + Inbox bell */
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isSearchOpen) {
+                          setSheetHeight("expanded");
+                        } else {
+                          setSearchQuery("");
+                          setIsSearchFocused(false);
+                        }
+                        setIsSearchOpen(!isSearchOpen);
+                      }}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
+                        isSearchOpen ? "bg-accent/20" : "bg-foreground/10"
+                      }`}
+                    >
+                      <svg className={`h-4 w-4 ${isSearchOpen ? "text-accent" : "text-foreground/40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onInboxToggle();
+                      }}
+                      className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
+                        inboxOpen ? "bg-accent/20" : "bg-foreground/10"
+                      }`}
+                    >
+                      <svg className={`h-4 w-4 ${inboxCount > 0 ? "text-accent" : "text-foreground/40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                      </svg>
+                      {inboxCount > 0 && (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
+                          {inboxCount > 9 ? "9+" : inboxCount}
+                        </span>
+                      )}
+                    </button>
+                  </>
+                )}
               </div>
             )}
               </div>
             )}
           </div>
 
-          {/* Search bar - expandable (hidden in cluster view) */}
-          {phase === "scanner" && isSearchOpen && !clusterViewOpen && (
+          {/* Search bar - expandable (hidden in cluster view and inbox mode) */}
+          {phase === "scanner" && isSearchOpen && !clusterViewOpen && !inboxOpen && (
             <div className="px-4 pb-3">
               <div className="relative">
                 <svg
@@ -851,16 +821,70 @@ export function IntelligenceSheet({
                   onEventSelect={handleClusterEventSelect}
                   eventStateMap={eventStateMap}
                 />
+              ) : inboxOpen && notificationsLoading !== true && notificationsEnabled === false ? (
+                // Inbox is open but notifications not set up
+                <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
+                  <svg
+                    className="mb-4 h-12 w-12 text-foreground/20"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                    />
+                  </svg>
+                  <p className="mb-2 text-sm font-medium text-foreground/70">
+                    Notifications not enabled
+                  </p>
+                  <p className="mb-4 text-xs text-foreground/40">
+                    Enable push notifications to receive alerts for major events
+                  </p>
+                  <button
+                    onClick={() => {
+                      onInboxToggle(); // Close inbox first
+                      onOpenSettings?.();
+                    }}
+                    className="rounded-full border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+                  >
+                    Open Settings
+                  </button>
+                </div>
+              ) : inboxOpen && inboxCount === 0 ? (
+                // Inbox is open, notifications enabled, but no events
+                <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
+                  <svg
+                    className="mb-4 h-12 w-12 text-foreground/20"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  <p className="mb-2 text-sm font-medium text-foreground/70">All caught up</p>
+                  <p className="text-xs text-foreground/40">
+                    You&apos;ll be notified when major events occur
+                  </p>
+                </div>
               ) : (
-                // Normal feed or inbox
+                // Normal feed or inbox with events
                 <EventList
-                  events={inboxOpen ? searchFilteredUnseenEvents : searchFilteredEvents}
+                  events={inboxOpen ? searchFilteredInboxEvents : searchFilteredEvents}
                   onEventSelect={handleEventSelect}
                   eventStateMap={eventStateMap}
                   isInboxMode={inboxOpen}
                   isWhatsNewMode={!inboxOpen && sortBy === "unread"}
                   incomingCount={incomingCount}
                   onWhatsNewTap={onInboxToggle}
+                  onDismiss={inboxOpen ? removeFromInbox : undefined}
                 />
               )}
             </div>

@@ -13,10 +13,10 @@ import { SettingsModal } from "./SettingsModal";
 import { GeoEvent, CATEGORY_COLORS, CATEGORY_DESCRIPTIONS, EventCategory } from "@/types/events";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
+import { useNotificationInbox } from "@/hooks/useNotificationInbox";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import {
   TIME_DISPLAY_UPDATE_MS,
-  MAX_TOAST_COUNT,
-  TOAST_SEVERITY_THRESHOLD,
   TIME_RANGES,
   MIN_TIME_RANGE_OPTIONS,
 } from "@/lib/constants";
@@ -51,16 +51,13 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
   const [hoveredCategory, setHoveredCategory] = useState<EventCategory | null>(null);
   const [activeCategories, setActiveCategories] = useState<Set<EventCategory>>(ALL_CATEGORIES);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [toastQueue, setToastQueue] = useState<GeoEvent[]>([]); // Events to show as toasts (real-time)
   const [inboxOpen, setInboxOpen] = useState(false);
   const [displayedTime, setDisplayedTime] = useState<string>("");
   const [is2DMode, setIs2DMode] = useState(false);
   const [briefingEvent, setBriefingEvent] = useState<GeoEvent | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const lastEventIdsRef = useRef<Set<string>>(new Set());
   const mapRef = useRef<WorldMapHandle>(null);
-  const isInitialLoadRef = useRef(true);
   const initialEventHandled = useRef(false);
   // Track when a map event was clicked to prevent sidebar toggle interference
   const lastMapClickRef = useRef<number>(0);
@@ -110,13 +107,24 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
   // Event states for "What's New" + "Unread" tracking - uses time-filtered events
   const {
     incomingEvents,
-    unseenEvents,
-    unseenCount,
     eventStateMap,
     markAsRead,
-    markAllUnseenAsRead,
     isLoaded: eventStatesLoaded,
   } = useEventStates(timeFilteredEvents);
+
+  // Notification inbox - tracks events that arrived via push notifications
+  // Uses ALL events (not time-filtered) so notifications don't disappear based on time range
+  const {
+    inboxEvents,
+    inboxCount,
+    removeFromInbox,
+    clearInbox: clearNotificationInbox,
+    isLoaded: inboxLoaded,
+  } = useNotificationInbox(events);
+
+  // Push notification subscription status
+  const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
+    usePushNotifications();
 
   // Update URL with event ID (for sharing)
   const updateUrlWithEvent = useCallback((eventId: string | null) => {
@@ -147,45 +155,6 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
   // Note: Polling is now handled by SWR in useEvents hook
   // The onRefresh prop is still available for manual refresh (e.g., pull-to-refresh)
 
-  // Track real-time new events for toast notifications (during active session)
-  useEffect(() => {
-    const currentIds = new Set(events.map((e) => e.id));
-    const lastIds = lastEventIdsRef.current;
-
-    // Skip on initial load
-    if (isInitialLoadRef.current) {
-      isInitialLoadRef.current = false;
-      lastEventIdsRef.current = currentIds;
-      return;
-    }
-
-    if (lastIds.size > 0) {
-      const newEventsList = events.filter((e) => !lastIds.has(e.id));
-      if (newEventsList.length > 0) {
-        // Only show high-severity events as toasts
-        const importantEvents = newEventsList
-          .filter((e) => e.severity >= TOAST_SEVERITY_THRESHOLD)
-          .slice(0, MAX_TOAST_COUNT);
-        if (importantEvents.length > 0) {
-          setToastQueue((prev) => [...importantEvents, ...prev].slice(0, MAX_TOAST_COUNT));
-        }
-      }
-    }
-
-    lastEventIdsRef.current = currentIds;
-  }, [events]);
-
-  // Auto-dismiss toasts after 5 seconds
-  useEffect(() => {
-    if (toastQueue.length === 0) return;
-
-    const timer = setTimeout(() => {
-      setToastQueue((prev) => prev.slice(0, -1)); // Remove oldest
-    }, 5000);
-
-    return () => clearTimeout(timer);
-  }, [toastQueue]);
-
   // Handle initial event from URL (deep linking)
   // Only runs on initial page load, not when URL changes via replaceState
   useEffect(() => {
@@ -211,21 +180,30 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
     }
   }, [initialEventId, events]);
 
-  // Dismiss a single toast
-  const dismissToast = useCallback((id: string) => {
-    setToastQueue((prev) => prev.filter((e) => e.id !== id));
-  }, []);
-
-  // Mark all unseen as read and close inbox
+  // Clear notification inbox and close dropdown
   const clearInbox = useCallback(() => {
-    markAllUnseenAsRead();
+    clearNotificationInbox();
     setInboxOpen(false);
-  }, [markAllUnseenAsRead]);
+  }, [clearNotificationInbox]);
 
   // Filter by active categories (for globe and sidebar)
+  // Also include the selected event even if it's outside the time/category filters
+  // This ensures notification/inbox clicks always show the event on the map
   const filteredEvents = useMemo(() => {
-    return timeFilteredEvents.filter((e) => activeCategories.has(e.category));
-  }, [timeFilteredEvents, activeCategories]);
+    const filtered = timeFilteredEvents.filter((e) => activeCategories.has(e.category));
+    
+    // If there's a selected event that's not in the filtered list, add it
+    // This handles: notification deep links, inbox clicks, any selection of older events
+    // Note: We bypass category filter for selected events - if user clicked it, they want to see it
+    if (selectedEventId && !filtered.some((e) => e.id === selectedEventId)) {
+      const selectedEvent = events.find((e) => e.id === selectedEventId);
+      if (selectedEvent) {
+        return [selectedEvent, ...filtered];
+      }
+    }
+    
+    return filtered;
+  }, [timeFilteredEvents, activeCategories, selectedEventId, events]);
 
   const categoryCounts = useMemo(() => {
     return {
@@ -312,10 +290,10 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
     label: "in flight",
   });
 
-  // Start catch up with unseen events
+  // Start catch up with notification inbox events
   const startCatchUp = useCallback(() => {
-    catchUp.start(unseenEvents);
-  }, [catchUp, unseenEvents]);
+    catchUp.start(inboxEvents);
+  }, [catchUp, inboxEvents]);
 
   // Sidebar toggle that ignores clicks immediately after a map event click
   // This prevents the toggle button from opening sidebar when clicking dots near the right edge
@@ -341,17 +319,16 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
         {/* Splash Screen */}
         {showSplash && <SplashScreen onEnter={() => setShowSplash(false)} />}
 
-        {/* Inbox & Toasts container - Top Left under header, adjusted for mobile */}
+        {/* Inbox container - Top Left under header */}
         <div className="absolute left-3 top-28 z-40 flex flex-col items-start gap-2 md:left-4 md:top-20 md:gap-3">
-          {/* Inbox Button - shows unseen (purple dot) events */}
-          {eventStatesLoaded && unseenCount > 0 && (
+          {/* Inbox Button - always visible */}
             <div className="relative">
               <button
                 onClick={() => setInboxOpen(!inboxOpen)}
                 className="glass-panel relative flex items-center gap-2 px-3 py-2 transition-all hover:scale-105"
               >
                 <svg
-                  className="h-4 w-4 text-accent"
+                className={`h-4 w-4 ${inboxCount > 0 ? "text-accent" : "text-foreground/50"}`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -364,22 +341,26 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                   />
                 </svg>
                 <span className="font-mono text-xs uppercase text-foreground/70">
-                  {unseenCount} UNSEEN
+                {inboxCount > 0 ? `${inboxCount} ${inboxCount === 1 ? "ALERT" : "ALERTS"}` : "INBOX"}
                 </span>
+              {inboxCount > 0 && (
                 <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-accent" />
+              )}
               </button>
 
-              {/* Inbox Dropdown - shows all unseen events */}
+            {/* Inbox Dropdown */}
               {inboxOpen && (
                 <div className="absolute left-0 top-12 w-96 animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="glass-panel overflow-hidden">
                     <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-medium uppercase text-accent">
-                          Inbox
+                        Notifications
                         </span>
-                        <span className="font-mono text-xs text-foreground/40">{unseenCount}</span>
-                        {/* Catch Up puck - fly through all unseen events */}
+                      {inboxCount > 0 && (
+                        <>
+                          <span className="font-mono text-xs text-foreground/40">{inboxCount}</span>
+                          {/* Catch Up puck - fly through notification events */}
                         <button
                           onClick={startCatchUp}
                           className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 transition-all hover:bg-accent/20"
@@ -401,19 +382,76 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                             Catch Up
                           </span>
                         </button>
+                        </>
+                      )}
                       </div>
+                    {inboxCount > 0 && (
                       <button
                         onClick={clearInbox}
                         className="font-mono text-xs text-foreground/40 transition-colors hover:text-foreground"
                       >
                         Mark all read
                       </button>
+                    )}
                     </div>
                     <div className="custom-scrollbar max-h-80 overflow-y-auto">
-                      {unseenEvents.map((event) => (
+                    {/* Not subscribed - prompt to set up notifications */}
+                    {notificationsLoading !== true && notificationsEnabled === false ? (
+                      <div className="px-4 py-8 text-center">
+                        <svg
+                          className="mx-auto mb-3 h-8 w-8 text-foreground/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                          />
+                        </svg>
+                        <p className="text-sm text-foreground/70">Notifications not enabled</p>
+                        <p className="mt-1 text-xs text-foreground/40">
+                          Enable push notifications in{" "}
+                          <button
+                            onClick={() => {
+                              setInboxOpen(false);
+                              setSettingsOpen(true);
+                            }}
+                            className="text-accent hover:underline"
+                          >
+                            Settings
+                          </button>{" "}
+                          to receive alerts
+                        </p>
+                      </div>
+                    ) : inboxCount === 0 ? (
+                      <div className="px-4 py-8 text-center">
+                        <svg
+                          className="mx-auto mb-3 h-8 w-8 text-foreground/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        <p className="text-sm text-foreground/70">All caught up</p>
+                        <p className="mt-1 text-xs text-foreground/40">
+                          You&apos;ll be notified of major events
+                        </p>
+                      </div>
+                    ) : (
+                      inboxEvents.map((event) => (
                         <button
                           key={event.id}
                           onClick={() => {
+                            removeFromInbox(event.id);
                             markAsRead(event.id);
                             handleEventSelect(event);
                             setInboxOpen(false);
@@ -449,45 +487,15 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                             </p>
                           </div>
                         </button>
-                      ))}
+                      ))
+                    )}
                     </div>
                   </div>
                 </div>
               )}
             </div>
-          )}
 
           {/* Floating Toast Notifications - appear under inbox */}
-          {toastQueue.map((event, index) => (
-            <div
-              key={event.id}
-              className="animate-in fade-in slide-in-from-left-5 duration-300"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              <button
-                onClick={() => {
-                  mapRef.current?.flyToEvent(event);
-                  dismissToast(event.id);
-                }}
-                className="glass-panel group flex w-80 items-start gap-3 p-3 text-left transition-all hover:scale-[1.02]"
-              >
-                <span
-                  className="mt-1 h-2.5 w-2.5 shrink-0 animate-pulse rounded-full"
-                  style={{ backgroundColor: CATEGORY_COLORS[event.category] }}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 text-sm leading-snug text-foreground">{event.title}</p>
-                  <p className="mt-1 text-xs text-foreground/50">{event.location_name}</p>
-                </div>
-                <span
-                  className="shrink-0 font-mono text-xs font-medium"
-                  style={{ color: CATEGORY_COLORS[event.category] }}
-                >
-                  SEV {event.severity}
-                </span>
-              </button>
-            </div>
-          ))}
         </div>
 
         {/* Globe - events are already deduplicated by worker */}
@@ -747,18 +755,18 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
 
         {/* About Modal */}
         <AnimatePresence>
-          {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+        {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
         </AnimatePresence>
 
         {/* Settings Modal */}
         <AnimatePresence>
-          {settingsOpen && (
-            <SettingsModal
-              onClose={() => setSettingsOpen(false)}
-              is2DMode={is2DMode}
-              onToggle2DMode={() => setIs2DMode(!is2DMode)}
-            />
-          )}
+        {settingsOpen && (
+          <SettingsModal
+            onClose={() => setSettingsOpen(false)}
+            is2DMode={is2DMode}
+            onToggle2DMode={() => setIs2DMode(!is2DMode)}
+          />
+        )}
         </AnimatePresence>
       </div>
     </BatchReactionsProvider>

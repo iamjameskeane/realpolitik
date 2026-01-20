@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { GeoEvent, EventSource, CATEGORY_COLORS, EventCategory } from "@/types/events";
 import { useBatchReactions } from "@/hooks/useBatchReactions";
 import { EventVisualState } from "@/hooks/useEventStates";
@@ -68,6 +68,18 @@ export function EventsSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [hideSeen, setHideSeen] = useState(false);
   const { reactions } = useBatchReactions();
+
+  // Smart default sort: "What's New" if there are incoming events, else "Hot"
+  const hasSetInitialSort = useRef(false);
+  useEffect(() => {
+    if (hasSetInitialSort.current) return;
+    if (incomingEvents.length > 0) {
+      setSortBy("unread");
+      hasSetInitialSort.current = true;
+    } else if (events.length > 0) {
+      hasSetInitialSort.current = true;
+    }
+  }, [incomingEvents.length, events.length]);
 
   // Filter events by active categories, search query, and hide seen toggle
   const filteredEvents = useMemo(() => {
