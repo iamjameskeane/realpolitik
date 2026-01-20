@@ -15,13 +15,13 @@ import { usePushNotifications, PushPreferences } from "@/hooks/usePushNotificati
 
 const SEVERITY_LABELS: Record<number, string> = {
   1: "All events (1+)",
-  3: "Minor+ (3+)",
-  5: "Notable+ (5+)",
-  6: "Significant+ (6+)",
-  7: "Major+ (7+)",
-  8: "Critical only (8+)",
-  9: "Severe only (9+)",
-  10: "Maximum only (10)",
+  3: "Minor incidents (3+)",
+  5: "Notable, single-country (5+)",
+  6: "Regional impact (6+)",
+  7: "Multi-country response (7+)",
+  8: "Major crisis (8+)",
+  9: "Critical, major powers (9+)",
+  10: "Generational events only (10)",
 };
 
 const CATEGORIES = [

@@ -601,6 +601,7 @@ class EventSource(BaseModel):
     source_name: str
     source_url: str
     timestamp: str  # ISO 8601
+    original_severity: int = Field(default=5, description="Severity from enrichment step")
 
 
 class GeoEvent(BaseModel):
@@ -701,12 +702,55 @@ STEP 3: Categorization
 - ECONOMY: Trade wars, sanctions impact, currency crises, major policy shifts
 - UNREST: Mass protests, coups, civil disorder, political violence
 
-STEP 4: Severity (1-10) - BE CONSERVATIVE
-1-3: Should rarely be used. If severity is this low, consider is_geopolitical=false
-4-5: Notable but contained; single country affected
-6-7: Significant; regional implications or international attention
-8-9: Major crisis; multiple countries involved, international response
-10: Extremely rare; war declarations, nuclear events, regime changes
+STEP 4: Severity (1-10) - USE CATEGORY-SPECIFIC CALIBRATION
+
+The severity scale measures GLOBAL STRATEGIC IMPACT. Ask: "How much does this change the geopolitical landscape?"
+
+MILITARY (armed conflict, defense):
+  3: Routine exercise, minor border incident (no casualties)
+  4: Localized skirmish, single strike, 1-5 casualties
+  5: Multi-target strike, base attack, 5-20 casualties  
+  6: Major offensive, city bombardment, 20-100 casualties
+  7: Strategic infrastructure destroyed, mass casualties (100+)
+  8: Capital under sustained attack, military unit collapses
+  9: Government HQ destroyed, full-scale invasion launched
+  10: Nuclear weapon used, formal war between major powers
+
+DIPLOMACY (international relations):
+  3: Routine summit, ambassador recalled
+  4: Diplomatic protest, minor individual sanctions
+  5: Ambassador expelled, limited sectoral sanctions
+  6: Embassy closure, broad economic sanctions  
+  7: All ties severed, coalition sanctions imposed
+  8: UN Security Council emergency session, peacekeepers deploy
+  9: Military alliance invoked (Article 5, mutual defense)
+  10: Major power enters conflict, new world order moment
+
+ECONOMY (trade, finance):
+  3: Trade dispute filed, tariff threats
+  4: Tariffs on <$1B goods, single company sanctioned
+  5: Sector tariffs ($1-10B), major company sanctioned
+  6: Comprehensive restrictions ($10B+), currency intervention
+  7: Full embargo, SWIFT cut, market circuit breakers
+  8: Sovereign default, currency collapse (>30% drop)
+  9: Global contagion, multiple market crashes
+  10: Reserve currency crisis, Bretton Woods-level event
+
+UNREST (civil disorder, political violence):
+  3: Local protest (<1000), minor clashes
+  4: City-wide protests, dozens arrested
+  5: Nationwide protests, government buildings occupied
+  6: General strike, security forces deployed, casualties
+  7: State of emergency, internet blackout
+  8: Military vs civilians, mass casualties
+  9: Government collapses, coup, leader flees
+  10: Civil war begins, genocide underway
+
+RULES:
+- When uncertain, choose LOWER severity
+- Ongoing wars: new incidents are 1-2 points lower than war-starting events
+- Major powers (US, China, Russia, EU) add +1 to base severity
+- Casualties set a FLOOR: 100+ dead is at least severity 7
 
 STEP 5: Summary
 - summary: One factual sentence describing what happened (FACTS ONLY, no predictions)
@@ -740,8 +784,32 @@ Your task:
    - Consider international response, regional stability, economic impact
    - For single-source events, still provide your best prediction
 
-4. SEVERITY: Score 1-10 based on credibly-sourced information
-   - Don't inflate based on unverified claims
+4. SEVERITY: Score 1-10 using calibrated assessment
+   
+   Each source includes an "Enrichment severity" from initial analysis.
+   Use these as calibration signals, not mandates:
+   - If sources agree (all 7-8) → your score should be in that range
+   - If sources disagree (5 vs 8) → prefer the credible source's assessment
+   - You may adjust ±1 based on synthesis insights
+   
+   ANCHORS (reference points):
+   - 4-5: Single country, contained incident, routine for region
+   - 6-7: Regional implications, international statements issued
+   - 8-9: Multi-country response, military/economic actions taken
+   - 10: Generational event (benchmarks: 9/11, Ukraine invasion, COVID)
+   
+   SOURCE CONFIDENCE:
+   - 3+ credible sources agreeing → can use full 1-10 range
+   - 1-2 sources only → cap at severity 7 unless major breaking news
+   - Sources disagree → use most credible source's framing
+   
+   CATEGORY MATTERS:
+   - MILITARY: Anchor on casualties and strategic impact
+   - DIPLOMACY: Anchor on relationship damage and alliance effects  
+   - ECONOMY: Anchor on dollar amounts and market contagion
+   - UNREST: Anchor on scale and government response
+   
+   Don't inflate based on unverified claims or sensational headlines.
 
 Return valid JSON matching the schema."""
 
@@ -1160,6 +1228,7 @@ async def synthesize_incident(
     client: genai.Client,
     sources: list[EventSource],
     location_name: str = "",
+    fallback_severity: int = 5,
 ) -> SynthesizedEvent | None:
     """
     Synthesize a unified event from multiple sources about the same incident.
@@ -1172,6 +1241,9 @@ async def synthesize_incident(
     
     Always generates fallout prediction, even for single-source events.
     Includes timeout to prevent hanging.
+    
+    Args:
+        fallback_severity: Severity to use if synthesis fails (typically max from sources)
     """
     
     # Sort by credibility (highest first), then by timestamp (earliest first for tie-breaking)
@@ -1181,13 +1253,14 @@ async def synthesize_incident(
     
     sorted_sources = sorted(sources, key=source_sort_key)
     
-    # Build the timeline with credibility labels
+    # Build the timeline with credibility labels and original severity assessments
     timeline_parts = []
     for i, s in enumerate(sorted_sources):
         cred = get_source_credibility(s.source_name)
         label = _get_credibility_label(cred)
+        severity_note = f"   Enrichment severity: {s.original_severity}/10"
         timeline_parts.append(
-            f"{i+1}. [{s.source_name}] ({label}) {s.timestamp}\n   Headline: {s.headline}\n   Summary: {s.summary}"
+            f"{i+1}. [{s.source_name}] ({label}) {s.timestamp}\n   Headline: {s.headline}\n   Summary: {s.summary}\n{severity_note}"
         )
     timeline = "\n".join(timeline_parts)
     
@@ -1218,13 +1291,13 @@ async def synthesize_incident(
         return synthesized
         
     except asyncio.TimeoutError:
-        print(f"  ⚠️ Synthesis timeout: {location_name}")
+        print(f"  ⚠️ Synthesis timeout: {location_name} (using fallback severity {fallback_severity})")
         src = sorted_sources[0]
         return SynthesizedEvent(
             title=src.headline,
             summary=src.summary,
             fallout_prediction="",
-            severity=5,
+            severity=fallback_severity,
         )
     except Exception as e:
         # Log detailed error info for debugging
@@ -1233,13 +1306,13 @@ async def synthesize_incident(
         print(f"      Error: {error_detail}")
         if 'response_text' in dir() and response_text:
             print(f"      Response preview: {response_text[:150]}...")
-        # Fallback to first source
+        # Fallback to first source, using max severity from enrichment
         src = sorted_sources[0]
         return SynthesizedEvent(
             title=src.headline,
             summary=src.summary,
             fallout_prediction="",
-            severity=5,
+            severity=fallback_severity,
         )
 
 
@@ -1374,6 +1447,7 @@ def group_by_incident(
             source_name=source_name or "Unknown",
             source_url=source_url or "",
             timestamp=timestamp,
+            original_severity=enriched.severity,
         )
         
         # Find matching group
@@ -1421,6 +1495,47 @@ def _get_article_hash(article: dict) -> str:
     title = article.get("title", "")
     url = article.get("url", "")
     return generate_source_id(title, url)
+
+
+def _log_severity_distribution(events: list[GeoEvent]) -> None:
+    """
+    Log severity distribution for calibration monitoring.
+    
+    Helps detect if the model is clustering too tightly (e.g., everything at 5-6)
+    or if the distribution has drifted over time.
+    """
+    from collections import Counter
+    
+    severities = [e.severity for e in events]
+    dist = Counter(severities)
+    
+    # Build distribution string: "4:2, 5:8, 6:5, 7:3"
+    dist_str = ", ".join(f"{sev}:{count}" for sev, count in sorted(dist.items()))
+    
+    # Calculate stats
+    mean_sev = sum(severities) / len(severities)
+    sorted_sevs = sorted(severities)
+    median_sev = sorted_sevs[len(sorted_sevs) // 2]
+    mode_sev = dist.most_common(1)[0][0] if dist else 5
+    
+    # Category breakdown
+    by_category: dict[str, list[int]] = {}
+    for e in events:
+        by_category.setdefault(e.category, []).append(e.severity)
+    
+    cat_means = {cat: sum(sevs)/len(sevs) for cat, sevs in by_category.items()}
+    cat_str = ", ".join(f"{cat[:3]}:{mean:.1f}" for cat, mean in sorted(cat_means.items()))
+    
+    print(f"\n📊 SEVERITY DISTRIBUTION (n={len(events)})")
+    print(f"   Distribution: {dist_str}")
+    print(f"   Mean: {mean_sev:.1f}, Median: {median_sev}, Mode: {mode_sev}")
+    print(f"   By category: {cat_str}")
+    
+    # Warn if clustering detected
+    if len(dist) <= 2 and len(events) >= 5:
+        print(f"   ⚠️ WARNING: Severity clustering detected - only {len(dist)} unique values")
+    if mode_sev == 5 and dist.get(5, 0) > len(events) * 0.5:
+        print(f"   ⚠️ WARNING: >50% of events at severity 5 - possible under-differentiation")
 
 
 async def process_articles(
@@ -1490,7 +1605,7 @@ async def process_articles(
     print(f"\n🔄 Synthesizing {len(incident_groups)} incidents (title + fallout)...")
     
     synthesis_tasks = [
-        synthesize_incident(gemini_client, g.sources, g.location_name)
+        synthesize_incident(gemini_client, g.sources, g.location_name, g.get_max_severity())
         for g in incident_groups
     ]
     
@@ -1539,6 +1654,10 @@ async def process_articles(
             sources=group.sources,
         )
         events.append(event)
+    
+    # Log severity distribution for calibration monitoring
+    if events:
+        _log_severity_distribution(events)
     
     return events
 
@@ -1708,6 +1827,8 @@ async def merge_with_existing(
         synthesis_tasks = []
         for event in events_needing_synthesis:
             # Convert source dicts to EventSource objects for synthesis
+            # Use original_severity if available, otherwise use event's severity as estimate
+            event_severity = event.get("severity", 5)
             sources = [
                 EventSource(
                     id=s["id"],
@@ -1716,11 +1837,13 @@ async def merge_with_existing(
                     source_name=s["source_name"],
                     source_url=s["source_url"],
                     timestamp=s["timestamp"],
+                    original_severity=s.get("original_severity", event_severity),
                 )
                 for s in event["sources"]
             ]
+            # Use existing event severity as fallback if synthesis fails
             synthesis_tasks.append(
-                synthesize_incident(gemini_client, sources, event.get("location_name", ""))
+                synthesize_incident(gemini_client, sources, event.get("location_name", ""), event_severity)
             )
         
         synthesis_results = await asyncio.gather(*synthesis_tasks)

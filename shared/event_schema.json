@@ -103,6 +103,12 @@
             "type": "string",
             "format": "date-time",
             "description": "Article publication timestamp (ISO 8601)"
+          },
+          "original_severity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Severity score from enrichment step (before synthesis)"
           }
         }
       }
