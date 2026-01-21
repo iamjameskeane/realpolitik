@@ -509,7 +509,12 @@ export function IntelligenceSheet({
                       }}
                       className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
                     >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -558,7 +563,8 @@ export function IntelligenceSheet({
                 </div>
                 {/* Row 2: Location + count - ml-10 = w-7 (button) + mr-1 + gap-2 */}
                 <div className="ml-10 font-mono text-[10px] text-foreground/40">
-                  Near {clusterViewLabel} • {clusterViewEvents.length} event{clusterViewEvents.length !== 1 ? "s" : ""}
+                  Near {clusterViewLabel} • {clusterViewEvents.length} event
+                  {clusterViewEvents.length !== 1 ? "s" : ""}
                 </div>
               </div>
             ) : (
@@ -580,7 +586,12 @@ export function IntelligenceSheet({
                       }}
                       className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
                     >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -602,131 +613,175 @@ export function IntelligenceSheet({
                       {searchFilteredEvents.length}
                     </span>
                   )}
-              {/* Flyover button - in feed mode (not inbox, not cluster view) */}
-              {phase === "scanner" &&
-                !inboxOpen &&
-                !clusterViewOpen &&
-                searchFilteredEvents.length > 0 &&
-                onStartFlyover && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onStartFlyover();
-                    }}
-                    className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 transition-all active:scale-95"
-                  >
-                    <svg
-                      className="h-3 w-3 text-emerald-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2.5}
-                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <span className="font-mono text-[10px] font-medium uppercase text-emerald-400">
-                      Flyover
-                    </span>
-                  </button>
-                )}
-              {phase === "pilot" && isTouringMode && (
-                <span
-                  className={`font-mono text-xs ${catchUpMode ? "text-accent" : "text-emerald-400"}`}
-                >
-                  {stackIndex + 1} / {stackedEvents.length}
-                </span>
-              )}
-            </div>
-
-            {/* Right side buttons */}
-            {phase === "scanner" && !clusterViewOpen && (
-              <div className="flex items-center gap-2">
-                {inboxOpen ? (
-                  /* Inbox mode: show Catch Up + Read All */
-                  <>
-                    {inboxCount > 0 && onStartCatchUp && (
+                  {/* Flyover button - in feed mode (not inbox, not cluster view) */}
+                  {phase === "scanner" &&
+                    !inboxOpen &&
+                    !clusterViewOpen &&
+                    searchFilteredEvents.length > 0 &&
+                    onStartFlyover && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onStartCatchUp();
+                          onStartFlyover();
                         }}
-                        className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 transition-all active:scale-95"
+                        className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 transition-all active:scale-95"
                       >
-                        <svg className="h-3.5 w-3.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <svg
+                          className="h-3 w-3 text-emerald-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2.5}
+                            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
                         </svg>
-                        <span className="font-mono text-[10px] font-medium uppercase text-accent">Catch Up</span>
-                      </button>
-                    )}
-                    {inboxCount > 0 && clearNotificationInbox && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          clearNotificationInbox();
-                        }}
-                        className="flex items-center gap-1 rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-1 transition-all active:scale-95"
-                      >
-                        <svg className="h-3.5 w-3.5 text-foreground/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        <span className="font-mono text-[10px] font-medium uppercase text-foreground/60">Read All</span>
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  /* Feed mode: show Search + Inbox bell */
-                  <>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isSearchOpen) {
-                          setSheetHeight("expanded");
-                        } else {
-                          setSearchQuery("");
-                          setIsSearchFocused(false);
-                        }
-                        setIsSearchOpen(!isSearchOpen);
-                      }}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
-                        isSearchOpen ? "bg-accent/20" : "bg-foreground/10"
-                      }`}
-                    >
-                      <svg className={`h-4 w-4 ${isSearchOpen ? "text-accent" : "text-foreground/40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onInboxToggle();
-                      }}
-                      className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
-                        inboxOpen ? "bg-accent/20" : "bg-foreground/10"
-                      }`}
-                    >
-                      <svg className={`h-4 w-4 ${inboxCount > 0 ? "text-accent" : "text-foreground/40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                      </svg>
-                      {inboxCount > 0 && (
-                        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
-                          {inboxCount > 9 ? "9+" : inboxCount}
+                        <span className="font-mono text-[10px] font-medium uppercase text-emerald-400">
+                          Flyover
                         </span>
-                      )}
-                    </button>
-                  </>
+                      </button>
+                    )}
+                  {phase === "pilot" && isTouringMode && (
+                    <span
+                      className={`font-mono text-xs ${catchUpMode ? "text-accent" : "text-emerald-400"}`}
+                    >
+                      {stackIndex + 1} / {stackedEvents.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Right side buttons */}
+                {phase === "scanner" && !clusterViewOpen && (
+                  <div className="flex items-center gap-2">
+                    {inboxOpen ? (
+                      /* Inbox mode: show Catch Up + Read All */
+                      <>
+                        {inboxCount > 0 && onStartCatchUp && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onStartCatchUp();
+                            }}
+                            className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 transition-all active:scale-95"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5 text-accent"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2.5}
+                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                              />
+                            </svg>
+                            <span className="font-mono text-[10px] font-medium uppercase text-accent">
+                              Catch Up
+                            </span>
+                          </button>
+                        )}
+                        {inboxCount > 0 && clearNotificationInbox && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearNotificationInbox();
+                            }}
+                            className="flex items-center gap-1 rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-1 transition-all active:scale-95"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5 text-foreground/60"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                            <span className="font-mono text-[10px] font-medium uppercase text-foreground/60">
+                              Read All
+                            </span>
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      /* Feed mode: show Search + Inbox bell */
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isSearchOpen) {
+                              setSheetHeight("expanded");
+                            } else {
+                              setSearchQuery("");
+                              setIsSearchFocused(false);
+                            }
+                            setIsSearchOpen(!isSearchOpen);
+                          }}
+                          className={`flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
+                            isSearchOpen ? "bg-accent/20" : "bg-foreground/10"
+                          }`}
+                        >
+                          <svg
+                            className={`h-4 w-4 ${isSearchOpen ? "text-accent" : "text-foreground/40"}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onInboxToggle();
+                          }}
+                          className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95 ${
+                            inboxOpen ? "bg-accent/20" : "bg-foreground/10"
+                          }`}
+                        >
+                          <svg
+                            className={`h-4 w-4 ${inboxCount > 0 ? "text-accent" : "text-foreground/40"}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                            />
+                          </svg>
+                          {inboxCount > 0 && (
+                            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
+                              {inboxCount > 99 ? "99+" : inboxCount}
+                            </span>
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
               </div>
             )}
           </div>
