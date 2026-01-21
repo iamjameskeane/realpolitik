@@ -148,18 +148,21 @@ self.addEventListener('notificationclick', (event) => {
     ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}from=notification&notif_event=${eventId}&${cacheBuster}`
     : `/?${cacheBuster}`;
 
+  // iOS PWA CRITICAL: Do NOT use client.postMessage() here.
+  // On iOS, when the PWA is backgrounded/suspended, postMessage is silently dropped.
+  // The SW can find and focus() the window, but the message never arrives.
+  // Instead, we use client.navigate() which changes the actual URL, triggering
+  // the app to read event ID from URL params on the navigation event.
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
-      // Try to find existing window and navigate it
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'navigate' in client) {
-          // Navigate the existing window to the event URL (works on iOS, unlike postMessage)
           await client.navigate(urlWithSource);
           await client.focus();
           return;
         }
       }
-      // No window found - open new window with URL params
+      // No existing window - open new one
       if (clients.openWindow) {
         return clients.openWindow(urlWithSource);
       }
