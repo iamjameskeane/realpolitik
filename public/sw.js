@@ -42,6 +42,24 @@ async function addPendingNotification(eventId, title, timestamp) {
   }
 }
 
+async function getPendingCount() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const countRequest = store.count();
+    const count = await new Promise((resolve, reject) => {
+      countRequest.onsuccess = () => resolve(countRequest.result);
+      countRequest.onerror = () => reject(countRequest.error);
+    });
+    db.close();
+    return count;
+  } catch (e) {
+    console.log('[SW] Failed to count pending notifications:', e);
+    return 0;
+  }
+}
+
 // =============================================================================
 // PUSH EVENT - Fires when server sends a push notification
 // =============================================================================
@@ -115,10 +133,13 @@ self.addEventListener('push', (event) => {
         });
       }
       
-      // Set app badge (iOS 16.4+, desktop browsers)
+      // Set app badge with actual count from IndexedDB (iOS 16.4+, desktop browsers)
       if (navigator.setAppBadge) {
         try {
-          await navigator.setAppBadge();
+          const pendingCount = await getPendingCount();
+          if (pendingCount > 0) {
+            await navigator.setAppBadge(pendingCount);
+          }
         } catch (e) {
           // Badge API may fail silently on some platforms
         }
