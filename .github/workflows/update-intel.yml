@@ -2,12 +2,19 @@ name: Update Intelligence
 
 on:
   schedule:
-    - cron: "0 * * * *" # Every hour (24 runs/day)
-  workflow_dispatch: # Manual trigger button
+    - cron: "0 * * * *" # Every hour - runs on default branch (main) only
+  workflow_dispatch: # Manual trigger - works on any branch
+    inputs:
+      branch:
+        description: 'Branch to run on'
+        required: false
+        default: ''
 
 jobs:
   refresh-intel:
     runs-on: ubuntu-latest
+    # Schedule always runs on main; manual dispatch uses the selected branch
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +51,7 @@ jobs:
           # Upstash Redis for rate limiting and deduplication
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          # Push notifications
+          # Push notifications (PUSH_API_SECRET also used for Vercel bypass header)
           PUSH_API_SECRET: ${{ secrets.PUSH_API_SECRET }}
           PUSH_API_URL: ${{ secrets.PUSH_API_URL }}
         run: |
