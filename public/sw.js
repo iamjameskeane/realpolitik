@@ -141,11 +141,12 @@ self.addEventListener('notificationclick', (event) => {
   const eventId = event.notification.data?.eventId;
   const baseUrl = event.notification.data?.url || '/';
   
-  // iOS WORKAROUND: Include source=notification in URL so the app knows this came from a notification
-  // This is more reliable than postMessage which often fails on iOS
+  // Build URL with cache busting to ensure navigation always triggers
+  // Even if app is already on /?event={id}, the _t param forces a fresh load
+  const cacheBuster = `_t=${Date.now()}`;
   const urlWithSource = eventId 
-    ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}from=notification&notif_event=${eventId}`
-    : baseUrl;
+    ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}from=notification&notif_event=${eventId}&${cacheBuster}`
+    : `/?${cacheBuster}`;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
