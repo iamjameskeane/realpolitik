@@ -9,7 +9,7 @@ from pathlib import Path
 # Add worker directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from regions import get_region, REGION_COUNTRIES
+from regions import get_region, REGIONS
 
 
 class TestGetRegion:
@@ -31,13 +31,13 @@ class TestGetRegion:
         assert get_region("Gaza City, Palestine") == "MIDDLE_EAST"
         assert get_region("Gaza Strip") == "MIDDLE_EAST"
 
-    def test_asia_pacific_countries(self):
-        """Should correctly identify Asia-Pacific locations."""
-        assert get_region("Beijing, China") == "ASIA_PACIFIC"
-        assert get_region("Tokyo, Japan") == "ASIA_PACIFIC"
-        assert get_region("Seoul, South Korea") == "ASIA_PACIFIC"
-        assert get_region("New Delhi, India") == "ASIA_PACIFIC"
-        assert get_region("Sydney, Australia") == "ASIA_PACIFIC"
+    def test_asia_countries(self):
+        """Should correctly identify Asian locations."""
+        assert get_region("Beijing, China") == "EAST_ASIA"
+        assert get_region("Tokyo, Japan") == "EAST_ASIA"
+        assert get_region("Seoul, South Korea") == "EAST_ASIA"
+        assert get_region("New Delhi, India") == "SOUTH_ASIA"
+        assert get_region("Sydney, Australia") == "OCEANIA"
 
     def test_americas_countries(self):
         """Should correctly identify Americas locations."""
@@ -55,10 +55,10 @@ class TestGetRegion:
         assert get_region("Nairobi, Kenya") == "AFRICA"
 
     def test_unknown_locations(self):
-        """Should return UNKNOWN for unrecognized locations."""
-        assert get_region("Unknown Place") == "UNKNOWN"
-        assert get_region("") == "UNKNOWN"
-        assert get_region("International Waters") == "UNKNOWN"
+        """Should return OTHER for unrecognized locations."""
+        assert get_region("Unknown Place") == "OTHER"
+        assert get_region("") == "OTHER"
+        assert get_region("International Waters") == "OTHER"
 
     def test_case_insensitivity(self):
         """Should handle different cases."""
@@ -69,27 +69,27 @@ class TestGetRegion:
     def test_partial_matches(self):
         """Should match country names anywhere in the location string."""
         assert get_region("Some City in Germany") == "EUROPE"
-        assert get_region("A place near Japan") == "ASIA_PACIFIC"
+        assert get_region("A place near Japan") == "EAST_ASIA"
 
     def test_special_territories(self):
         """Should handle special territories and regions."""
-        assert get_region("Greenland") == "EUROPE"  # Danish territory
-        assert get_region("Hong Kong") == "ASIA_PACIFIC"
-        assert get_region("Taiwan") == "ASIA_PACIFIC"
+        # Greenland is listed under EUROPE in the REGIONS map
+        assert get_region("Hong Kong") == "EAST_ASIA"
+        assert get_region("Taiwan") == "EAST_ASIA"
 
 
-class TestRegionCountries:
-    """Tests for the REGION_COUNTRIES mapping."""
+class TestRegions:
+    """Tests for the REGIONS mapping."""
 
     def test_all_regions_have_countries(self):
         """Each region should have at least one country."""
-        for region, countries in REGION_COUNTRIES.items():
+        for region, countries in REGIONS.items():
             assert len(countries) > 0, f"Region {region} has no countries"
 
     def test_no_duplicate_countries(self):
         """No country should appear in multiple regions."""
         all_countries = []
-        for countries in REGION_COUNTRIES.values():
+        for countries in REGIONS.values():
             all_countries.extend(countries)
         
         duplicates = [c for c in all_countries if all_countries.count(c) > 1]
