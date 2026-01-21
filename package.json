@@ -13,7 +13,14 @@
     "prepare": "husky",
     "worker": "python worker/run_local.py",
     "worker:watch": "python worker/run_local.py --watch",
-    "worker:watch:fast": "python worker/run_local.py --watch --interval 2"
+    "worker:watch:fast": "python worker/run_local.py --watch --interval 2",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "test:worker": "cd worker && python -m pytest",
+    "test:worker:cov": "cd worker && python -m pytest --cov=. --cov-report=term-missing",
+    "test:all": "npm run test:run && npm run test:worker"
   },
   "dependencies": {
     "@google/genai": "^1.35.0",
@@ -42,18 +49,25 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/react": "^15.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
+    "@vitejs/plugin-react": "^4.2.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "@vitest/ui": "^1.2.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
+    "jsdom": "^24.0.0",
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^1.2.0"
   }
 }
