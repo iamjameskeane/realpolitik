@@ -1939,6 +1939,8 @@ def send_push_notification(event: dict) -> bool:
             headers={
                 "Authorization": f"Bearer {PUSH_API_SECRET}",
                 "Content-Type": "application/json",
+                # Bypass Vercel firewall protection on preview/development deployments
+                "x-vercel-protection-bypass": PUSH_API_SECRET,
             },
             timeout=10,
         )
