@@ -717,34 +717,44 @@ STEP 5: Summary
 Return valid JSON matching the schema. Do NOT include latitude/longitude - those are handled separately."""
 
 
-SYNTHESIS_PROMPT = """You are a geopolitical analyst synthesizing news report(s) about a geopolitical incident.
+SYNTHESIS_PROMPT = """<role>
+You explain geopolitical news to regular people - what happened, why it matters, and what could happen next.
+</role>
 
-The reports are sorted by credibility (WIRE SERVICE > QUALITY OUTLET > REGIONAL > UNVERIFIED).
-Each source is labeled with its credibility tier.
+<instructions>
+From the news reports provided, synthesize:
+1. TITLE: Single headline, under 100 characters, factual
+2. SUMMARY: What happened (2-3 sentences, prioritize WIRE SERVICE sources)
+3. FALLOUT: Why it matters to regular people (2-3 sentences, see requirements below)
+4. SEVERITY: Score 1-10 based on verified facts only
+</instructions>
 
-SOURCE CREDIBILITY RULES:
-- WIRE SERVICE (AP, Reuters, AFP, BBC): Highly reliable, use as primary facts
-- QUALITY OUTLET (NYT, Guardian, WaPo): Reliable, good for context
-- REGIONAL: May have local insight but verify against wire services
-- UNVERIFIED: Use with caution, only if corroborated by credible sources
+<fallout_requirements>
+The FALLOUT section must help someone understand: "Why should I care about this?"
 
-Your task:
-1. TITLE: Write a single authoritative headline
-   - Base on the most credible source(s)
-   - Use specific, verified facts
-   
-2. SUMMARY: Write a comprehensive summary (2-3 sentences)
-   - Prioritize facts from credible sources
-   - If multiple sources contradict, prefer WIRE SERVICE version
-   - Include key numbers only if confirmed by credible sources
+REQUIRED elements:
+- CONTEXT: What do most people not know? (e.g., "Taiwan makes 90% of advanced chips")
+- STAKES: What could realistically happen next? Include timeframes when possible.
+- CONNECTION: How might this touch daily life? Name specific things: products, prices, travel, companies.
 
-3. FALLOUT: Predict consequences based on the information (REQUIRED - never leave empty)
-   - Be specific about likely outcomes
-   - Consider international response, regional stability, economic impact
-   - For single-source events, still provide your best prediction
+QUALITY CHECK before finalizing:
+- Does this read like a news explainer, not an academic paper?
+- Would a curious non-expert understand it?
+- Are there specific, concrete details (not just "economic impact" or "regional tensions")?
+</fallout_requirements>
 
-4. SEVERITY: Score 1-10 based on credibly-sourced information
-   - Don't inflate based on unverified claims
+<examples>
+INPUT: China military exercises near Taiwan
+GOOD_FALLOUT: "Taiwan's TSMC produces 90% of the world's advanced chips - they're in everything from iPhones to car computers. If exercises escalate to a blockade, global electronics shortages could start within weeks. Watch for: chip stockpiling announcements, US carrier movements, or airlines rerouting flights."
+BAD_FALLOUT: "This could destabilize the region and impact global trade relations. International observers are monitoring the situation."
+
+The first is specific (TSMC, iPhones, weeks, what to watch). The second is generic filler.
+</examples>
+
+<source_credibility>
+Sources are labeled by tier. When facts conflict, prefer higher tiers:
+WIRE SERVICE (AP, Reuters, AFP, BBC) > QUALITY OUTLET (NYT, Guardian) > REGIONAL > UNVERIFIED
+</source_credibility>
 
 Return valid JSON matching the schema."""
 

@@ -97,9 +97,10 @@ export const GLOBAL_BRIEFING_LIMIT_PER_MINUTE = 30;
  * - 18 bits: ~262K hashes, ~300-600ms
  * - 20 bits: ~1M hashes, ~1-2s
  *
- * 18 bits is a good balance between security and UX.
+ * 16 bits = ~65k hashes, solves in 1-2 sec on most devices.
+ * 18 was too slow for mobile/edge users.
  */
-export const POW_DIFFICULTY = 18;
+export const POW_DIFFICULTY = 16;
 
 /** Session token validity (ms) - how long a solved PoW grants access */
 export const SESSION_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -109,13 +110,10 @@ export const SESSION_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 // =============================================================================
 
 /** Maximum question length (characters) */
-export const MAX_QUESTION_LENGTH = 500;
+export const MAX_QUESTION_LENGTH = 2000;
 
 /** Maximum chat history messages to accept */
 export const MAX_HISTORY_LENGTH = 10;
-
-/** Maximum characters per history message */
-export const MAX_HISTORY_MESSAGE_LENGTH = 2000;
 
 // =============================================================================
 // UI CONSTANTS
