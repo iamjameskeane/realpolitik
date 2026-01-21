@@ -1902,11 +1902,6 @@ def send_push_notification(event: dict) -> bool:
         except (ValueError, TypeError) as e:
             print(f"   ⚠️ Could not parse timestamp '{timestamp_str}': {e}")
     
-    # Truncate body for notification display
-    summary = event.get("summary", "")
-    if len(summary) > 200:
-        summary = summary[:197] + "..."
-    
     # Mark if this is a critical event
     is_critical = severity >= PUSH_CRITICAL_THRESHOLD
     
@@ -1919,9 +1914,14 @@ def send_push_notification(event: dict) -> bool:
     sources = event.get("sources", [])
     sources_count = len(sources) if sources else 1
     
+    # Notification format: "Realpolitik" as title, headline as body
+    headline = event.get("title", "Breaking news")
+    if len(headline) > 200:
+        headline = headline[:197] + "..."
+    
     payload = {
-        "title": event.get("title", "Breaking: Geopolitical Event"),
-        "body": summary,
+        "title": "Realpolitik",
+        "body": headline,
         "url": f"/?event={event_id}",
         "id": event_id,
         "severity": severity,

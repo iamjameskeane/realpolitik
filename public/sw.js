@@ -50,8 +50,8 @@ self.addEventListener('push', (event) => {
   // If you don't, iOS may revoke your push subscription silently.
   
   let data = {
-    title: 'Realpolitik Alert',
-    body: 'New geopolitical event detected',
+    title: 'Realpolitik',
+    body: 'New event detected',
     icon: '/android-chrome-192x192.png',
     badge: '/favicon-32x32.png',
     url: '/',
@@ -70,15 +70,6 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  // Category badge matching app UI colors
-  const categoryBadges = {
-    'MILITARY': '🔴',
-    'DIPLOMACY': '🔵',
-    'ECONOMY': '🟢',
-    'UNREST': '🟠',
-  };
-  const categoryBadge = categoryBadges[data.category] || '⚪';
-  
   const options = {
     body: data.body,
     icon: data.icon,
@@ -103,8 +94,8 @@ self.addEventListener('push', (event) => {
   // Show the notification, set badge, store to IndexedDB, and notify open clients
   event.waitUntil(
     (async () => {
-      // Show the notification
-      await self.registration.showNotification(`${categoryBadge} ${data.title}`, options);
+      // Show the notification - clean title, no emojis
+      await self.registration.showNotification(data.title, options);
       
       // iOS WORKAROUND: Store to IndexedDB so app can sync on visibility change
       // This works even when postMessage fails (which is common on iOS)
