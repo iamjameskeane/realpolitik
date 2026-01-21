@@ -26,16 +26,13 @@ function isNewFormat(prefs: unknown): prefs is NotificationPreferences {
 // Type guard for legacy preferences format
 function isLegacyFormat(prefs: unknown): prefs is LegacyPreferences {
   return (
-    typeof prefs === "object" &&
-    prefs !== null &&
-    "minSeverity" in prefs &&
-    !("rules" in prefs)
+    typeof prefs === "object" && prefs !== null && "minSeverity" in prefs && !("rules" in prefs)
   );
 }
 
 export async function POST(request: NextRequest) {
   console.log("[Subscribe] Received subscription request");
-  
+
   try {
     const body = await request.json();
     console.log("[Subscribe] Parsed body, checking subscription...");
@@ -52,11 +49,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid subscription object" }, { status: 400 });
     }
 
-    console.log(`[Subscribe] Valid subscription for endpoint: ${subscription.endpoint.substring(0, 50)}...`);
+    console.log(
+      `[Subscribe] Valid subscription for endpoint: ${subscription.endpoint.substring(0, 50)}...`
+    );
 
     // Determine preferences format and build stored preferences
     let prefs: StoredPreferences;
-    
+
     if (isNewFormat(preferences)) {
       // Validate rule limits
       if (preferences.rules.length > RULE_LIMITS.MAX_RULES) {
@@ -65,13 +64,13 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      
+
       // Validate each rule
       const validation = validatePreferences(preferences as NotificationPreferences);
       if (!validation.valid) {
         return NextResponse.json({ error: validation.error }, { status: 400 });
       }
-      
+
       // New rule-based format
       prefs = {
         enabled: preferences.enabled ?? true,
@@ -113,6 +112,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[Subscribe] Error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: "Failed to store subscription", details: errorMessage }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to store subscription", details: errorMessage },
+      { status: 500 }
+    );
   }
 }

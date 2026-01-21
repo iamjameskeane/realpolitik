@@ -3,16 +3,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  matchesRules,
-  evaluateCondition,
-  shouldNotify,
-} from "@/lib/notificationRules";
-import {
-  NotificationRule,
-  NotificationPreferences,
-  Condition,
-} from "@/types/notifications";
+import { matchesRules, evaluateCondition, shouldNotify } from "@/lib/notificationRules";
+import { NotificationRule, NotificationPreferences, Condition } from "@/types/notifications";
 
 // Sample event for testing
 const sampleEvent = {
@@ -33,14 +25,14 @@ describe("evaluateCondition", () => {
         operator: ">=",
         value: 5,
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
 
       const highCondition: Condition = {
         field: "severity",
         operator: ">=",
         value: 9,
       };
-      expect(evaluateCondition(highCondition, sampleEvent)).toBe(false);
+      expect(evaluateCondition(sampleEvent, highCondition)).toBe(false);
     });
 
     it("should match <= operator correctly", () => {
@@ -49,7 +41,7 @@ describe("evaluateCondition", () => {
         operator: "<=",
         value: 8,
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
 
     it("should match = operator correctly", () => {
@@ -58,14 +50,14 @@ describe("evaluateCondition", () => {
         operator: "=",
         value: 7,
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
 
       const wrongCondition: Condition = {
         field: "severity",
         operator: "=",
         value: 5,
       };
-      expect(evaluateCondition(wrongCondition, sampleEvent)).toBe(false);
+      expect(evaluateCondition(sampleEvent, wrongCondition)).toBe(false);
     });
   });
 
@@ -76,7 +68,7 @@ describe("evaluateCondition", () => {
         operator: "=",
         value: "DIPLOMACY",
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
 
     it("should match category in list", () => {
@@ -85,7 +77,7 @@ describe("evaluateCondition", () => {
         operator: "in",
         value: ["DIPLOMACY", "MILITARY"],
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
 
     it("should not match category not in list", () => {
@@ -94,7 +86,7 @@ describe("evaluateCondition", () => {
         operator: "in",
         value: ["MILITARY", "ECONOMY"],
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(false);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(false);
     });
   });
 
@@ -105,7 +97,7 @@ describe("evaluateCondition", () => {
         operator: "=",
         value: "EUROPE",
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
 
     it("should match region in list", () => {
@@ -114,7 +106,7 @@ describe("evaluateCondition", () => {
         operator: "in",
         value: ["EUROPE", "AMERICAS"],
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
 
     it("should not match excluded region", () => {
@@ -123,7 +115,7 @@ describe("evaluateCondition", () => {
         operator: "!=",
         value: "EUROPE",
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(false);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(false);
     });
   });
 
@@ -134,7 +126,7 @@ describe("evaluateCondition", () => {
         operator: "contains",
         value: "Diplomatic",
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
 
     it("should be case-insensitive", () => {
@@ -143,7 +135,7 @@ describe("evaluateCondition", () => {
         operator: "contains",
         value: "DIPLOMATIC",
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
 
     it("should match location containing text", () => {
@@ -152,7 +144,7 @@ describe("evaluateCondition", () => {
         operator: "contains",
         value: "Switzerland",
       };
-      expect(evaluateCondition(condition, sampleEvent)).toBe(true);
+      expect(evaluateCondition(sampleEvent, condition)).toBe(true);
     });
   });
 });

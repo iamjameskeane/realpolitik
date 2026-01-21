@@ -58,8 +58,8 @@ export function NotificationSettings() {
           <span>📱</span> Add to Home Screen for Notifications
         </h3>
         <p className="mb-3 text-xs text-amber-200/80">
-          iOS requires the app to be installed to your home screen for the best
-          notification experience.
+          iOS requires the app to be installed to your home screen for the best notification
+          experience.
         </p>
         <div className="space-y-1.5 text-xs text-slate-300/70">
           <p>
@@ -152,9 +152,9 @@ export function NotificationSettings() {
       {showInstallRecommendation && !isSubscribed && (
         <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3">
           <p className="text-xs text-blue-300">
-            <span className="font-medium">💡 Tip:</span> For the best experience,
-            add Realpolitik to your home screen before enabling notifications.
-            Tap <strong>⋮</strong> → <strong>&quot;Add to Home Screen&quot;</strong>
+            <span className="font-medium">💡 Tip:</span> For the best experience, add Realpolitik to
+            your home screen before enabling notifications. Tap <strong>⋮</strong> →{" "}
+            <strong>&quot;Add to Home Screen&quot;</strong>
           </p>
         </div>
       )}
@@ -244,10 +244,7 @@ export function NotificationSettings() {
             className="overflow-hidden"
           >
             <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
-              <QuickSetup
-                onSelectPreset={handlePresetSelect}
-                onCustomRules={handleCustomRules}
-              />
+              <QuickSetup onSelectPreset={handlePresetSelect} onCustomRules={handleCustomRules} />
             </div>
           </motion.div>
         )}
@@ -256,11 +253,7 @@ export function NotificationSettings() {
       {/* Rule Management (only when subscribed) */}
       <AnimatePresence>
         {isSubscribed && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="space-y-4">
               <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
                 <NotificationRules
@@ -269,7 +262,7 @@ export function NotificationSettings() {
                   disabled={isLoading}
                 />
               </div>
-              
+
               {/* Quiet Hours */}
               <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
                 <QuietHoursSettings
