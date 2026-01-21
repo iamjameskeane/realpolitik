@@ -1,8 +1,21 @@
 import { GoogleGenAI, Content, Part, FunctionDeclaration, Type } from "@google/genai";
 import { tavily } from "@tavily/core";
 import { NextRequest } from "next/server";
-import { checkBriefingLimit, incrementBriefingCount, logBriefingUsage } from "@/lib/usage";
+import {
+  checkBriefingLimit,
+  incrementBriefingCount,
+  logBriefingUsage,
+  checkAndIncrementGlobalLimit,
+  storeSessionToken,
+  validateSessionToken,
+} from "@/lib/usage";
 import { getClientIP } from "@/lib/request";
+import { generateChallenge, verifySolution, generateSessionToken } from "@/lib/pow";
+import {
+  MAX_QUESTION_LENGTH,
+  MAX_HISTORY_LENGTH,
+  POW_DIFFICULTY,
+} from "@/lib/constants";
 
 // Vercel function configuration - increase timeout for AI streaming
 export const maxDuration = 60; // seconds (requires Pro plan for > 10s)
@@ -24,6 +37,11 @@ interface ChatMessage {
   content: string;
 }
 
+interface PowSolution {
+  challenge: string;
+  nonce: number;
+}
+
 interface BriefingRequest {
   eventId: string;
   eventTitle: string;
@@ -32,6 +50,9 @@ interface BriefingRequest {
   eventLocation: string;
   question: string;
   history: ChatMessage[];
+  // Session authentication (one of these required)
+  sessionToken?: string;
+  powSolution?: PowSolution;
 }
 
 // Lazily initialize Tavily client
@@ -95,59 +116,266 @@ async function executeToolCall(toolName: string, args: Record<string, unknown>):
   return `Unknown tool: ${toolName}`;
 }
 
-// System prompt for the intelligence analyst
-const SYSTEM_PROMPT = `You are an Intelligence Analyst for Realpolitik, a geopolitical intelligence platform.
+// System prompt for the briefing assistant
+const SYSTEM_PROMPT = `<role>
+You are a news explainer for Realpolitik, a platform that helps regular people understand geopolitical events.
+Your job is to answer questions clearly and help users understand why events matter.
+</role>
 
-Your role:
-- Provide concise, factual analysis about geopolitical events
-- Use the search_news tool to find current information when needed
-- Be direct and analytical - no fluff or hedging
-- If information is unverified, say "Unverified reports suggest..."
-- If you don't have enough information after searching, say so clearly
+<instructions>
+1. Answer questions about the event the user is viewing
+2. Use the search_news tool when you need current information (max 1-2 searches per question)
+3. Connect events to real-world impacts when relevant (prices, products, travel, investments)
+4. Be direct - give your actual read on the situation, don't over-hedge
+5. Cite your sources at the end
+</instructions>
 
-IMPORTANT - Search limits:
-- Make at most 1-2 searches per question
-- One good search is usually enough - be specific with your query
-- After searching, ALWAYS provide a response - do not search again unless absolutely necessary
-- If search results are limited, work with what you have
+<search_rules>
+- Search ONCE for current information, then respond with what you have
+- Skip searching for follow-up questions if you already have context
+- After searching, ALWAYS provide a response - never search repeatedly for "better" results
+- If results are limited, work with what you have and say so
+</search_rules>
 
-When to search:
-- Search once for current/recent information about an event
-- Skip searching for simple follow-up questions if you already have context
-- Do NOT search multiple times looking for "better" results
-
-Style:
-- Use **bold** for key terms and emphasis
-- Bullet points for lists
+<style>
+- Write for someone smart but not following this topic closely
+- Use **bold** for key terms
 - Short paragraphs (2-3 sentences max)
-- No emojis or casual language
-- Professional intelligence briefing tone
-- Keep responses focused and brief (aim for 150-300 words)
-- Get to the point quickly - users want fast intel, not essays
+- Aim for 150-250 words - get to the point fast
+- Define jargon briefly when you use it (e.g., "sanctions (trade restrictions)")
+- When explaining impact, be specific: name products, companies, timeframes when possible
+</style>
 
-Sources:
-- At the end of your response, include a "**Sources:**" section
-- List each source you referenced as a markdown link: [Source Name](URL)
-- Only include sources you actually used in your analysis`;
+<source_citation>
+End every response with a Sources section. Use EXACT markdown link format:
+
+**Sources:**
+- [The Guardian](https://www.theguardian.com/article-url)
+- [Reuters](https://www.reuters.com/article-url)
+
+CRITICAL: Links must be [Text](URL) with NO space between ] and (
+DO NOT use numbered references like [1] or put URLs in parentheses separately.
+Only cite sources you actually used.
+</source_citation>
+
+<guardrails>
+STAY ON TOPIC:
+- Only answer questions related to geopolitics, world events, and their impacts
+- For off-topic questions, briefly redirect: "I focus on geopolitical events. For this event, I can help you understand..."
+
+ACCURACY:
+- If information is unverified, say "Unverified reports suggest..."
+- If you don't know or can't find information, say so clearly
+- Don't speculate on military operations, troop movements, or classified information
+
+SAFETY:
+- Don't provide tactical/operational military advice
+- Don't help with anything that could endanger people
+- For questions about personal safety in conflict zones, recommend official sources (State Dept, FCO, etc.)
+</guardrails>
+
+<examples>
+USER: "Why does this matter?"
+GOOD: "Taiwan produces 90% of the world's most advanced computer chips through TSMC. These go into iPhones, cars, medical devices - basically anything with electronics. If tensions escalate, we could see global shortages within weeks. That's why markets react sharply to any Taiwan news."
+BAD: "This event has significant geopolitical implications and could affect regional stability. The international community is closely monitoring developments."
+
+USER: "What happens next?"
+GOOD: "Three scenarios to watch: (1) Exercises end as planned and tensions ease, (2) China extends exercises as leverage, (3) An incident occurs that forces both sides to respond. Most analysts expect scenario 1, but the risk of miscalculation is why markets are nervous."
+BAD: "It's difficult to predict what will happen. Many factors could influence the outcome."
+</examples>`;
 
 export async function POST(request: NextRequest) {
   try {
     const body: BriefingRequest = await request.json();
-    const { eventTitle, eventSummary, eventCategory, eventLocation, question, history } = body;
+    const {
+      eventId,
+      eventTitle,
+      eventSummary,
+      eventCategory,
+      eventLocation,
+      question,
+      history,
+      sessionToken,
+      powSolution,
+    } = body;
+
+    const clientIP = getClientIP(request);
+
+    // ==========================================================================
+    // STEP 1: Input Validation
+    // ==========================================================================
 
     // Validate required fields
-    if (!eventTitle || !question) {
+    if (!eventId || !eventTitle || !question) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // Step 0: Check daily limit
-    const clientIP = getClientIP(request);
+    // Validate question length
+    if (question.length > MAX_QUESTION_LENGTH) {
+      return new Response(
+        JSON.stringify({
+          error: "Question too long",
+          message: `Questions must be under ${MAX_QUESTION_LENGTH} characters.`,
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Validate history
+    if (history && Array.isArray(history)) {
+      if (history.length > MAX_HISTORY_LENGTH) {
+        return new Response(
+          JSON.stringify({
+            error: "History too long",
+            message: "Too many messages in conversation history.",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      // Validate each history message
+      for (const msg of history) {
+        if (
+          !msg.role ||
+          !msg.content ||
+          (msg.role !== "user" && msg.role !== "assistant")
+        ) {
+          return new Response(
+            JSON.stringify({ error: "Invalid history message format" }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
+    }
+
+    // ==========================================================================
+    // STEP 2: Session Authentication (PoW or Token)
+    // ==========================================================================
+
+    let newSessionToken: string | undefined;
+
+    try {
+      if (sessionToken) {
+        // Validate existing session token
+        const isValid = await validateSessionToken(sessionToken, clientIP);
+        if (!isValid) {
+          // Token invalid or expired - need new PoW
+          const challenge = generateChallenge();
+          return new Response(
+            JSON.stringify({
+              error: "Session expired",
+              requiresPow: true,
+              challenge,
+              difficulty: POW_DIFFICULTY,
+            }),
+            {
+              status: 401,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+        // Token valid, continue with request
+        console.log("[Briefing] Valid session token");
+      } else if (powSolution) {
+        // Verify PoW solution and issue new token
+        const result = await verifySolution(
+          powSolution.challenge,
+          powSolution.nonce,
+          POW_DIFFICULTY
+        );
+
+        if (!result.valid) {
+          console.warn(`[Briefing] Invalid PoW: ${result.error}`);
+          return new Response(
+            JSON.stringify({
+              error: "Invalid proof of work",
+              message: result.error,
+              requiresPow: true,
+              challenge: generateChallenge(),
+              difficulty: POW_DIFFICULTY,
+            }),
+            {
+              status: 401,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        // PoW verified - generate and store session token
+        newSessionToken = generateSessionToken();
+        await storeSessionToken(newSessionToken, clientIP);
+        console.log("[Briefing] PoW verified, new session token issued");
+      } else {
+        // No token or solution - need to solve PoW
+        const challenge = generateChallenge();
+        return new Response(
+          JSON.stringify({
+            error: "Authentication required",
+            requiresPow: true,
+            challenge,
+            difficulty: POW_DIFFICULTY,
+          }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+    } catch (authError) {
+      console.error("[Briefing] Auth error:", authError);
+      return new Response(
+        JSON.stringify({
+          error: "Authentication failed",
+          message: "Please try again.",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // ==========================================================================
+    // STEP 3: Rate Limiting (Global + Per-IP)
+    // ==========================================================================
+
     let limitChecked = false;
 
     try {
+      // Check global rate limit first (protects against distributed attacks)
+      const globalLimit = await checkAndIncrementGlobalLimit();
+      if (!globalLimit.allowed) {
+        console.warn(
+          `[Briefing] Global rate limit exceeded: ${globalLimit.current}/${globalLimit.limit}`
+        );
+        return new Response(
+          JSON.stringify({
+            error: "Service busy",
+            message: "Too many requests right now. Please try again in a minute.",
+          }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": "60",
+            },
+          }
+        );
+      }
+
+      // Check per-IP daily limit
       const { allowed, remaining, limit } = await checkBriefingLimit(clientIP);
 
       if (!allowed) {
@@ -168,7 +396,18 @@ export async function POST(request: NextRequest) {
       limitChecked = true;
       console.log(`[Briefing] IP has ${remaining} requests remaining today`);
     } catch (redisError) {
-      console.error("[Briefing] Redis error (allowing request):", redisError);
+      // Fail CLOSED on Redis errors - deny the request
+      console.error("[Briefing] Redis error (denying request):", redisError);
+      return new Response(
+        JSON.stringify({
+          error: "Service temporarily unavailable",
+          message: "Please try again in a moment.",
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Build event context
@@ -217,6 +456,11 @@ EVENT CONTEXT:
         };
 
         try {
+          // Send new session token if one was just created
+          if (newSessionToken) {
+            sendEvent({ sessionToken: newSessionToken });
+          }
+
           const ai = getGeminiClient();
 
           // Tool calling loop

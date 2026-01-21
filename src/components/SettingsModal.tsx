@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
+import { motion } from "framer-motion";
+import { NotificationSettings } from "./NotificationSettings";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -9,55 +11,69 @@ interface SettingsModalProps {
 }
 
 /**
- * Settings Modal - Contains map toggle
+ * Settings Modal - Contains map toggle and notification settings
  */
 export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsModalProps) {
-  // Close on escape
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
 
-  // Prevent body scroll
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
-
-  const handleBackdropClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) onClose();
+  // Close on escape key
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
     },
     [onClose]
   );
 
+  // Focus trap
+  useEffect(() => {
+    previousActiveElement.current = document.activeElement as HTMLElement;
+    modalRef.current?.focus();
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = "";
+      previousActiveElement.current?.focus();
+    };
+  }, [handleKeyDown]);
+
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={handleBackdropClick}
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-title"
     >
-      <div className="relative mx-4 w-full max-w-sm animate-in zoom-in-95 duration-200">
-        {/* Card */}
-        <div className="rounded-2xl bg-slate-900 border border-slate-700/50 shadow-2xl overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-700/50 px-5 py-4">
-            <h2
-              id="settings-title"
-              className="font-mono text-sm font-bold uppercase tracking-widest text-foreground"
-            >
-              Settings
-            </h2>
+      {/* Backdrop with blur */}
+      <motion.div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+      />
+
+      {/* Modal Card */}
+      <motion.div
+        ref={modalRef}
+        tabIndex={-1}
+        className="relative w-full max-w-[450px] rounded-lg border border-slate-700 bg-slate-900 shadow-2xl outline-none"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+      >
+        {/* Close Button */}
             <button
               onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/10 hover:text-foreground"
+          className="absolute right-3 top-3 rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
               aria-label="Close settings"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -69,20 +85,49 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                 />
               </svg>
             </button>
+
+        {/* Header Section */}
+        <div className="border-b border-slate-700/50 px-6 py-5">
+          <h2
+            id="settings-title"
+            className="font-mono text-xl font-bold tracking-wider text-slate-100"
+          >
+            SETTINGS
+          </h2>
+          <p className="mt-1 font-mono text-sm tracking-wide text-slate-400">
+            Configure your experience
+          </p>
           </div>
 
-          {/* Content */}
-          <div className="p-5 space-y-6">
+        {/* Content - Scrollable */}
+        <div className="custom-scrollbar max-h-[60vh] overflow-y-auto">
+          <div className="space-y-5 px-6 py-5">
             {/* Map View Toggle */}
-            <div>
-              <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-foreground/50 mb-3">
+            <div className="rounded-md border border-slate-700/50 bg-slate-800/50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <svg
+                  className="h-4 w-4 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+                  />
+                </svg>
+                <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
                 Map View
-              </h3>
-              <div className="flex items-center justify-between rounded-xl bg-slate-800/50 p-4">
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {is2DMode ? (
                     <svg
-                      className="h-5 w-5 text-foreground/60"
+                      className="h-5 w-5 text-slate-400"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -96,7 +141,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                     </svg>
                   ) : (
                     <svg
-                      className="h-5 w-5 text-accent"
+                      className="h-5 w-5 text-emerald-400"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -110,10 +155,10 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                     </svg>
                   )}
                   <div>
-                    <p className="text-sm font-medium text-foreground">
+                    <p className="text-sm font-medium text-slate-200">
                       {is2DMode ? "2D Map" : "3D Globe"}
                     </p>
-                    <p className="text-xs text-foreground/50">
+                    <p className="text-xs text-slate-400">
                       {is2DMode ? "Flat projection view" : "Interactive globe view"}
                     </p>
                   </div>
@@ -121,22 +166,45 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                 <button
                   onClick={onToggle2DMode}
                   className={`relative h-7 w-12 rounded-full transition-colors ${
-                    is2DMode ? "bg-slate-600" : "bg-accent"
+                    is2DMode ? "bg-slate-600" : "bg-emerald-500"
                   }`}
                   role="switch"
                   aria-checked={!is2DMode}
                 >
-                  <span
-                    className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform ${
-                      is2DMode ? "left-1" : "left-6"
-                    }`}
+                  <motion.span
+                    className="absolute top-1 h-5 w-5 rounded-full bg-white shadow-md"
+                    animate={{ left: is2DMode ? 4 : 24 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
                   />
                 </button>
               </div>
             </div>
+
+            {/* Push Notifications */}
+            <div className="rounded-md border border-slate-700/50 bg-slate-800/50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <svg
+                  className="h-4 w-4 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  />
+                </svg>
+                <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
+                Notifications
+                </span>
+              </div>
+              <NotificationSettings />
+            </div>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

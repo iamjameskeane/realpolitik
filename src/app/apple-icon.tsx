@@ -13,17 +13,17 @@ export default function AppleIcon() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(135deg, #020617 0%, #0f172a 100%)",
-        borderRadius: "40px",
+        // Transparent background for iOS 18 theming support
+        background: "transparent",
       }}
     >
       <svg
-        width="120"
-        height="120"
+        width="160"
+        height="160"
         viewBox="0 0 200 200"
         fill="none"
         stroke="#6366f1"
-        strokeWidth="4"
+        strokeWidth="6"
         strokeLinecap="round"
       >
         {/* Outer circle */}
@@ -36,7 +36,7 @@ export default function AppleIcon() {
         <line x1="15" y1="100" x2="185" y2="100" />
         <line x1="100" y1="15" x2="100" y2="185" />
         {/* Center dot */}
-        <circle cx="100" cy="100" r="10" fill="#6366f1" stroke="none" />
+        <circle cx="100" cy="100" r="12" fill="#6366f1" stroke="none" />
       </svg>
     </div>,
     { ...size }

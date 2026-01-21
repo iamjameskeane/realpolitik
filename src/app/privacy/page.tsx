@@ -157,7 +157,55 @@ export default function PrivacyPage() {
                   in Upstash Redis and automatically expire after 24 hours (for rate limits) or when
                   events age out.
                 </li>
+                <li>
+                  <strong className="text-slate-300">Session tokens:</strong> When using AI
+                  Briefings, a session token is generated and stored for 1 hour to reduce repeated
+                  verification. This token is tied to your hashed IP and expires automatically.
+                </li>
               </ul>
+            </div>
+          </section>
+
+          {/* Push Notifications */}
+          <section>
+            <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">
+              PUSH NOTIFICATIONS
+            </h2>
+            <p className="mb-4 leading-relaxed">
+              If you enable push notifications, we store the following on our servers:
+            </p>
+
+            <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+              <h3 className="mb-2 font-mono text-sm font-semibold text-indigo-400">
+                Push Subscription Data
+              </h3>
+              <ul className="list-inside list-disc space-y-2 text-sm text-slate-400">
+                <li>
+                  <strong className="text-slate-300">Endpoint URL:</strong> A unique URL provided by
+                  your browser&apos;s push service (Apple, Google, or Mozilla). This is how we send
+                  notifications to your device.
+                </li>
+                <li>
+                  <strong className="text-slate-300">Encryption keys:</strong> Public keys used to
+                  encrypt notifications so only your browser can decrypt them.
+                </li>
+                <li>
+                  <strong className="text-slate-300">Your preferences:</strong> Minimum severity
+                  threshold and event categories you want to be notified about.
+                </li>
+                <li>
+                  <strong className="text-slate-300">User agent:</strong> Your browser type, stored
+                  to help diagnose issues.
+                </li>
+                <li>
+                  <strong className="text-slate-300">Timestamps:</strong> When you subscribed and
+                  last received a notification.
+                </li>
+              </ul>
+              <p className="mt-3 text-sm text-slate-500">
+                This data is stored in Upstash Redis and is deleted when you unsubscribe or when
+                your browser revokes the push subscription.
+              </p>
             </div>
           </section>
 
@@ -190,10 +238,25 @@ export default function PrivacyPage() {
               </div>
 
               <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <code className="font-mono text-xs text-purple-400">pwa-prompt-dismissed</code>
+                <code className="font-mono text-xs text-purple-400">realpolitik:push:preferences</code>
                 <p className="mt-2 text-sm text-slate-400">
-                  Timestamp when you dismissed the &quot;Add to Home Screen&quot; prompt. Prevents
-                  showing the prompt again.
+                  Your push notification preferences: whether enabled, minimum severity level, and
+                  which event categories to notify about. Synced with server when you subscribe.
+                </p>
+              </div>
+
+              <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                <code className="font-mono text-xs text-purple-400">realpolitik:installPromptDismissed</code>
+                <p className="mt-2 text-sm text-slate-400">
+                  Set to &quot;permanent&quot; when you dismiss the &quot;Install App&quot; prompt
+                  using the X button. Prevents showing the prompt again.
+                </p>
+              </div>
+
+              <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                <code className="font-mono text-xs text-purple-400">realpolitik:notificationPromptDismissed</code>
+                <p className="mt-2 text-sm text-slate-400">
+                  Set when you dismiss the notification enablement prompt. Prevents asking again.
                 </p>
               </div>
             </div>
@@ -230,6 +293,15 @@ export default function PrivacyPage() {
               <li>
                 <strong className="text-slate-300">Reaction votes:</strong> Retained while the event
                 is active, deleted when events age out of the system
+              </li>
+              <li>
+                <strong className="text-slate-300">Push subscriptions:</strong> Deleted when you
+                unsubscribe, when your browser revokes the subscription, or when we detect the
+                endpoint is no longer valid
+              </li>
+              <li>
+                <strong className="text-slate-300">Notified event IDs:</strong> We track which
+                events triggered notifications to prevent duplicates. This data expires after 7 days.
               </li>
               <li>
                 <strong className="text-slate-300">Client-side data:</strong> Persists until you

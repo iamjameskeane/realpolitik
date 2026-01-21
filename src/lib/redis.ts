@@ -40,25 +40,20 @@ export function getTodayKey(): string {
  * Hash an IP address for privacy (we don't store raw IPs)
  *
  * Uses SHA-256 with a secret salt. The salt MUST be set via IP_SALT
- * environment variable in production for proper privacy protection.
+ * environment variable - no fallback for security.
  */
-let ipSaltWarningLogged = false;
-
 export async function hashIP(ip: string): Promise<string> {
   const salt = process.env.IP_SALT;
 
-  // Warn once if salt is missing in production
-  if (!salt && process.env.NODE_ENV === "production" && !ipSaltWarningLogged) {
-    console.error(
-      "[Security] IP_SALT environment variable is not set. " +
-        "Using fallback salt reduces privacy protection. " +
+  if (!salt) {
+    throw new Error(
+      "[Security] IP_SALT environment variable is required. " +
         "Please set IP_SALT in your environment variables."
     );
-    ipSaltWarningLogged = true;
   }
 
   const encoder = new TextEncoder();
-  const data = encoder.encode(ip + (salt || "realpolitik-salt"));
+  const data = encoder.encode(ip + salt);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray

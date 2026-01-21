@@ -7,14 +7,15 @@ const allowedOrigins = ["https://realpolitik.world", "https://www.realpolitik.wo
 const cspDirectives = [
   "default-src 'self'",
   // Next.js requires unsafe-inline and unsafe-eval for hydration/dev
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // Vercel live preview needs vercel.live scripts
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live",
   "style-src 'self' 'unsafe-inline'",
   // Images: self, data URIs, HTTPS sources (for news thumbnails), blob (for map)
   "img-src 'self' data: https: blob:",
   // Fonts: Google Fonts
   "font-src 'self' https://fonts.gstatic.com",
-  // API connections: self, Mapbox, Upstash
-  "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com wss://*.tiles.mapbox.com https://*.upstash.io",
+  // API connections: self, Mapbox, Upstash, R2 bucket, Vercel, Push services
+  "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com wss://*.tiles.mapbox.com https://*.upstash.io https://*.r2.dev https://vercel.live https://*.push.apple.com https://fcm.googleapis.com https://updates.push.services.mozilla.com",
   // Workers: Mapbox uses web workers
   "worker-src 'self' blob:",
   // Prevent clickjacking

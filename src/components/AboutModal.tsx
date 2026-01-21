@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback, useRef } from "react";
+import { motion } from "framer-motion";
 
 interface AboutModalProps {
   onClose: () => void;
@@ -51,17 +52,25 @@ export function AboutModal({ onClose }: AboutModalProps) {
       aria-labelledby="about-modal-title"
     >
       {/* Backdrop with blur */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      <motion.div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
       />
 
       {/* Modal Card */}
-      <div
+      <motion.div
         ref={modalRef}
         tabIndex={-1}
-        className="relative w-full max-w-[450px] rounded-lg border border-slate-700 bg-slate-900 shadow-2xl outline-none animate-in fade-in zoom-in-95 duration-200"
+        className="relative w-full max-w-[450px] rounded-lg border border-slate-700 bg-slate-900 shadow-2xl outline-none"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
       >
         {/* Close Button */}
         <button
@@ -137,7 +146,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
                 </span>
               </div>
               <p className="mb-3 text-xs leading-relaxed text-slate-400">
-                Data aggregated from {24} open-source feeds updated every 15 minutes:
+                Data aggregated from {24} open-source feeds updated every 60 minutes:
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {[
@@ -164,7 +173,6 @@ export function AboutModal({ onClose }: AboutModalProps) {
                   "CBS News",
                   "Breaking Defense",
                   "Foreign Affairs",
-                  "NewsAPI",
                 ].map((source) => (
                   <span
                     key={source}
@@ -209,6 +217,10 @@ export function AboutModal({ onClose }: AboutModalProps) {
                 <p className="text-xs leading-relaxed text-slate-400">
                   Tap{" "}
                   <span className="inline-flex whitespace-nowrap items-center rounded bg-slate-700 px-1.5 py-0.5 text-slate-300">
+                    ⋯
+                  </span>{" "}
+                  →{" "}
+                  <span className="inline-flex whitespace-nowrap items-center rounded bg-slate-700 px-1.5 py-0.5 text-slate-300">
                     <svg
                       className="mr-1 h-3 w-3"
                       fill="none"
@@ -224,7 +236,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
                     </svg>
                     Share
                   </span>{" "}
-                  then{" "}
+                  →{" "}
                   <span className="whitespace-nowrap rounded bg-slate-700 px-1.5 py-0.5 text-slate-300">
                     Add to Home Screen
                   </span>
@@ -259,6 +271,18 @@ export function AboutModal({ onClose }: AboutModalProps) {
         {/* Footer Section - Links */}
         <div className="border-t border-slate-700/50 px-6 py-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/* Feedback Link */}
+            <a
+              href="https://docs.google.com/forms/d/e/1FAIpQLScGAtiNz-mvp6b8c3MZa9tK9Aa8GLsrjRmLIPJOzQ10rNtEbw/viewform"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs text-emerald-400 transition-colors hover:text-emerald-300"
+            >
+              📝 FEEDBACK
+            </a>
+
+            <span className="text-slate-600">•</span>
+
             {/* Privacy Link */}
             <a
               href="/privacy"
@@ -316,7 +340,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             </a>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

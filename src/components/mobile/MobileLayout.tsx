@@ -9,11 +9,13 @@ import { IntelligenceSheet, SheetPhase } from "./IntelligenceSheet";
 import { SortOption } from "./FilterBar";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useEventSelection } from "@/hooks/useEventSelection";
-// import { InstallPrompt } from "./InstallPrompt"; // Disabled - too aggressive
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
+import { useNotificationInbox } from "@/hooks/useNotificationInbox";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { TIME_DISPLAY_UPDATE_MS, TIME_RANGES, MIN_TIME_RANGE_OPTIONS } from "@/lib/constants";
 import { formatRelativeTime } from "@/lib/formatters";
+import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "../AboutModal";
 import { SettingsModal } from "../SettingsModal";
 
@@ -81,6 +83,13 @@ function MobileLayoutInner({
   const [flyoverMode, setFlyoverMode] = useState(false);
   const [flyoverIndex, setFlyoverIndex] = useState(0);
   const [flyoverEvents, setFlyoverEvents] = useState<GeoEvent[]>([]); // Snapshotted filtered events
+  
+  // Cluster view mode (long-press on cluster shows events in that cluster)
+  const [clusterViewOpen, setClusterViewOpen] = useState(false);
+  const [clusterViewEvents, setClusterViewEvents] = useState<GeoEvent[]>([]);
+  const [clusterViewLabel, setClusterViewLabel] = useState("");
+  // Track if we're viewing event details from within cluster view (for back navigation)
+  const [fromClusterView, setFromClusterView] = useState(false);
 
   // Calculate which time ranges have data (dynamic slider) - needed before useEventStates
   const availableTimeRanges = useMemo(() => {
@@ -127,12 +136,35 @@ function MobileLayoutInner({
   const {
     incomingEvents,
     incomingCount,
-    unseenEvents,
-    unseenCount,
     eventStateMap,
     markAsRead,
-    markAllUnseenAsRead,
   } = useEventStates(timeFilteredEvents);
+
+  // Notification inbox - tracks events that arrived via push notifications
+  // Uses ALL events (not time-filtered) so notifications don't disappear based on time range
+  const {
+    inboxEvents,
+    inboxCount,
+    removeFromInbox,
+    clearInbox: clearNotificationInbox,
+  } = useNotificationInbox(events);
+
+  // Push notification subscription status
+  const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
+    usePushNotifications();
+
+  // Smart default sort: "What's New" if there are incoming events, else "Hot"
+  const hasSetInitialSort = useRef(false);
+  useEffect(() => {
+    if (hasSetInitialSort.current) return;
+    if (incomingCount > 0) {
+      setSortBy("unread");
+      hasSetInitialSort.current = true;
+    } else if (timeFilteredEvents.length > 0) {
+      // If we have events but none are new, mark as initialized
+      hasSetInitialSort.current = true;
+    }
+  }, [incomingCount, timeFilteredEvents.length]);
 
   // Update displayed time
   useEffect(() => {
@@ -146,7 +178,19 @@ function MobileLayoutInner({
   // Get reactions for analyst sort
   const { reactions } = useBatchReactions();
 
+  // Track pinned event ID - any event that should be visible regardless of time filter
+  // This handles notification deep links and inbox clicks
+  const [pinnedEventId, setPinnedEventId] = useState<string | null>(initialEventId || null);
+  
+  // Update pinned event when initialEventId changes (notification deep link)
+  useEffect(() => {
+    if (initialEventId) {
+      setPinnedEventId(initialEventId);
+    }
+  }, [initialEventId]);
+  
   // Filter by category, hide seen, and sort
+  // Also include the pinned event even if it's outside the time/category filters
   const filteredEvents = useMemo(() => {
     let filtered = timeFilteredEvents.filter((e) => activeCategories.has(e.category));
 
@@ -157,6 +201,16 @@ function MobileLayoutInner({
         // Keep only incoming and backlog (unread) events
         return state === "incoming" || state === "backlog" || !state;
       });
+    }
+    
+    // If there's a pinned event that's not in the filtered list, add it
+    // This ensures notification/inbox clicks always show the event
+    // Note: We bypass ALL filters for pinned events - if user clicked it, they want to see it
+    if (pinnedEventId && !filtered.some((e) => e.id === pinnedEventId)) {
+      const pinnedEvent = events.find((e) => e.id === pinnedEventId);
+      if (pinnedEvent) {
+        filtered = [pinnedEvent, ...filtered];
+      }
     }
 
     // Apply sorting
@@ -225,8 +279,11 @@ function MobileLayoutInner({
         });
       case "unread":
         // "What's New" - ONLY show incoming events (new since last visit), sorted by recency
+        // Exception: always include pinned event so it shows on map
         return [...filtered]
           .filter((e) => {
+            // Always include pinned event
+            if (e.id === pinnedEventId) return true;
             const state = eventStateMap.get(e.id) || "backlog";
             return state === "incoming";
           })
@@ -238,7 +295,7 @@ function MobileLayoutInner({
           (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
         );
     }
-  }, [timeFilteredEvents, activeCategories, sortBy, reactions, eventStateMap, hideSeen]);
+  }, [timeFilteredEvents, activeCategories, sortBy, reactions, eventStateMap, hideSeen, pinnedEventId, events]);
 
   // Category counts
   const categoryCounts = useMemo(() => {
@@ -293,6 +350,8 @@ function MobileLayoutInner({
   // Handle event selection (from list or map)
   const handleEventSelect = useCallback(
     (event: GeoEvent, index: number) => {
+      // Pin this event so it stays visible even if outside time filter
+      setPinnedEventId(event.id);
       selectEvent(event, index);
       markAsRead(event.id); // Mark as read when selected
       setPhase("pilot"); // Switch to event details
@@ -319,30 +378,50 @@ function MobileLayoutInner({
   const handlePhaseChange = useCallback(
     (newPhase: SheetPhase) => {
       setPhase(newPhase);
-      // If going to scanner, clear selection and exit touring modes
+      // If going to scanner, handle navigation
       if (newPhase === "scanner") {
         clearSelection();
+        setPinnedEventId(null); // Clear pinned event when navigating away
+        
+        // If we came from cluster view, return to cluster view (not main feed)
+        if (fromClusterView && clusterViewEvents.length > 0) {
+          setFromClusterView(false);
+          // Keep cluster view open, just exit touring modes
+          setCatchUpMode(false);
+          setCatchUpIndex(0);
+          setCatchUpEvents([]);
+          setFlyoverMode(false);
+          setFlyoverIndex(0);
+          setFlyoverEvents([]);
+          return;
+        }
+        
+        // Otherwise, exit all modes including cluster view
         setCatchUpMode(false);
         setCatchUpIndex(0);
         setCatchUpEvents([]);
         setFlyoverMode(false);
         setFlyoverIndex(0);
         setFlyoverEvents([]);
+        setClusterViewOpen(false);
+        setClusterViewEvents([]);
+        setClusterViewLabel("");
+        setFromClusterView(false);
       }
     },
-    [clearSelection]
+    [clearSelection, fromClusterView, clusterViewEvents.length]
   );
 
   // ===== CATCH UP MODE =====
   // Start catch up - fly through all unseen events in inbox
 
   const startCatchUp = useCallback(() => {
-    if (unseenEvents.length === 0) return;
+    if (inboxEvents.length === 0) return;
 
-    setCatchUpEvents(unseenEvents);
+    setCatchUpEvents(inboxEvents);
 
     // Start with first event
-    const firstEvent = unseenEvents[0];
+    const firstEvent = inboxEvents[0];
     setCatchUpMode(true);
     setCatchUpIndex(0);
     setInboxOpen(false); // Close inbox view
@@ -354,7 +433,7 @@ function MobileLayoutInner({
     );
     markAsRead(firstEvent.id);
     setPhase("pilot");
-  }, [unseenEvents, filteredEvents, selectEvent, markAsRead]);
+  }, [inboxEvents, filteredEvents, selectEvent, markAsRead]);
 
   // Navigate to next event in catch up mode
   const catchUpNext = useCallback(() => {
@@ -367,6 +446,7 @@ function MobileLayoutInner({
       setCatchUpEvents([]);
       setPhase("scanner");
       clearSelection();
+      setPinnedEventId(null);
       return;
     }
 
@@ -401,6 +481,7 @@ function MobileLayoutInner({
     setCatchUpEvents([]);
     setPhase("scanner");
     clearSelection();
+    setPinnedEventId(null);
   }, [clearSelection]);
 
   // ===== FLYOVER MODE =====
@@ -433,6 +514,7 @@ function MobileLayoutInner({
       setFlyoverEvents([]);
       setPhase("scanner");
       clearSelection();
+      setPinnedEventId(null);
       return;
     }
 
@@ -461,7 +543,58 @@ function MobileLayoutInner({
     setFlyoverEvents([]);
     setPhase("scanner");
     clearSelection();
+    setPinnedEventId(null);
   }, [clearSelection]);
+
+  // ===== CLUSTER VIEW MODE =====
+  // Long press on a cluster opens cluster details view
+
+  const handleClusterLongPress = useCallback((events: GeoEvent[], locationLabel: string) => {
+    // Sort events by severity (highest first)
+    const sortedEvents = [...events].sort((a, b) => b.severity - a.severity);
+    setClusterViewEvents(sortedEvents);
+    setClusterViewLabel(locationLabel);
+    setClusterViewOpen(true);
+    setInboxOpen(false); // Close inbox if open
+  }, []);
+
+  // Handle event selection from cluster view
+  const handleClusterEventSelect = useCallback(
+    (event: GeoEvent, index: number) => {
+      setFromClusterView(true); // Track that we came from cluster view
+      selectEvent(event, index);
+      markAsRead(event.id);
+      setPhase("pilot");
+    },
+    [selectEvent, markAsRead]
+  );
+
+  // Exit cluster view (back to main feed)
+  const exitClusterView = useCallback(() => {
+    setClusterViewOpen(false);
+    setClusterViewEvents([]);
+    setClusterViewLabel("");
+  }, []);
+
+  // Start flyover for cluster events only
+  const startClusterFlyover = useCallback(() => {
+    if (clusterViewEvents.length === 0) return;
+
+    // Use cluster events for flyover
+    setFlyoverEvents(clusterViewEvents);
+    setFlyoverMode(true);
+    setFlyoverIndex(0);
+    setFromClusterView(true); // Return to cluster view after exiting flyover
+
+    // Select first event
+    const firstEvent = clusterViewEvents[0];
+    selectEvent(
+      firstEvent,
+      filteredEvents.findIndex((e) => e.id === firstEvent.id)
+    );
+    markAsRead(firstEvent.id);
+    setPhase("pilot");
+  }, [clusterViewEvents, filteredEvents, selectEvent, markAsRead]);
 
   // Determine active touring mode (catchUp or flyover)
   const isTouringMode = catchUpMode || flyoverMode;
@@ -505,6 +638,7 @@ function MobileLayoutInner({
             showControls={false}
             interactive={true}
             onEventClick={handleMapEventClick}
+            onClusterLongPress={handleClusterLongPress}
             hasExternalSelection={selectedEvent !== null}
             eventStateMap={eventStateMap}
           />
@@ -593,15 +727,19 @@ function MobileLayoutInner({
         categoryCounts={categoryCounts}
         // Event visual states
         eventStateMap={eventStateMap}
-        // Inbox - shows all unseen events (purple dots)
-        unseenEvents={unseenEvents}
-        unseenCount={unseenCount}
+        // Inbox - shows events from push notifications
+        inboxEvents={inboxEvents}
+        inboxCount={inboxCount}
+        removeFromInbox={removeFromInbox}
+        clearNotificationInbox={clearNotificationInbox}
+        notificationsEnabled={notificationsEnabled}
+        notificationsLoading={notificationsLoading}
+        onOpenSettings={() => setSettingsOpen(true)}
         // What's New - shows only new events since last visit
         incomingEvents={incomingEvents}
         incomingCount={incomingCount}
         inboxOpen={inboxOpen}
         onInboxToggle={() => setInboxOpen(!inboxOpen)}
-        onMarkAllRead={markAllUnseenAsRead}
         // Touring modes (catch up or flyover)
         isTouringMode={isTouringMode}
         catchUpMode={catchUpMode}
@@ -612,15 +750,23 @@ function MobileLayoutInner({
         // Hide seen toggle
         hideSeen={hideSeen}
         onHideSeenChange={setHideSeen}
+        // Cluster view
+        clusterViewOpen={clusterViewOpen}
+        clusterViewEvents={clusterViewEvents}
+        clusterViewLabel={clusterViewLabel}
+        onClusterEventSelect={handleClusterEventSelect}
+        onExitClusterView={exitClusterView}
+        onStartClusterFlyover={startClusterFlyover}
       />
 
-      {/* PWA Install Prompt - disabled for now, too aggressive */}
-      {/* <InstallPrompt /> */}
 
       {/* About Modal */}
+      <AnimatePresence>
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      </AnimatePresence>
 
       {/* Settings Modal */}
+      <AnimatePresence>
       {settingsOpen && (
         <SettingsModal
           onClose={() => setSettingsOpen(false)}
@@ -628,6 +774,7 @@ function MobileLayoutInner({
           onToggle2DMode={() => setIs2DMode(!is2DMode)}
         />
       )}
+      </AnimatePresence>
     </main>
   );
 }

@@ -42,6 +42,11 @@
       "description": "Human-readable location name",
       "maxLength": 100
     },
+    "region": {
+      "type": "string",
+      "enum": ["MIDDLE_EAST", "EAST_ASIA", "SOUTHEAST_ASIA", "SOUTH_ASIA", "EUROPE", "AFRICA", "AMERICAS", "CENTRAL_ASIA", "OCEANIA", "OTHER"],
+      "description": "Geographic region for notification filtering"
+    },
     "severity": {
       "type": "integer",
       "minimum": 1,
@@ -103,10 +108,16 @@
             "type": "string",
             "format": "date-time",
             "description": "Article publication timestamp (ISO 8601)"
+          },
+          "original_severity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Severity score from enrichment step (before synthesis)"
           }
         }
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }

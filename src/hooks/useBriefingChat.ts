@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef } from "react";
 import { GeoEvent, EventCategory } from "@/types/events";
+import { solveChallenge } from "@/lib/pow";
 
 // Preset chips by category
 const UNIVERSAL_CHIPS = ["What's happening?", "What happens next?", "Historical context?"];
@@ -15,6 +16,7 @@ const CATEGORY_CHIPS: Record<EventCategory, string[]> = {
 
 // Status labels for display
 const STATUS_LABELS: Record<string, string> = {
+  authenticating: "Authenticating...",
   searching: "Searching sources...",
   analyzing: "Analyzing results...",
   thinking: "Reasoning...",
@@ -23,11 +25,15 @@ const STATUS_LABELS: Record<string, string> = {
 
 export type BriefingStatus =
   | "idle"
+  | "authenticating"
   | "searching"
   | "analyzing"
   | "thinking"
   | "generating"
   | "done";
+
+// Session token storage (persists across component remounts)
+let sessionToken: string | null = null;
 
 export interface ChatMessage {
   id: string;
@@ -75,7 +81,23 @@ interface SSEErrorEvent {
   error: string;
 }
 
-type SSEEvent = SSEContentEvent | SSEStatusEvent | SSEDoneEvent | SSEErrorEvent;
+interface SSESessionTokenEvent {
+  sessionToken: string;
+}
+
+type SSEEvent =
+  | SSEContentEvent
+  | SSEStatusEvent
+  | SSEDoneEvent
+  | SSEErrorEvent
+  | SSESessionTokenEvent;
+
+// PoW challenge response from server
+interface PowChallengeResponse {
+  requiresPow: true;
+  challenge: string;
+  difficulty: number;
+}
 
 export function useBriefingChat({ event, onError }: UseBriefingChatOptions): UseBriefingChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -177,20 +199,63 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
       sseBufferRef.current = "";
 
       try {
-        const response = await fetch("/api/briefing", {
+        // Build base request payload
+        const basePayload = {
+          eventId: event.id,
+          eventTitle: event.title,
+          eventSummary: event.summary,
+          eventCategory: event.category,
+          eventLocation: event.location_name || "Unknown",
+          question,
+          history: messages.map((m) => ({ role: m.role, content: m.content })),
+        };
+
+        // Make request with session token if available
+        let response = await fetch("/api/briefing", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            eventId: event.id,
-            eventTitle: event.title,
-            eventSummary: event.summary,
-            eventCategory: event.category,
-            eventLocation: event.location_name || "Unknown",
-            question,
-            history: messages.map((m) => ({ role: m.role, content: m.content })),
+            ...basePayload,
+            sessionToken: sessionToken || undefined,
           }),
           signal: abortControllerRef.current.signal,
         });
+
+        // Handle PoW challenge (401 response)
+        if (response.status === 401) {
+          const challengeData = await response.json();
+
+          if (challengeData.requiresPow) {
+            setStatus("authenticating");
+
+            // Solve the proof of work challenge
+            const { nonce } = await solveChallenge(
+              challengeData.challenge,
+              challengeData.difficulty
+            );
+
+            // Retry with PoW solution
+            response = await fetch("/api/briefing", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...basePayload,
+                powSolution: {
+                  challenge: challengeData.challenge,
+                  nonce,
+                },
+              }),
+              signal: abortControllerRef.current.signal,
+            });
+
+            // If still 401, clear token and throw
+            if (response.status === 401) {
+              sessionToken = null;
+              const errorData = await response.json();
+              throw new Error(errorData.message || "Authentication failed");
+            }
+          }
+        }
 
         if (!response.ok) {
           try {
@@ -231,6 +296,11 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
 
         const processEvents = (events: SSEEvent[]) => {
           for (const evt of events) {
+            // Session token (store for future requests)
+            if ("sessionToken" in evt && evt.sessionToken) {
+              sessionToken = evt.sessionToken;
+            }
+
             // Status updates
             if ("status" in evt && evt.status) {
               setStatus(evt.status);

@@ -41,6 +41,9 @@ from sources.rss_feeds import fetch_rss_articles, dedupe_articles
 # Import location reference for geocoding accuracy
 from locations import LOCATIONS, get_location_prompt_context
 
+# Import region extraction for notification filtering
+from regions import get_region
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -52,6 +55,13 @@ GCS_BUCKET = os.getenv("GCS_BUCKET", "")  # For production
 # Upstash Redis for caching processed articles
 UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+
+# Push notification configuration
+PUSH_API_URL = os.getenv("PUSH_API_URL", "https://realpolitik.world/api/push/send")
+PUSH_API_SECRET = os.getenv("PUSH_API_SECRET", "")
+PUSH_NOTIFICATION_THRESHOLD = 1  # Minimum severity - user rules handle filtering
+PUSH_CRITICAL_THRESHOLD = 9  # Severity threshold for "critical" flag
+PUSH_MAX_AGE_HOURS = 4  # Only notify for articles published within this many hours
 
 OUTPUT_PATH = Path(__file__).parent.parent / "public" / "events.json"
 
@@ -602,6 +612,7 @@ class GeoEvent(BaseModel):
     category: Literal["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"]
     coordinates: tuple[float, float]  # [lng, lat]
     location_name: str
+    region: str = "OTHER"  # Geographic region for notification filtering
     severity: int
     summary: str  # Synthesized summary
     timestamp: str  # Earliest source timestamp
@@ -706,34 +717,44 @@ STEP 5: Summary
 Return valid JSON matching the schema. Do NOT include latitude/longitude - those are handled separately."""
 
 
-SYNTHESIS_PROMPT = """You are a geopolitical analyst synthesizing news report(s) about a geopolitical incident.
+SYNTHESIS_PROMPT = """<role>
+You explain geopolitical news to regular people - what happened, why it matters, and what could happen next.
+</role>
 
-The reports are sorted by credibility (WIRE SERVICE > QUALITY OUTLET > REGIONAL > UNVERIFIED).
-Each source is labeled with its credibility tier.
+<instructions>
+From the news reports provided, synthesize:
+1. TITLE: Single headline, under 100 characters, factual
+2. SUMMARY: What happened (2-3 sentences, prioritize WIRE SERVICE sources)
+3. FALLOUT: Why it matters to regular people (2-3 sentences, see requirements below)
+4. SEVERITY: Score 1-10 based on verified facts only
+</instructions>
 
-SOURCE CREDIBILITY RULES:
-- WIRE SERVICE (AP, Reuters, AFP, BBC): Highly reliable, use as primary facts
-- QUALITY OUTLET (NYT, Guardian, WaPo): Reliable, good for context
-- REGIONAL: May have local insight but verify against wire services
-- UNVERIFIED: Use with caution, only if corroborated by credible sources
+<fallout_requirements>
+The FALLOUT section must help someone understand: "Why should I care about this?"
 
-Your task:
-1. TITLE: Write a single authoritative headline
-   - Base on the most credible source(s)
-   - Use specific, verified facts
-   
-2. SUMMARY: Write a comprehensive summary (2-3 sentences)
-   - Prioritize facts from credible sources
-   - If multiple sources contradict, prefer WIRE SERVICE version
-   - Include key numbers only if confirmed by credible sources
+REQUIRED elements:
+- CONTEXT: What do most people not know? (e.g., "Taiwan makes 90% of advanced chips")
+- STAKES: What could realistically happen next? Include timeframes when possible.
+- CONNECTION: How might this touch daily life? Name specific things: products, prices, travel, companies.
 
-3. FALLOUT: Predict consequences based on the information (REQUIRED - never leave empty)
-   - Be specific about likely outcomes
-   - Consider international response, regional stability, economic impact
-   - For single-source events, still provide your best prediction
+QUALITY CHECK before finalizing:
+- Does this read like a news explainer, not an academic paper?
+- Would a curious non-expert understand it?
+- Are there specific, concrete details (not just "economic impact" or "regional tensions")?
+</fallout_requirements>
 
-4. SEVERITY: Score 1-10 based on credibly-sourced information
-   - Don't inflate based on unverified claims
+<examples>
+INPUT: China military exercises near Taiwan
+GOOD_FALLOUT: "Taiwan's TSMC produces 90% of the world's advanced chips - they're in everything from iPhones to car computers. If exercises escalate to a blockade, global electronics shortages could start within weeks. Watch for: chip stockpiling announcements, US carrier movements, or airlines rerouting flights."
+BAD_FALLOUT: "This could destabilize the region and impact global trade relations. International observers are monitoring the situation."
+
+The first is specific (TSMC, iPhones, weeks, what to watch). The second is generic filler.
+</examples>
+
+<source_credibility>
+Sources are labeled by tier. When facts conflict, prefer higher tiers:
+WIRE SERVICE (AP, Reuters, AFP, BBC) > QUALITY OUTLET (NYT, Guardian) > REGIONAL > UNVERIFIED
+</source_credibility>
 
 Return valid JSON matching the schema."""
 
@@ -1517,12 +1538,16 @@ async def process_articles(
             group.category, group.lng, group.lat, earliest
         )
         
+        # Extract geographic region for notification filtering
+        region = get_region(group.location_name)
+        
         event = GeoEvent(
             id=incident_id,
             title=title,
             category=group.category,
             coordinates=(group.lng, group.lat),
             location_name=group.location_name,
+            region=region,
             severity=severity,
             summary=summary,
             timestamp=earliest,
@@ -1748,8 +1773,11 @@ async def merge_with_existing(
     return final_events
 
 
-async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> None:
-    """Write events to local JSON file, merging with existing events."""
+async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> list[dict]:
+    """Write events to local JSON file, merging with existing events.
+    
+    Returns the final merged event list for notification processing.
+    """
     import shutil
     
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1781,6 +1809,10 @@ async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.C
                 "timestamp": event.get("timestamp", ""),
             }]
             event["last_updated"] = event.get("timestamp", "")
+        
+        # Add region field to events that don't have it
+        if "region" not in event:
+            event["region"] = get_region(event.get("location_name", ""))
     
     # Merge with existing (re-synthesizes when new sources added)
     final_events = await merge_with_existing(events, existing_data, gemini_client)
@@ -1790,10 +1822,15 @@ async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.C
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"💾 Wrote {len(final_events)} incidents ({total_sources} total sources) to {path}")
+    
+    return final_events
 
 
-async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> None:
-    """Write events to Google Cloud Storage."""
+async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> list[dict]:
+    """Write events to Google Cloud Storage.
+    
+    Returns the final merged event list for notification processing.
+    """
     from google.cloud import storage
     
     client = storage.Client()
@@ -1815,10 +1852,186 @@ async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: gen
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to gs://{bucket_name}/events.json")
+    
+    return final_events
 
 
-async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
-    """Write events to Cloudflare R2 (S3-compatible storage)."""
+# ---------------------------------------------------------------------------
+# Push Notification Integration
+# ---------------------------------------------------------------------------
+
+def send_push_notification(event: dict) -> bool:
+    """
+    Send push notification for an event to the API.
+    
+    The API handles per-subscription deduplication, ensuring each subscriber
+    only receives each event once, even if this function is called multiple times.
+    User-defined rules filter which events each subscriber receives.
+    
+    Args:
+        event: Event dict with id, title, summary, severity, category, timestamp
+        
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    import requests
+    from datetime import datetime, timezone
+    
+    if not PUSH_API_SECRET:
+        print("   ⚠️ PUSH_API_SECRET not set, skipping notification")
+        return False
+    
+    event_id = event.get("id", "")
+    severity = event.get("severity", 0)
+    
+    # Basic severity filter - user rules handle granular filtering
+    if severity < PUSH_NOTIFICATION_THRESHOLD:
+        return False
+    
+    # Check article age - only notify for recent news
+    sources = event.get("sources", [])
+    if sources:
+        latest_source = max(sources, key=lambda s: s.get("timestamp", ""))
+        timestamp_str = latest_source.get("timestamp", event.get("timestamp", ""))
+    else:
+        timestamp_str = event.get("timestamp", "")
+    
+    if timestamp_str:
+        try:
+            if timestamp_str.endswith("Z"):
+                timestamp_str = timestamp_str[:-1] + "+00:00"
+            event_time = datetime.fromisoformat(timestamp_str)
+            if event_time.tzinfo is None:
+                event_time = event_time.replace(tzinfo=timezone.utc)
+            
+            age_hours = (datetime.now(timezone.utc) - event_time).total_seconds() / 3600
+            
+            if age_hours > PUSH_MAX_AGE_HOURS:
+                print(f"   ⏭️ Skipping old event ({age_hours:.1f}h old): {event.get('title', '')[:40]}...")
+                return False
+        except (ValueError, TypeError) as e:
+            print(f"   ⚠️ Could not parse timestamp '{timestamp_str}': {e}")
+    
+    # Mark if this is a critical event
+    is_critical = severity >= PUSH_CRITICAL_THRESHOLD
+    
+    # Get region for rule-based filtering (extract if not present)
+    region = event.get("region")
+    if not region:
+        region = get_region(event.get("location_name", ""))
+    
+    # Count sources for multi-source confirmation rules
+    sources = event.get("sources", [])
+    sources_count = len(sources) if sources else 1
+    
+    # Notification format: "Realpolitik" as title, headline as body
+    headline = event.get("title", "Breaking news")
+    if len(headline) > 200:
+        headline = headline[:197] + "..."
+    
+    payload = {
+        "title": "Realpolitik",
+        "body": headline,
+        "url": f"/?event={event_id}",
+        "id": event_id,
+        "severity": severity,
+        "category": event.get("category"),
+        "region": region,
+        "location_name": event.get("location_name", ""),
+        "sources_count": sources_count,
+        "critical": is_critical,
+    }
+    
+    try:
+        response = requests.post(
+            PUSH_API_URL,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {PUSH_API_SECRET}",
+                "Content-Type": "application/json",
+                # Bypass Vercel firewall protection on preview/development deployments
+                "x-vercel-protection-bypass": PUSH_API_SECRET,
+            },
+            timeout=10,
+        )
+        
+        if response.ok:
+            result = response.json()
+            critical_tag = " 🚨 CRITICAL" if is_critical else ""
+            print(f"   🔔 Push sent{critical_tag}: {result.get('sent', 0)} delivered, {result.get('failed', 0)} failed")
+            return True
+        else:
+            print(f"   ⚠️ Push failed: HTTP {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"   ⚠️ Push error: {type(e).__name__}: {e}")
+        return False
+
+
+def notify_high_severity_events(events: list[dict]) -> int:
+    """
+    Check events and send push notifications for significant ones.
+    
+    The API handles per-subscription deduplication, ensuring each subscriber
+    only receives each event once. User-defined rules control which events
+    each subscriber receives based on severity, category, region, etc.
+    
+    Args:
+        events: List of event dicts to check
+        
+    Returns:
+        Number of notifications sent
+    """
+    print("\n" + "=" * 60)
+    print("📲 PUSH NOTIFICATIONS")
+    print("=" * 60)
+    print(f"   API URL: {PUSH_API_URL}")
+    print(f"   Secret configured: {'✓' if PUSH_API_SECRET else '✗ MISSING'}")
+    print(f"   Severity threshold: {PUSH_NOTIFICATION_THRESHOLD}+ (critical: {PUSH_CRITICAL_THRESHOLD}+)")
+    print(f"   Max age: {PUSH_MAX_AGE_HOURS} hours")
+    print(f"   Events to check: {len(events)}")
+    
+    if not PUSH_API_SECRET:
+        print("   ⚠️ PUSH_API_SECRET not set - skipping all notifications")
+        return 0
+    
+    notified_count = 0
+    
+    # Count eligible events by severity tier
+    eligible = [e for e in events if e.get("severity", 0) >= PUSH_NOTIFICATION_THRESHOLD]
+    critical = [e for e in eligible if e.get("severity", 0) >= PUSH_CRITICAL_THRESHOLD]
+    print(f"   🎯 Events at severity {PUSH_NOTIFICATION_THRESHOLD}+: {len(eligible)} ({len(critical)} critical)")
+    
+    # Sort by severity descending so critical events are processed first
+    sorted_events = sorted(
+        eligible,
+        key=lambda e: e.get("severity", 0),
+        reverse=True
+    )
+    
+    for event in sorted_events:
+        severity = event.get("severity", 0)
+        title = event.get("title", "Unknown")[:50]
+        is_critical = severity >= PUSH_CRITICAL_THRESHOLD
+        critical_tag = "🚨" if is_critical else "📍"
+        print(f"\n   {critical_tag} [{severity}] {title}...")
+        
+        if send_push_notification(event):
+            notified_count += 1
+    
+    # Summary
+    print(f"\n   {'─' * 40}")
+    print(f"   📊 PUSH SUMMARY: {notified_count} sent, {len(eligible) - notified_count} skipped")
+    
+    return notified_count
+
+
+async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> list[dict]:
+    """Write events to Cloudflare R2 (S3-compatible storage).
+    
+    Returns the final merged event list for notification processing.
+    """
     import boto3
     
     endpoint_url = os.getenv("R2_ENDPOINT_URL")
@@ -1870,6 +2083,8 @@ async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to R2")
+    
+    return final_events
 
 
 # ---------------------------------------------------------------------------
@@ -1905,7 +2120,7 @@ async def fetch_hybrid_articles(
             print(f"  ⚠️ RSS fetch error: {type(e).__name__}: {e}")
     
     # NewsAPI (complementary source - 24hr delay but broader coverage)
-    # Free tier: 100 req/day, we run 96/day (every 15 min) = safe margin
+    # Free tier: 100 req/day, we run 24/day (every hour) = safe margin
     # NewsAPI catches stories from sources not in our RSS feeds
     if sources in ("newsapi", "all") and newsapi_key:
         try:
@@ -1970,14 +2185,21 @@ async def async_main(sources: str = "all"):
     
     print(f"\n⏱️  Processing completed in {elapsed:.1f}s")
     
-    # Output - write events
+    # Output - write events and get final merged list
     storage_mode = os.getenv("STORAGE_MODE", "local")
     if storage_mode == "r2":
-        await write_r2(events, gemini_client)
+        final_events = await write_r2(events, gemini_client)
     elif GCS_BUCKET:
-        await write_gcs(events, GCS_BUCKET, gemini_client)
+        final_events = await write_gcs(events, GCS_BUCKET, gemini_client)
     else:
-        await write_local(events, OUTPUT_PATH, gemini_client)
+        final_events = await write_local(events, OUTPUT_PATH, gemini_client)
+    
+    # Send push notifications using FINAL merged events (not pre-merge incidents)
+    # This ensures notification IDs match the events in events.json
+    if final_events:
+        notify_high_severity_events(final_events)
+    else:
+        print("\n📲 PUSH NOTIFICATIONS: No events to process")
     
     print("\n✅ Done!")
     print("=" * 60)
@@ -1994,7 +2216,7 @@ def main():
         "--sources",
         choices=["rss", "newsapi", "all"],
         default="all",
-        help="Which sources to fetch: rss (every 15min), newsapi (hourly), all (default)"
+        help="Which sources to fetch: rss, newsapi, or all (default)"
     )
     parser.add_argument(
         "--output",

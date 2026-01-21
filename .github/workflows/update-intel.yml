@@ -2,12 +2,19 @@ name: Update Intelligence
 
 on:
   schedule:
-    - cron: "*/15 * * * *" # Every 15 minutes (96 runs/day, under NewsAPI 100 req limit)
-  workflow_dispatch: # Manual trigger button
+    - cron: "0 * * * *" # Every hour - runs on default branch (main) only
+  workflow_dispatch: # Manual trigger - works on any branch
+    inputs:
+      branch:
+        description: 'Branch to run on'
+        required: false
+        default: ''
 
 jobs:
   refresh-intel:
     runs-on: ubuntu-latest
+    # Schedule always runs on main; manual dispatch uses the selected branch
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -23,9 +30,9 @@ jobs:
           echo "📦 Python: $(python --version)"
           echo "🔑 Secrets configured:"
           echo "   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY != '' && '✓' || '✗ MISSING' }}"
-          echo "   NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY != '' && '✓' || '✗ MISSING' }}"
           echo "   R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME != '' && '✓' || '✗ MISSING' }}"
           echo "   UPSTASH_REDIS: ${{ secrets.UPSTASH_REDIS_REST_URL != '' && '✓' || '✗ MISSING' }}"
+          echo "   PUSH_API_SECRET: ${{ secrets.PUSH_API_SECRET != '' && '✓' || '✗ MISSING' }}"
 
       - name: Install dependencies
         run: |
@@ -34,16 +41,19 @@ jobs:
 
       - name: Run worker
         env:
-          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          # NewsAPI disabled - 24hr delay makes content stale, RSS coverage is sufficient
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           STORAGE_MODE: "r2"
-          # Upstash Redis for rate limiting
+          # Upstash Redis for rate limiting and deduplication
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          # Push notifications (PUSH_API_SECRET also used for Vercel bypass header)
+          PUSH_API_SECRET: ${{ secrets.PUSH_API_SECRET }}
+          PUSH_API_URL: ${{ secrets.PUSH_API_URL }}
         run: |
           echo "🚀 Starting worker..."
           python worker/main.py
