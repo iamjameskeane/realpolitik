@@ -91,17 +91,18 @@ self.addEventListener('push', (event) => {
     ],
   };
 
-  // Show the notification, set badge, store to IndexedDB, and notify open clients
+  // Store to IndexedDB FIRST (before showing notification)
+  // iOS may terminate SW immediately after showNotification, so persist first
   event.waitUntil(
     (async () => {
-      // Show the notification - clean title, no emojis
-      await self.registration.showNotification(data.title, options);
-      
-      // iOS WORKAROUND: Store to IndexedDB so app can sync on visibility change
-      // This works even when postMessage fails (which is common on iOS)
+      // iOS WORKAROUND: Store to IndexedDB BEFORE showing notification
+      // iOS may terminate SW right after notification is shown
       if (data.id) {
         await addPendingNotification(data.id, data.title, Date.now());
       }
+      
+      // Now show the notification
+      await self.registration.showNotification(data.title, options);
       
       // Try to notify any open app windows (works on Android/Desktop, often fails on iOS)
       const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -147,20 +148,17 @@ self.addEventListener('notificationclick', (event) => {
     : baseUrl;
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Try to find and focus existing window (works on Android/Desktop, often fails on iOS)
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
+      // Try to find existing window and navigate it
       for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          // Try to navigate via postMessage (best effort - may fail on iOS)
-          client.postMessage({
-            type: 'NOTIFICATION_CLICK',
-            url: urlWithSource,
-            eventId: eventId,
-          });
-          return client.focus();
+        if (client.url.includes(self.location.origin) && 'navigate' in client) {
+          // Navigate the existing window to the event URL (works on iOS, unlike postMessage)
+          await client.navigate(urlWithSource);
+          await client.focus();
+          return;
         }
       }
-      // No window found or iOS hid it - open new window with URL params
+      // No window found - open new window with URL params
       if (clients.openWindow) {
         return clients.openWindow(urlWithSource);
       }
