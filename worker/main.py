@@ -1773,8 +1773,11 @@ async def merge_with_existing(
     return final_events
 
 
-async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> None:
-    """Write events to local JSON file, merging with existing events."""
+async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.Client) -> list[dict]:
+    """Write events to local JSON file, merging with existing events.
+    
+    Returns the final merged event list for notification processing.
+    """
     import shutil
     
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1819,10 +1822,15 @@ async def write_local(events: list[GeoEvent], path: Path, gemini_client: genai.C
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"💾 Wrote {len(final_events)} incidents ({total_sources} total sources) to {path}")
+    
+    return final_events
 
 
-async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> None:
-    """Write events to Google Cloud Storage."""
+async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: genai.Client) -> list[dict]:
+    """Write events to Google Cloud Storage.
+    
+    Returns the final merged event list for notification processing.
+    """
     from google.cloud import storage
     
     client = storage.Client()
@@ -1844,6 +1852,8 @@ async def write_gcs(events: list[GeoEvent], bucket_name: str, gemini_client: gen
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to gs://{bucket_name}/events.json")
+    
+    return final_events
 
 
 # ---------------------------------------------------------------------------
@@ -2017,8 +2027,11 @@ def notify_high_severity_events(events: list[dict]) -> int:
     return notified_count
 
 
-async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
-    """Write events to Cloudflare R2 (S3-compatible storage)."""
+async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> list[dict]:
+    """Write events to Cloudflare R2 (S3-compatible storage).
+    
+    Returns the final merged event list for notification processing.
+    """
     import boto3
     
     endpoint_url = os.getenv("R2_ENDPOINT_URL")
@@ -2070,6 +2083,8 @@ async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> None:
     
     total_sources = sum(len(e.get("sources", [])) for e in final_events)
     print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to R2")
+    
+    return final_events
 
 
 # ---------------------------------------------------------------------------
@@ -2170,23 +2185,19 @@ async def async_main(sources: str = "all"):
     
     print(f"\n⏱️  Processing completed in {elapsed:.1f}s")
     
-    # Output - write events
+    # Output - write events and get final merged list
     storage_mode = os.getenv("STORAGE_MODE", "local")
     if storage_mode == "r2":
-        await write_r2(events, gemini_client)
+        final_events = await write_r2(events, gemini_client)
     elif GCS_BUCKET:
-        await write_gcs(events, GCS_BUCKET, gemini_client)
+        final_events = await write_gcs(events, GCS_BUCKET, gemini_client)
     else:
-        await write_local(events, OUTPUT_PATH, gemini_client)
+        final_events = await write_local(events, OUTPUT_PATH, gemini_client)
     
-    # Send push notifications for high-severity NEW events
-    if events:
-        # Convert to dicts for notification processing
-        event_dicts = [
-            e.model_dump() if hasattr(e, 'model_dump') else e
-            for e in events
-        ]
-        notify_high_severity_events(event_dicts)
+    # Send push notifications using FINAL merged events (not pre-merge incidents)
+    # This ensures notification IDs match the events in events.json
+    if final_events:
+        notify_high_severity_events(final_events)
     else:
         print("\n📲 PUSH NOTIFICATIONS: No events to process")
     
