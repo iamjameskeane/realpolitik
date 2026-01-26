@@ -138,6 +138,20 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                       <div className="truncate text-xs text-slate-400">{user.email}</div>
                     </div>
                   </div>
+
+                  {/* Briefing Usage */}
+                  <div className="rounded-md border border-slate-700/30 bg-slate-900/50 px-3 py-2">
+                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-slate-400">
+                      Daily Briefings
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="font-mono text-lg font-bold text-slate-200">
+                        {10 - (profile?.daily_briefings_used || 0)}
+                      </span>
+                      <span className="text-xs text-slate-400">of 10 remaining</span>
+                    </div>
+                  </div>
+
                   <button
                     onClick={() => {
                       signOut();

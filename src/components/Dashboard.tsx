@@ -10,7 +10,6 @@ import { BriefingModal } from "./BriefingModal";
 import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "./AboutModal";
 import { SettingsModal } from "./SettingsModal";
-import { UserMenu } from "./auth/UserMenu";
 import { useAuth } from "@/contexts/AuthContext";
 import { GeoEvent, CATEGORY_COLORS, CATEGORY_DESCRIPTIONS, EventCategory } from "@/types/events";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
@@ -667,9 +666,8 @@ export function Dashboard({
           </div>
         </div>
 
-        {/* User Menu & Settings - hidden on mobile, positioned above category legend */}
+        {/* Settings - hidden on mobile, positioned above category legend */}
         <div className="absolute bottom-52 left-4 z-10 hidden flex-col gap-2 md:bottom-48 md:left-6 md:flex">
-          <UserMenu />
           <button
             onClick={() => setSettingsOpen(true)}
             className="glass-panel flex items-center gap-2 px-3 py-2 transition-all hover:bg-foreground/10"

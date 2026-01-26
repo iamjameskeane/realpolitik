@@ -18,7 +18,6 @@ import { formatRelativeTime } from "@/lib/formatters";
 import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "../AboutModal";
 import { SettingsModal } from "../SettingsModal";
-import { UserMenu } from "../auth/UserMenu";
 import { useAuth } from "@/contexts/AuthContext";
 
 const CATEGORIES: EventCategory[] = ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"];
@@ -687,9 +686,6 @@ function MobileLayoutInner({
 
         {/* Right side: User Menu + Settings + Live indicator */}
         <div className="flex items-center gap-2">
-          {/* User Menu */}
-          <UserMenu />
-
           {/* Settings button */}
           <button
             onClick={() => setSettingsOpen(true)}
