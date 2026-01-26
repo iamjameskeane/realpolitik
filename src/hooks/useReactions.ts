@@ -171,26 +171,26 @@ export function useReactions({ eventId }: UseReactionsOptions): UseReactionsRetu
       return updated;
     });
 
-      setIsLoading(true);
-      setError(null);
+    setIsLoading(true);
+    setError(null);
 
-      try {
-        // Get auth session
-        const supabase = getSupabaseClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+    try {
+      // Get auth session
+      const supabase = getSupabaseClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-        if (!session) {
-          throw new Error("You must be signed in to vote");
-        }
+      if (!session) {
+        throw new Error("You must be signed in to vote");
+      }
 
-        const response = await fetch(`/api/reactions?eventId=${eventId}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
+      const response = await fetch(`/api/reactions?eventId=${eventId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
       if (!response.ok) {
         const data = await response.json();

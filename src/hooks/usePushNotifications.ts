@@ -17,11 +17,7 @@ import type {
   NotificationRule,
   LegacyPreferences,
 } from "@/types/notifications";
-import {
-  DEFAULT_PREFERENCES,
-  migrateLegacyPreferences,
-  DEFAULT_RULE,
-} from "@/types/notifications";
+import { DEFAULT_PREFERENCES, migrateLegacyPreferences, DEFAULT_RULE } from "@/types/notifications";
 import { getSupabaseClient } from "@/lib/supabase";
 
 // =============================================================================
@@ -169,13 +165,13 @@ function loadStoredPreferences(): { prefs: NotificationPreferences; isNew: boole
     if (!stored) {
       return { prefs: DEFAULT_PREFERENCES, isNew: true };
     }
-    
+
     const parsed = JSON.parse(stored);
-    
+
     if (isNewFormat(parsed)) {
       return { prefs: parsed, isNew: false };
     }
-    
+
     // Migrate legacy format
     const migrated = migrateLegacyPreferences(parsed);
     return { prefs: migrated, isNew: false };
@@ -223,7 +219,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   // ---------------------------------------------------------------------------
   // SYNC SUBSCRIPTION STATE ACROSS INSTANCES
   // ---------------------------------------------------------------------------
-  
+
   // Re-check subscription status when another instance changes it
   useEffect(() => {
     const handleSubscriptionChange = async () => {
@@ -233,11 +229,15 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           const registration = await navigator.serviceWorker.ready;
           const subscription = await registration.pushManager.getSubscription();
           const isSubscribed = !!subscription;
-          
+
           setState((prev) => {
             if (prev.isSubscribed !== isSubscribed) {
               console.log("[Push] Syncing subscription state:", isSubscribed);
-              return { ...prev, isSubscribed, preferences: { ...prev.preferences, enabled: isSubscribed } };
+              return {
+                ...prev,
+                isSubscribed,
+                preferences: { ...prev.preferences, enabled: isSubscribed },
+              };
             }
             return prev;
           });
@@ -304,7 +304,12 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         console.log("[Push] Error checking subscription:", e);
       }
 
-      console.log("[Push] Setting final state:", { isSupported, permission, isSubscribed, isFirstTimeSetup });
+      console.log("[Push] Setting final state:", {
+        isSupported,
+        permission,
+        isSubscribed,
+        isFirstTimeSetup,
+      });
 
       setState({
         isSupported: true,
@@ -371,120 +376,123 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   // SUBSCRIBE
   // ---------------------------------------------------------------------------
 
-  const subscribe = useCallback(async (initialRules?: NotificationRule[]): Promise<boolean> => {
-    if (!state.isSupported) {
-      setState((prev) => ({ ...prev, error: "Push not supported" }));
-      return false;
-    }
-
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      // Request permission if not granted
-      let permission = Notification.permission;
-      if (permission === "default") {
-        permission = await requestPermission();
-      }
-
-      if (permission !== "granted") {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "Notification permission denied",
-        }));
+  const subscribe = useCallback(
+    async (initialRules?: NotificationRule[]): Promise<boolean> => {
+      if (!state.isSupported) {
+        setState((prev) => ({ ...prev, error: "Push not supported" }));
         return false;
       }
 
-      // Register service worker
-      const registration = await registerServiceWorker();
-      if (!registration) {
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      try {
+        // Request permission if not granted
+        let permission = Notification.permission;
+        if (permission === "default") {
+          permission = await requestPermission();
+        }
+
+        if (permission !== "granted") {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: "Notification permission denied",
+          }));
+          return false;
+        }
+
+        // Register service worker
+        const registration = await registerServiceWorker();
+        if (!registration) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: "Service worker registration failed",
+          }));
+          return false;
+        }
+
+        // Subscribe to push
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        if (!vapidKey) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: "VAPID key not configured",
+          }));
+          return false;
+        }
+
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
+        });
+
+        // Build new preferences with initial rules if provided
+        const newPrefs: NotificationPreferences = {
+          ...state.preferences,
+          enabled: true,
+          rules: initialRules ?? state.preferences.rules ?? [DEFAULT_RULE],
+        };
+
+        // Get auth session
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          throw new Error("You must be signed in to enable notifications");
+        }
+
+        // Send subscription to server with auth token
+        const response = await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            subscription: subscription.toJSON(),
+            preferences: newPrefs,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to save subscription");
+        }
+
+        // Save preferences locally
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+        markSetupComplete();
+
         setState((prev) => ({
           ...prev,
+          isSubscribed: true,
           isLoading: false,
-          error: "Service worker registration failed",
-        }));
-        return false;
-      }
-
-      // Subscribe to push
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!vapidKey) {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "VAPID key not configured",
-        }));
-        return false;
-      }
-
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
-      });
-
-      // Build new preferences with initial rules if provided
-      const newPrefs: NotificationPreferences = {
-        ...state.preferences,
-        enabled: true,
-        rules: initialRules ?? state.preferences.rules ?? [DEFAULT_RULE],
-      };
-
-      // Get auth session
-      const supabase = getSupabaseClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error("You must be signed in to enable notifications");
-      }
-
-      // Send subscription to server with auth token
-      const response = await fetch("/api/push/subscribe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          subscription: subscription.toJSON(),
+          error: null,
           preferences: newPrefs,
-        }),
-      });
+          isFirstTimeSetup: false,
+        }));
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to save subscription");
+        // Notify other instances that subscription state changed
+        window.dispatchEvent(new CustomEvent(SUBSCRIPTION_CHANGE_EVENT));
+
+        return true;
+      } catch (error: unknown) {
+        console.error("[Push] Subscribe failed:", error);
+        const errorMessage = error instanceof Error ? error.message : "Subscription failed";
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: errorMessage,
+        }));
+        return false;
       }
-
-      // Save preferences locally
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
-      markSetupComplete();
-
-      setState((prev) => ({
-        ...prev,
-        isSubscribed: true,
-        isLoading: false,
-        error: null,
-        preferences: newPrefs,
-        isFirstTimeSetup: false,
-      }));
-
-      // Notify other instances that subscription state changed
-      window.dispatchEvent(new CustomEvent(SUBSCRIPTION_CHANGE_EVENT));
-
-      return true;
-    } catch (error: unknown) {
-      console.error("[Push] Subscribe failed:", error);
-      const errorMessage = error instanceof Error ? error.message : "Subscription failed";
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: errorMessage,
-      }));
-      return false;
-    }
-  }, [state.isSupported, state.preferences, requestPermission, registerServiceWorker]);
+    },
+    [state.isSupported, state.preferences, requestPermission, registerServiceWorker]
+  );
 
   // ---------------------------------------------------------------------------
   // UNSUBSCRIBE

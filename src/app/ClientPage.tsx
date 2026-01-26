@@ -25,13 +25,13 @@ interface ClientPageProps {
  * - Deep link support for events outside current time window
  */
 function HomeContent({ initialEvents }: ClientPageProps) {
-  const { 
-    events, 
-    isLoading, 
-    isRefreshing, 
+  const {
+    events,
+    isLoading,
+    isRefreshing,
     isExpanding,
-    refresh, 
-    dataUpdatedAt, 
+    refresh,
+    dataUpdatedAt,
     fetchEventById,
     expandToHours,
     maxHoursLoaded,
@@ -60,15 +60,15 @@ function HomeContent({ initialEvents }: ClientPageProps) {
   // Handle deep link - fetch event if not in current data
   useEffect(() => {
     if (!initialEventId || isLoading) return;
-    
+
     // Check if event is already loaded
-    const eventExists = events.some(e => e.id === initialEventId);
+    const eventExists = events.some((e) => e.id === initialEventId);
     if (eventExists) return;
-    
+
     // Fetch the event from Supabase
     setDeepLinkLoading(true);
     fetchEventById(initialEventId)
-      .catch(err => console.error('Failed to load deep-linked event:', err))
+      .catch((err) => console.error("Failed to load deep-linked event:", err))
       .finally(() => setDeepLinkLoading(false));
   }, [initialEventId, events, isLoading, fetchEventById]);
 
@@ -86,8 +86,10 @@ function HomeContent({ initialEvents }: ClientPageProps) {
           newUrl.searchParams.set("event", eventId);
           window.history.pushState({}, "", newUrl.toString());
           // Dispatch a custom event to notify components
-          window.dispatchEvent(new CustomEvent("notification-event-select", { detail: { eventId } }));
-          
+          window.dispatchEvent(
+            new CustomEvent("notification-event-select", { detail: { eventId } })
+          );
+
           // Fetch event if not already loaded
           fetchEventById(eventId).catch(console.error);
         }

@@ -99,7 +99,7 @@ export function useTouringMode(options: TouringModeOptions): TouringModeReturn {
   const [isActive, setIsActive] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [events, setEvents] = useState<GeoEvent[]>([]);
-  
+
   // Track the current event for location comparison
   const currentEventRef = useRef<GeoEvent | null>(null);
 
@@ -168,12 +168,12 @@ export function useTouringMode(options: TouringModeOptions): TouringModeReturn {
     if (currentIndex <= 0 || events.length === 0) return;
 
     const prevIndex = currentIndex - 1;
-    
+
     // Check if previous event is at the same location - skip fly if so
     const currentEvent = events[currentIndex];
     const prevEvent = events[prevIndex];
     const skipFly = isSameLocation(currentEvent, prevEvent);
-    
+
     setCurrentIndex(prevIndex);
     navigateToEvent(prevEvent, skipFly);
   }, [currentIndex, events, navigateToEvent]);

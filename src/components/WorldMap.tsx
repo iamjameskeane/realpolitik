@@ -139,8 +139,9 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
   // Hooks
   // Block auto-rotation when any cluster UI is open (popup, context menu, or tooltip)
-  const hasClusterUIOpen = clusterPopup !== null || clusterContextMenu !== null || clusterTooltip !== null;
-  
+  const hasClusterUIOpen =
+    clusterPopup !== null || clusterContextMenu !== null || clusterTooltip !== null;
+
   const { startAutoRotate, stopAutoRotate, recordInteraction, lastInteractionRef } = useAutoRotate(
     map,
     selectedEventRef,
@@ -159,25 +160,25 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   const handleSingleEventClick = useCallback(
     (event: GeoEvent) => {
       if (!map.current) return;
-      
+
       // Clear any existing selection and prepare for fly animation
       setStackedEvents([]);
       setStackIndex(0);
       setSelectedEvent(null);
       setPopupPosition(null);
       setIsFlying(true);
-      
+
       // Stop any existing animation
       map.current.stop();
-      
+
       // Notify parent (updates URL, marks as read)
       onEventClick?.(event);
-      
+
       // Fly to the event
       const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
       const flyDuration = 1200;
-      
+
       map.current.flyTo({
         center: event.coordinates,
         zoom: targetZoom,
@@ -188,7 +189,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           right: sidebarOpen ? SIDEBAR_WIDTH : 0,
         },
       });
-      
+
       // Show popup after animation completes
       setTimeout(() => {
         setIsFlying(false);
@@ -205,25 +206,25 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   const handleStackedEventClick = useCallback(
     (eventsAtLocation: GeoEvent[]) => {
       if (!map.current) return;
-      
+
       const firstEvent = eventsAtLocation[0];
-      
+
       // Clear any existing selection and prepare for fly animation
       setSelectedEvent(null);
       setPopupPosition(null);
       setIsFlying(true);
-      
+
       // Stop any existing animation
       map.current.stop();
-      
+
       // Notify parent (updates URL, marks as read)
       onEventClick?.(firstEvent);
-      
+
       // Fly to the events
       const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
       const flyDuration = 1200;
-      
+
       map.current.flyTo({
         center: firstEvent.coordinates,
         zoom: targetZoom,
@@ -234,7 +235,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           right: sidebarOpen ? SIDEBAR_WIDTH : 0,
         },
       });
-      
+
       // Show popup after animation completes
       setTimeout(() => {
         setIsFlying(false);
@@ -305,23 +306,23 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   const handleClusterEventClick = useCallback(
     (event: GeoEvent) => {
       if (!map.current) return;
-      
+
       // Clear everything and set flying state FIRST
       setSelectedEvent(null);
       setPopupPosition(null);
       setClusterPopup(null);
       setIsFlying(true);
-      
+
       // Stop any existing animation
       map.current.stop();
-      
+
       // Notify parent to mark as read and update URL
       onEventClick?.(event);
-      
+
       const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
       const flyDuration = 1200;
-      
+
       map.current.flyTo({
         center: event.coordinates,
         zoom: targetZoom,
@@ -332,7 +333,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           right: sidebarOpen ? SIDEBAR_WIDTH : 0,
         },
       });
-      
+
       // Show popup only after the fly animation completes
       setTimeout(() => {
         setIsFlying(false);
@@ -349,12 +350,12 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Start flyover from cluster popup
   const handleClusterFlyover = useCallback(() => {
     if (!clusterPopup) return;
-    
+
     const { events: clusterEvents } = clusterPopup.data;
-    
+
     // Close popup
     setClusterPopup(null);
-    
+
     // Trigger flyover mode via parent callback
     if (onClusterFlyover) {
       onClusterFlyover(clusterEvents);
@@ -389,9 +390,9 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Start flyover from context menu
   const handleClusterFlyoverFromMenu = useCallback(() => {
     if (!clusterContextMenu) return;
-    
+
     const { events: clusterEvents } = clusterContextMenu.data;
-    
+
     // Trigger flyover mode via parent callback
     if (onClusterFlyover) {
       onClusterFlyover(clusterEvents);
@@ -434,8 +435,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     });
 
     // If clicking on empty space, clear all popups
-    if ((!clusterFeatures || clusterFeatures.length === 0) && 
-        (!eventFeatures || eventFeatures.length === 0)) {
+    if (
+      (!clusterFeatures || clusterFeatures.length === 0) &&
+      (!eventFeatures || eventFeatures.length === 0)
+    ) {
       setSelectedEvent(null);
       setPopupPosition(null);
       setClusterPopup(null);
@@ -454,17 +457,16 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
         // Stop any existing flyTo animation
         map.current.stop();
-        
+
         // Check if we're already near the target location (same location optimization)
         // If so, skip the fly animation and show popup immediately
         const currentCenter = map.current.getCenter();
         const [targetLng, targetLat] = event.coordinates;
         const distance = Math.sqrt(
-          Math.pow(targetLng - currentCenter.lng, 2) + 
-          Math.pow(targetLat - currentCenter.lat, 2)
+          Math.pow(targetLng - currentCenter.lng, 2) + Math.pow(targetLat - currentCenter.lat, 2)
         );
         const isNearby = distance < 0.05; // ~5km at equator
-        
+
         if (isNearby) {
           // Already at location - show popup immediately without flying
           setIsFlying(false);
@@ -642,9 +644,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     const updateClusterPosition = () => {
       if (!map.current || !clusterPopup) return;
       const point = map.current.project(clusterPopup.data.coordinates);
-      setClusterPopup((prev) =>
-        prev ? { ...prev, position: { x: point.x, y: point.y } } : null
-      );
+      setClusterPopup((prev) => (prev ? { ...prev, position: { x: point.x, y: point.y } } : null));
     };
 
     map.current.on("move", updateClusterPosition);

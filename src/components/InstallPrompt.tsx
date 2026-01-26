@@ -64,7 +64,7 @@ export function InstallPrompt() {
     const userAgent = navigator.userAgent.toLowerCase();
     const isIOSDevice = /iphone|ipad|ipod/.test(userAgent) && !/crios|fxios/.test(userAgent);
     const isAndroidDevice = /android/.test(userAgent);
-    
+
     setIsIOS(isIOSDevice);
     setIsAndroid(isAndroidDevice);
 
@@ -138,8 +138,18 @@ export function InstallPrompt() {
                 aria-label="Never show again"
                 title="Don't show again"
               >
-                <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="w-5 h-5 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>

@@ -221,7 +221,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
         };
 
         // Make request with auth token in header
-        let response = await fetch("/api/briefing", {
+        const response = await fetch("/api/briefing", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

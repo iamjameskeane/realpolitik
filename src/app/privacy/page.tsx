@@ -238,7 +238,9 @@ export default function PrivacyPage() {
               </div>
 
               <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <code className="font-mono text-xs text-purple-400">realpolitik:push:preferences</code>
+                <code className="font-mono text-xs text-purple-400">
+                  realpolitik:push:preferences
+                </code>
                 <p className="mt-2 text-sm text-slate-400">
                   Your push notification preferences: whether enabled, minimum severity level, and
                   which event categories to notify about. Synced with server when you subscribe.
@@ -246,7 +248,9 @@ export default function PrivacyPage() {
               </div>
 
               <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <code className="font-mono text-xs text-purple-400">realpolitik:installPromptDismissed</code>
+                <code className="font-mono text-xs text-purple-400">
+                  realpolitik:installPromptDismissed
+                </code>
                 <p className="mt-2 text-sm text-slate-400">
                   Set to &quot;permanent&quot; when you dismiss the &quot;Install App&quot; prompt
                   using the X button. Prevents showing the prompt again.
@@ -254,7 +258,9 @@ export default function PrivacyPage() {
               </div>
 
               <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <code className="font-mono text-xs text-purple-400">realpolitik:notificationPromptDismissed</code>
+                <code className="font-mono text-xs text-purple-400">
+                  realpolitik:notificationPromptDismissed
+                </code>
                 <p className="mt-2 text-sm text-slate-400">
                   Set when you dismiss the notification enablement prompt. Prevents asking again.
                 </p>
@@ -301,7 +307,8 @@ export default function PrivacyPage() {
               </li>
               <li>
                 <strong className="text-slate-300">Notified event IDs:</strong> We track which
-                events triggered notifications to prevent duplicates. This data expires after 7 days.
+                events triggered notifications to prevent duplicates. This data expires after 7
+                days.
               </li>
               <li>
                 <strong className="text-slate-300">Client-side data:</strong> Persists until you

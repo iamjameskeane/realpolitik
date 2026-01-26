@@ -29,7 +29,7 @@ function loadLastVisit(): Date | null {
  */
 export function useNewEvents() {
   const { user } = useAuth();
-  
+
   // Use lazy initialization to avoid setState in effect
   const [lastVisit, setLastVisit] = useState<Date | null>(loadLastVisit);
   const [isLoaded, setIsLoaded] = useState(false);

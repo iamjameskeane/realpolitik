@@ -62,9 +62,7 @@ export function QuietHoursSettings({
           <h4 className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400">
             Quiet Hours
           </h4>
-          <p className="text-[11px] text-slate-500">
-            Pause notifications during specific hours
-          </p>
+          <p className="text-[11px] text-slate-500">Pause notifications during specific hours</p>
         </div>
         <button
           onClick={handleToggle}
@@ -96,9 +94,7 @@ export function QuietHoursSettings({
               {/* Time Range */}
               <div className="flex items-center gap-2">
                 <div className="flex-1">
-                  <label className="mb-1 block text-[10px] font-medium text-slate-500">
-                    From
-                  </label>
+                  <label className="mb-1 block text-[10px] font-medium text-slate-500">From</label>
                   <SelectCompact
                     value={localQuietHours.start}
                     onChange={(value) => handleChange("start", value)}
@@ -107,9 +103,7 @@ export function QuietHoursSettings({
                 </div>
                 <div className="mt-4 text-slate-500">→</div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-[10px] font-medium text-slate-500">
-                    To
-                  </label>
+                  <label className="mb-1 block text-[10px] font-medium text-slate-500">To</label>
                   <SelectCompact
                     value={localQuietHours.end}
                     onChange={(value) => handleChange("end", value)}

@@ -24,7 +24,7 @@ function loadStoredIds(): string[] {
  */
 export function useReadHistory(currentEventIds: string[]) {
   const { user } = useAuth();
-  
+
   // Memoize the current IDs set for efficient lookups
   const currentIdsSet = useMemo(() => new Set(currentEventIds), [currentEventIds]);
 

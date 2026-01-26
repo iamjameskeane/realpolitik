@@ -51,7 +51,10 @@ interface UseEventLayersOptions {
   /** Shift+click on cluster (desktop) - show cluster details popup */
   onClusterShiftClick?: (data: ClusterData) => void;
   /** Hover on cluster (desktop) - show tooltip after delay */
-  onClusterHover?: (data: ClusterData | null, cursorPosition: { x: number; y: number } | null) => void;
+  onClusterHover?: (
+    data: ClusterData | null,
+    cursorPosition: { x: number; y: number } | null
+  ) => void;
   /** Trigger zoom to cluster (called from context menu) */
   zoomToCluster?: (clusterId: number, coordinates: [number, number]) => void;
   recordInteraction: () => void;
@@ -417,19 +420,19 @@ export function useEventLayers(
       // Mapbox's boxZoom can interfere with shift+click detection on the originalEvent
       // Track shift key state separately for more reliable detection
       let isShiftPressed = false;
-      
+
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === "Shift") {
           isShiftPressed = true;
         }
       };
-      
+
       const handleKeyUp = (e: KeyboardEvent) => {
         if (e.key === "Shift") {
           isShiftPressed = false;
         }
       };
-      
+
       document.addEventListener("keydown", handleKeyDown);
       document.addEventListener("keyup", handleKeyUp);
 
@@ -440,7 +443,7 @@ export function useEventLayers(
       map.on("click", "clusters", (e) => {
         // Check both our tracked state and the original event (belt and suspenders)
         const shiftKey = isShiftPressed || e.originalEvent.shiftKey;
-        
+
         if (longPressTriggered) {
           longPressTriggered = false;
           return;
@@ -536,7 +539,7 @@ export function useEventLayers(
         // Update cursor position for tooltip
         if (!e.features?.[0]) return;
         const clusterId = e.features[0].properties?.cluster_id;
-        
+
         // If hovering a different cluster, reset
         if (clusterId !== currentHoveredClusterId) {
           if (hoverTimeout) {
@@ -544,9 +547,12 @@ export function useEventLayers(
           }
           onClusterHoverRef.current?.(null, null);
           currentHoveredClusterId = clusterId;
-          
+
           if (clusterId) {
-            const coordinates = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
+            const coordinates = (e.features[0].geometry as GeoJSON.Point).coordinates as [
+              number,
+              number,
+            ];
             hoverTimeout = setTimeout(() => {
               if (currentHoveredClusterId === clusterId) {
                 const cursorPosition = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };

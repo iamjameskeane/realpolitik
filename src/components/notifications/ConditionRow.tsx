@@ -1,11 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type {
-  Condition,
-  ConditionField,
-  Operator,
-} from "@/types/notifications";
+import type { Condition, ConditionField, Operator } from "@/types/notifications";
 import { FIELD_CONFIGS } from "@/types/notifications";
 import { SelectCompact } from "@/components/ui/Select";
 
@@ -25,12 +21,7 @@ const OPERATOR_LABELS: Record<Operator, string> = {
   contains: "contains",
 };
 
-export function ConditionRow({
-  condition,
-  onChange,
-  onRemove,
-  canRemove,
-}: ConditionRowProps) {
+export function ConditionRow({ condition, onChange, onRemove, canRemove }: ConditionRowProps) {
   const fieldConfig = FIELD_CONFIGS.find((f) => f.field === condition.field);
 
   const handleFieldChange = (field: ConditionField) => {
@@ -112,13 +103,13 @@ export function ConditionRow({
       case "select":
         if (condition.operator === "in") {
           // Multi-select chips for "in" operator
-          const selectedValues = Array.isArray(condition.value)
-            ? condition.value
-            : [];
+          const selectedValues = Array.isArray(condition.value) ? condition.value : [];
           const isEmpty = selectedValues.length === 0;
           return (
             <div className="space-y-1">
-              <div className={`flex flex-wrap gap-1.5 rounded-lg p-1 ${isEmpty ? "ring-1 ring-red-500/50 bg-red-500/10" : ""}`}>
+              <div
+                className={`flex flex-wrap gap-1.5 rounded-lg p-1 ${isEmpty ? "ring-1 ring-red-500/50 bg-red-500/10" : ""}`}
+              >
                 {fieldConfig.options?.map((opt) => {
                   const isSelected = selectedValues.includes(opt.value);
                   // Prevent deselecting the last item
@@ -149,9 +140,7 @@ export function ConditionRow({
                   );
                 })}
               </div>
-              {isEmpty && (
-                <p className="text-[10px] text-red-400">Select at least one value</p>
-              )}
+              {isEmpty && <p className="text-[10px] text-red-400">Select at least one value</p>}
             </div>
           );
         }

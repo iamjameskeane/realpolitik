@@ -372,34 +372,40 @@ export function useNotificationInbox(allEvents: GeoEvent[]) {
   }, [allEvents, inboxEventIds]);
 
   // Add event to inbox
-  const addToInbox = useCallback(async (eventId: string) => {
-    await removePendingNotification(eventId); // Remove from pending if exists
-    setInboxEventIds((prev) => {
-      if (prev.includes(eventId)) return prev;
-      const updated = [eventId, ...prev];
-      saveInbox(updated);
-      setAppBadge(updated.length);
-      // Also save to backend if signed in
-      if (user) {
-        userState.addToInbox(user.id, eventId);
-      }
-      return updated;
-    });
-  }, [user]);
+  const addToInbox = useCallback(
+    async (eventId: string) => {
+      await removePendingNotification(eventId); // Remove from pending if exists
+      setInboxEventIds((prev) => {
+        if (prev.includes(eventId)) return prev;
+        const updated = [eventId, ...prev];
+        saveInbox(updated);
+        setAppBadge(updated.length);
+        // Also save to backend if signed in
+        if (user) {
+          userState.addToInbox(user.id, eventId);
+        }
+        return updated;
+      });
+    },
+    [user]
+  );
 
   // Remove single event from inbox
-  const removeFromInbox = useCallback(async (eventId: string) => {
-    setInboxEventIds((prev) => {
-      const updated = prev.filter((id) => id !== eventId);
-      saveInbox(updated);
-      setAppBadge(updated.length);
-      // Also remove from backend if signed in
-      if (user) {
-        userState.removeFromInbox(user.id, eventId);
-      }
-      return updated;
-    });
-  }, [user]);
+  const removeFromInbox = useCallback(
+    async (eventId: string) => {
+      setInboxEventIds((prev) => {
+        const updated = prev.filter((id) => id !== eventId);
+        saveInbox(updated);
+        setAppBadge(updated.length);
+        // Also remove from backend if signed in
+        if (user) {
+          userState.removeFromInbox(user.id, eventId);
+        }
+        return updated;
+      });
+    },
+    [user]
+  );
 
   // Clear entire inbox
   const clearInbox = useCallback(async () => {

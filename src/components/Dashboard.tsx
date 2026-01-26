@@ -16,11 +16,7 @@ import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReact
 import { useEventStates } from "@/hooks/useEventStates";
 import { useNotificationInbox } from "@/hooks/useNotificationInbox";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
-import {
-  TIME_DISPLAY_UPDATE_MS,
-  TIME_RANGES,
-  MIN_TIME_RANGE_OPTIONS,
-} from "@/lib/constants";
+import { TIME_DISPLAY_UPDATE_MS, TIME_RANGES, MIN_TIME_RANGE_OPTIONS } from "@/lib/constants";
 import { formatRelativeTime } from "@/lib/formatters";
 import { useTouringMode } from "@/hooks/useTouringMode";
 
@@ -48,27 +44,30 @@ interface DashboardProps {
 const CATEGORIES: EventCategory[] = ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"];
 const ALL_CATEGORIES = new Set<EventCategory>(CATEGORIES);
 
-export function Dashboard({ 
-  events, 
-  lastUpdated, 
-  isRefreshing, 
+export function Dashboard({
+  events,
+  lastUpdated,
+  isRefreshing,
   initialEventId,
   onExpandTimeRange,
   maxHoursLoaded = 24,
 }: DashboardProps) {
   const [showSplash, setShowSplash] = useState(false); // Disabled - set to true to re-enable
   const [timeRangeIndex, setTimeRangeIndex] = useState(4); // Default to 24H
-  
+
   // Handle time range change - expand data fetch if needed
-  const handleTimeRangeChange = useCallback((newIndex: number) => {
-    setTimeRangeIndex(newIndex);
-    
-    // Check if we need to fetch more data
-    const selectedRange = TIME_RANGES[newIndex];
-    if (selectedRange && onExpandTimeRange && selectedRange.hours > maxHoursLoaded) {
-      onExpandTimeRange(selectedRange.hours);
-    }
-  }, [onExpandTimeRange, maxHoursLoaded]);
+  const handleTimeRangeChange = useCallback(
+    (newIndex: number) => {
+      setTimeRangeIndex(newIndex);
+
+      // Check if we need to fetch more data
+      const selectedRange = TIME_RANGES[newIndex];
+      if (selectedRange && onExpandTimeRange && selectedRange.hours > maxHoursLoaded) {
+        onExpandTimeRange(selectedRange.hours);
+      }
+    },
+    [onExpandTimeRange, maxHoursLoaded]
+  );
   const [isSliderActive, setIsSliderActive] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [hoveredCategory, setHoveredCategory] = useState<EventCategory | null>(null);
@@ -218,7 +217,7 @@ export function Dashboard({
   // This ensures notification/inbox clicks always show the event on the map
   const filteredEvents = useMemo(() => {
     const filtered = timeFilteredEvents.filter((e) => activeCategories.has(e.category));
-    
+
     // If there's a selected event that's not in the filtered list, add it
     // This handles: notification deep links, inbox clicks, any selection of older events
     // Note: We bypass category filter for selected events - if user clicked it, they want to see it
@@ -228,7 +227,7 @@ export function Dashboard({
         return [selectedEvent, ...filtered];
       }
     }
-    
+
     return filtered;
   }, [timeFilteredEvents, activeCategories, selectedEventId, events]);
 
@@ -350,72 +349,74 @@ export function Dashboard({
         {/* Inbox container - Top Left under header */}
         <div className="absolute left-3 top-28 z-40 flex flex-col items-start gap-2 md:left-4 md:top-20 md:gap-3">
           {/* Inbox Button - always visible */}
-            <div className="relative">
-              <button
-                onClick={() => setInboxOpen(!inboxOpen)}
-                className="glass-panel relative flex items-center gap-2 px-3 py-2 transition-all hover:scale-105"
-              >
-                <svg
+          <div className="relative">
+            <button
+              onClick={() => setInboxOpen(!inboxOpen)}
+              className="glass-panel relative flex items-center gap-2 px-3 py-2 transition-all hover:scale-105"
+            >
+              <svg
                 className={`h-4 w-4 ${inboxCount > 0 ? "text-accent" : "text-foreground/50"}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                  />
-                </svg>
-                <span className="font-mono text-xs uppercase text-foreground/70">
-                {inboxCount > 0 ? `${inboxCount} ${inboxCount === 1 ? "ALERT" : "ALERTS"}` : "INBOX"}
-                </span>
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                />
+              </svg>
+              <span className="font-mono text-xs uppercase text-foreground/70">
+                {inboxCount > 0
+                  ? `${inboxCount} ${inboxCount === 1 ? "ALERT" : "ALERTS"}`
+                  : "INBOX"}
+              </span>
               {inboxCount > 0 && (
                 <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-accent" />
               )}
-              </button>
+            </button>
 
             {/* Inbox Dropdown */}
-              {inboxOpen && (
-                <div className="absolute left-0 top-12 w-96 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="glass-panel overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-medium uppercase text-accent">
+            {inboxOpen && (
+              <div className="absolute left-0 top-12 w-96 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="glass-panel overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-medium uppercase text-accent">
                         Inbox
-                        </span>
-                        <span className="font-mono text-[9px] uppercase text-foreground/30">
-                          Synced
-                        </span>
+                      </span>
+                      <span className="font-mono text-[9px] uppercase text-foreground/30">
+                        Synced
+                      </span>
                       {inboxCount > 0 && (
                         <>
                           <span className="font-mono text-xs text-foreground/40">{inboxCount}</span>
                           {/* Catch Up puck - fly through notification events */}
-                        <button
-                          onClick={startCatchUp}
-                          className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 transition-all hover:bg-accent/20"
-                        >
-                          <svg
-                            className="h-3 w-3 text-accent"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+                          <button
+                            onClick={startCatchUp}
+                            className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 transition-all hover:bg-accent/20"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2.5}
-                              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                            />
-                          </svg>
-                          <span className="font-mono text-[10px] font-medium uppercase text-accent">
-                            Catch Up
-                          </span>
-                        </button>
+                            <svg
+                              className="h-3 w-3 text-accent"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2.5}
+                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                              />
+                            </svg>
+                            <span className="font-mono text-[10px] font-medium uppercase text-accent">
+                              Catch Up
+                            </span>
+                          </button>
                         </>
                       )}
-                      </div>
+                    </div>
                     {inboxCount > 0 && (
                       <button
                         onClick={clearInbox}
@@ -424,8 +425,8 @@ export function Dashboard({
                         Mark all read
                       </button>
                     )}
-                    </div>
-                    <div className="custom-scrollbar max-h-80 overflow-y-auto">
+                  </div>
+                  <div className="custom-scrollbar max-h-80 overflow-y-auto">
                     {/* Not subscribed - prompt to set up notifications */}
                     {notificationsLoading !== true && notificationsEnabled === false ? (
                       <div className="px-4 py-8 text-center">
@@ -522,11 +523,11 @@ export function Dashboard({
                         </button>
                       ))
                     )}
-                    </div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
           {/* Floating Toast Notifications - appear under inbox */}
         </div>
@@ -788,18 +789,18 @@ export function Dashboard({
 
         {/* About Modal */}
         <AnimatePresence>
-        {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+          {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
         </AnimatePresence>
 
         {/* Settings Modal */}
         <AnimatePresence>
-        {settingsOpen && (
-          <SettingsModal
-            onClose={() => setSettingsOpen(false)}
-            is2DMode={is2DMode}
-            onToggle2DMode={() => setIs2DMode(!is2DMode)}
-          />
-        )}
+          {settingsOpen && (
+            <SettingsModal
+              onClose={() => setSettingsOpen(false)}
+              is2DMode={is2DMode}
+              onToggle2DMode={() => setIs2DMode(!is2DMode)}
+            />
+          )}
         </AnimatePresence>
       </div>
     </BatchReactionsProvider>

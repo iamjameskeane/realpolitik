@@ -14,13 +14,7 @@ interface RuleEditorProps {
   isNew?: boolean;
 }
 
-export function RuleEditor({
-  rule,
-  onSave,
-  onCancel,
-  onDelete,
-  isNew = false,
-}: RuleEditorProps) {
+export function RuleEditor({ rule, onSave, onCancel, onDelete, isNew = false }: RuleEditorProps) {
   const [editedRule, setEditedRule] = useState<NotificationRule>({ ...rule });
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +43,7 @@ export function RuleEditor({
 
   const addCondition = () => {
     if (atConditionLimit) return;
-    
+
     const defaultField = FIELD_CONFIGS[0];
     const newCondition: Condition = {
       field: defaultField.field,
@@ -137,8 +131,7 @@ export function RuleEditor({
           <div className="mb-4">
             <div className="mb-3 flex items-center justify-between">
               <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Conditions{" "}
-                <span className="text-slate-500">(all must match)</span>
+                Conditions <span className="text-slate-500">(all must match)</span>
               </label>
             </div>
 
@@ -169,7 +162,11 @@ export function RuleEditor({
             <button
               onClick={addCondition}
               disabled={atConditionLimit}
-              title={atConditionLimit ? `Maximum ${RULE_LIMITS.MAX_CONDITIONS_PER_RULE} conditions` : undefined}
+              title={
+                atConditionLimit
+                  ? `Maximum ${RULE_LIMITS.MAX_CONDITIONS_PER_RULE} conditions`
+                  : undefined
+              }
               className="mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-slate-600 px-3 py-2 text-xs text-slate-400 transition-colors hover:border-cyan-500 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

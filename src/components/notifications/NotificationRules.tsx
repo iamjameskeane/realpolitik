@@ -21,9 +21,7 @@ export function NotificationRules({
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   const handleToggleRule = (ruleId: string) => {
-    const updated = rules.map((r) =>
-      r.id === ruleId ? { ...r, enabled: !r.enabled } : r
-    );
+    const updated = rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r));
     onRulesChange(updated);
   };
 
@@ -102,12 +100,7 @@ export function NotificationRules({
             </p>
           </div>
         ) : (
-          <Reorder.Group
-            axis="y"
-            values={rules}
-            onReorder={onRulesChange}
-            className="space-y-2"
-          >
+          <Reorder.Group axis="y" values={rules} onReorder={onRulesChange} className="space-y-2">
             <AnimatePresence mode="popLayout">
               {rules.map((rule) => (
                 <Reorder.Item
@@ -121,9 +114,7 @@ export function NotificationRules({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10, transition: { duration: 0.15 } }}
                     className={`group rounded-lg border bg-slate-800/50 transition-colors ${
-                      rule.enabled
-                        ? "border-slate-600"
-                        : "border-slate-700/50 opacity-60"
+                      rule.enabled ? "border-slate-600" : "border-slate-700/50 opacity-60"
                     }`}
                   >
                     <div className="flex items-start gap-3 p-3">
@@ -144,11 +135,7 @@ export function NotificationRules({
                           stroke="currentColor"
                           strokeWidth={3}
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M5 13l4 4L19 7"
-                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                         </svg>
                       </button>
 
@@ -196,11 +183,7 @@ export function NotificationRules({
 
                       {/* Drag handle */}
                       <div className="flex-shrink-0 cursor-grab text-slate-600 opacity-0 transition-opacity group-hover:opacity-100">
-                        <svg
-                          className="h-4 w-4"
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
+                        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                           <circle cx="9" cy="6" r="1.5" />
                           <circle cx="15" cy="6" r="1.5" />
                           <circle cx="9" cy="12" r="1.5" />
@@ -219,8 +202,8 @@ export function NotificationRules({
 
         {/* Help text */}
         <p className="text-[11px] text-slate-500">
-          Rules are checked in order. An event triggers a notification if it matches
-          any enabled rule.
+          Rules are checked in order. An event triggers a notification if it matches any enabled
+          rule.
         </p>
       </div>
 
@@ -231,9 +214,7 @@ export function NotificationRules({
             rule={editingRule}
             onSave={handleSaveRule}
             onCancel={handleCancelEdit}
-            onDelete={
-              isCreatingNew ? undefined : () => handleDeleteRule(editingRule.id)
-            }
+            onDelete={isCreatingNew ? undefined : () => handleDeleteRule(editingRule.id)}
             isNew={isCreatingNew}
           />
         )}
