@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getSupabaseClient } from "@/lib/supabase";
 
@@ -18,19 +18,13 @@ export function DeviceList() {
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  // Load user's devices
-  useEffect(() => {
+  const loadDevices = useCallback(async () => {
     if (!user) {
       setLoading(false);
       return;
     }
 
-    loadDevices();
-  }, [user]);
-
-  const loadDevices = async () => {
-    if (!user) return;
-
+    setLoading(true);
     try {
       const supabase = getSupabaseClient();
       const { data, error } = await supabase.rpc("get_user_subscriptions", {
@@ -45,7 +39,12 @@ export function DeviceList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
+
+  // Load user's devices
+  useEffect(() => {
+    loadDevices();
+  }, [loadDevices]);
 
   const removeDevice = async (endpoint: string, deviceId: string) => {
     if (!user) return;
