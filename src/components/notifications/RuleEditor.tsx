@@ -127,6 +127,64 @@ export function RuleEditor({ rule, onSave, onCancel, onDelete, isNew = false }: 
             />
           </div>
 
+          {/* Push Notifications Toggle */}
+          <div className="mb-5">
+            <button
+              type="button"
+              onClick={() => setEditedRule((prev) => ({ ...prev, sendPush: !prev.sendPush }))}
+              className={`flex w-full items-center gap-3 rounded-lg border p-3 transition-colors ${
+                editedRule.sendPush
+                  ? "border-cyan-500/50 bg-cyan-500/10"
+                  : "border-slate-600 bg-slate-700/30 hover:border-slate-500"
+              }`}
+            >
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                  editedRule.sendPush
+                    ? "bg-cyan-500/30 text-cyan-400"
+                    : "bg-slate-600 text-slate-400"
+                }`}
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill={editedRule.sendPush ? "currentColor" : "none"}
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={editedRule.sendPush ? 0 : 2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1 text-left">
+                <p
+                  className={`text-sm font-medium ${editedRule.sendPush ? "text-cyan-400" : "text-slate-300"}`}
+                >
+                  Push Notifications
+                </p>
+                <p className="text-xs text-slate-500">
+                  {editedRule.sendPush
+                    ? "OS-level alerts on devices with push enabled"
+                    : "Inbox only, no push alerts"}
+                </p>
+              </div>
+              <div
+                className={`h-5 w-9 rounded-full transition-colors ${
+                  editedRule.sendPush ? "bg-cyan-500" : "bg-slate-600"
+                }`}
+              >
+                <div
+                  className={`h-5 w-5 rounded-full bg-white shadow-md transition-transform ${
+                    editedRule.sendPush ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </div>
+            </button>
+          </div>
+
           {/* Conditions */}
           <div className="mb-4">
             <div className="mb-3 flex items-center justify-between">

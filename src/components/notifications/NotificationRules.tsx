@@ -10,18 +10,25 @@ interface NotificationRulesProps {
   rules: NotificationRule[];
   onRulesChange: (rules: NotificationRule[]) => void;
   disabled?: boolean;
+  showPushToggle?: boolean; // Show bell icon to toggle sendPush per rule
 }
 
 export function NotificationRules({
   rules,
   onRulesChange,
   disabled = false,
+  showPushToggle = false,
 }: NotificationRulesProps) {
   const [editingRule, setEditingRule] = useState<NotificationRule | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   const handleToggleRule = (ruleId: string) => {
     const updated = rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r));
+    onRulesChange(updated);
+  };
+
+  const handleTogglePush = (ruleId: string) => {
+    const updated = rules.map((r) => (r.id === ruleId ? { ...r, sendPush: !r.sendPush } : r));
     onRulesChange(updated);
   };
 
@@ -159,6 +166,38 @@ export function NotificationRules({
                           {getRuleSummary(rule)}
                         </p>
                       </div>
+
+                      {/* Push toggle - bell icon */}
+                      {showPushToggle && (
+                        <button
+                          onClick={() => handleTogglePush(rule.id)}
+                          className={`flex-shrink-0 rounded-lg p-1.5 transition-all ${
+                            rule.sendPush
+                              ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
+                              : "text-slate-500 opacity-60 hover:bg-slate-700 hover:text-slate-400 hover:opacity-100"
+                          }`}
+                          aria-label={
+                            rule.sendPush
+                              ? "Disable push for this rule"
+                              : "Enable push for this rule"
+                          }
+                          title={rule.sendPush ? "Push enabled" : "Push disabled"}
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            fill={rule.sendPush ? "currentColor" : "none"}
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={rule.sendPush ? 0 : 2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                            />
+                          </svg>
+                        </button>
+                      )}
 
                       {/* Edit button */}
                       <button

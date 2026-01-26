@@ -1,9 +1,10 @@
 /**
  * Notification Settings Component
  *
- * Two separate systems:
- * 1. NOTIFICATIONS (Inbox) - Events saved based on rules, synced across devices
- * 2. PUSH NOTIFICATIONS - Browser alerts on this device (optional)
+ * Architecture:
+ * - ONE set of rules determines what events you care about (synced across devices)
+ * - Each rule has a `sendPush` flag to also trigger OS-level push notifications
+ * - Push toggle enables/disables push delivery on THIS device
  */
 
 "use client";
@@ -41,12 +42,10 @@ export function NotificationSettings() {
     isFirstTimeSetup,
     subscribe: subscribePush,
     unsubscribe: unsubscribePush,
-    updateRules: updatePushRules,
     updatePreferences: updatePushPreferences,
   } = usePushNotifications();
 
   const [showQuickSetup, setShowQuickSetup] = useState(false);
-  const [expandedSection, setExpandedSection] = useState<"inbox" | "push" | null>("inbox");
 
   // Gate behind auth
   if (!user) {
@@ -105,37 +104,24 @@ export function NotificationSettings() {
 
   // Push notification handlers
   const handlePushToggle = async () => {
-    console.log("[Push Toggle] Clicked", {
-      pushSubscribed,
-      pushPermission,
-      isFirstTimeSetup,
-      pushLoading,
-    });
+    // Can't enable push without inbox enabled
+    if (!inboxPrefs.enabled) return;
 
     if (pushSubscribed) {
-      console.log("[Push Toggle] Unsubscribing...");
       await unsubscribePush();
+    } else if (pushPermission === "granted") {
+      await subscribePush();
+    } else if (isFirstTimeSetup) {
+      setShowQuickSetup(true);
     } else {
-      // If permission is already granted, skip quick setup and just subscribe
-      // This handles the case where user previously denied/unsubscribed
-      if (pushPermission === "granted") {
-        console.log("[Push Toggle] Permission granted, subscribing...");
-        await subscribePush();
-      } else if (isFirstTimeSetup) {
-        // First time - expand section and show quick setup
-        console.log("[Push Toggle] First time setup, showing quick setup");
-        setExpandedSection("push");
-        setShowQuickSetup(true);
-      } else {
-        console.log("[Push Toggle] Subscribing...");
-        await subscribePush();
-      }
+      await subscribePush();
     }
-    console.log("[Push Toggle] Done");
   };
 
   const handlePresetSelect = async (rules: NotificationRule[]) => {
-    await subscribePush(rules);
+    // When using quick setup, set those rules as inbox rules with sendPush enabled
+    await updateInboxRules(rules.map((r) => ({ ...r, sendPush: true })));
+    await subscribePush();
     setShowQuickSetup(false);
   };
 
@@ -148,6 +134,10 @@ export function NotificationSettings() {
     await updatePushPreferences({ quietHours });
   };
 
+  // Count rules with push enabled
+  const pushEnabledRules = inboxPrefs.rules?.filter((r) => r.enabled && r.sendPush).length || 0;
+  const activeRules = inboxPrefs.rules?.filter((r) => r.enabled).length || 0;
+
   // Push support checks
   const pushNotSupported = !pushSupported;
   const pushBlocked = pushPermission === "denied";
@@ -157,15 +147,12 @@ export function NotificationSettings() {
   return (
     <div className="space-y-3">
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* NOTIFICATIONS (INBOX) */}
+      {/* NOTIFICATIONS - Main toggle and rules */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
         {/* Header with toggle */}
         <div className="flex items-center justify-between p-4">
-          <button
-            onClick={() => setExpandedSection(expandedSection === "inbox" ? null : "inbox")}
-            className="flex flex-1 items-center gap-3 text-left"
-          >
+          <div className="flex flex-1 items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-700/50">
               <svg
                 className={`h-5 w-5 ${inboxPrefs.enabled ? "text-violet-400" : "text-slate-400"}`}
@@ -177,7 +164,7 @@ export function NotificationSettings() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
                 />
               </svg>
             </div>
@@ -185,11 +172,11 @@ export function NotificationSettings() {
               <p className="text-sm font-medium text-slate-100">Notifications</p>
               <p className="text-xs text-slate-400">
                 {inboxPrefs.enabled
-                  ? `${inboxPrefs.rules?.filter((r) => r.enabled).length || 0} active rules • Synced`
+                  ? `${activeRules} rule${activeRules !== 1 ? "s" : ""} active`
                   : "Disabled"}
               </p>
             </div>
-          </button>
+          </div>
 
           <button
             onClick={() => setInboxEnabled(!inboxPrefs.enabled)}
@@ -208,24 +195,26 @@ export function NotificationSettings() {
           </button>
         </div>
 
-        {/* Expanded content */}
+        {/* Rules section - always visible when enabled */}
         <AnimatePresence>
-          {expandedSection === "inbox" && inboxPrefs.enabled && (
+          {inboxPrefs.enabled && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="border-t border-slate-700/50 p-4">
-                <p className="mb-4 text-xs text-slate-400">
-                  Events matching your rules are saved to your inbox, accessible from the
-                  notification dropdown. Synced across all devices.
+              <div className="border-t border-slate-700/50 p-4 space-y-4">
+                <p className="text-xs text-slate-400">
+                  Events matching your rules are saved to your inbox. Rules with the bell icon also
+                  trigger push notifications on devices where push is enabled.
                 </p>
+
                 <NotificationRules
                   rules={inboxPrefs.rules || []}
                   onRulesChange={updateInboxRules}
                   disabled={inboxLoading}
+                  showPushToggle={pushSubscribed}
                 />
               </div>
             </motion.div>
@@ -234,15 +223,12 @@ export function NotificationSettings() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* PUSH NOTIFICATIONS */}
+      {/* PUSH NOTIFICATIONS - Device registration only */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
         {/* Header with toggle */}
         <div className="flex items-center justify-between p-4">
-          <button
-            onClick={() => setExpandedSection(expandedSection === "push" ? null : "push")}
-            className="flex flex-1 items-center gap-3 text-left"
-          >
+          <div className="flex flex-1 items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-700/50">
               <svg
                 className={`h-5 w-5 ${pushSubscribed ? "text-cyan-400" : "text-slate-400"}`}
@@ -254,12 +240,12 @@ export function NotificationSettings() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
                 />
               </svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-100">Push Notifications</p>
+              <p className="text-sm font-medium text-slate-100">Push to this device</p>
               <p className="text-xs text-slate-400">
                 {!canUsePush
                   ? iosNeedsInstall
@@ -267,20 +253,23 @@ export function NotificationSettings() {
                     : pushBlocked
                       ? "Blocked by browser"
                       : "Not supported"
-                  : pushSubscribed
-                    ? `${pushPrefs.rules?.filter((r) => r.enabled).length || 0} active rules • This device`
-                    : "Disabled on this device"}
+                  : !inboxPrefs.enabled
+                    ? "Enable notifications first"
+                    : pushSubscribed
+                      ? `${pushEnabledRules} rule${pushEnabledRules !== 1 ? "s" : ""} with push`
+                      : "OS-level alerts disabled"}
               </p>
             </div>
-          </button>
+          </div>
 
           {canUsePush && (
             <button
               onClick={handlePushToggle}
-              disabled={pushLoading}
+              disabled={pushLoading || !inboxPrefs.enabled}
+              title={!inboxPrefs.enabled ? "Enable notifications first" : undefined}
               className={`relative h-7 w-12 rounded-full transition-colors ${
                 pushSubscribed ? "bg-cyan-500" : "bg-slate-600"
-              } ${pushLoading ? "cursor-wait opacity-50" : "cursor-pointer"}`}
+              } ${pushLoading || !inboxPrefs.enabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
               role="switch"
               aria-checked={pushSubscribed}
             >
@@ -293,9 +282,9 @@ export function NotificationSettings() {
           )}
         </div>
 
-        {/* Expanded content */}
+        {/* Push settings - only show when subscribed */}
         <AnimatePresence>
-          {expandedSection === "push" && (
+          {pushSubscribed && inboxPrefs.enabled && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
@@ -303,90 +292,80 @@ export function NotificationSettings() {
               className="overflow-hidden"
             >
               <div className="border-t border-slate-700/50 p-4 space-y-4">
-                {/* iOS needs install */}
-                {iosNeedsInstall && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-                    <p className="mb-2 text-xs font-medium text-amber-400">📱 Add to Home Screen</p>
-                    <p className="text-xs text-amber-200/70">
-                      iOS requires the app to be installed. Tap Share → Add to Home Screen.
-                    </p>
+                {/* Error */}
+                {pushError && (
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+                    {pushError}
                   </div>
                 )}
 
-                {/* Push blocked */}
-                {pushBlocked && (
-                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-                    <p className="mb-2 text-xs font-medium text-red-400">
-                      🔕 Notifications Blocked
-                    </p>
-                    <p className="text-xs text-slate-300/70">
-                      Click the lock icon in your address bar → Notifications → Allow
-                    </p>
-                  </div>
+                {/* Quick Setup for first time */}
+                {showQuickSetup && (
+                  <QuickSetup
+                    onSelectPreset={handlePresetSelect}
+                    onCustomRules={handleCustomRules}
+                  />
                 )}
 
-                {/* Push not supported */}
-                {pushNotSupported && !iosNeedsInstall && (
-                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-                    <p className="text-xs text-red-400">
-                      Your browser doesn&apos;t support push notifications.
-                    </p>
-                  </div>
-                )}
+                {/* Quiet Hours */}
+                <QuietHoursSettings
+                  quietHours={pushPrefs.quietHours}
+                  onChange={handleQuietHoursChange}
+                  disabled={pushLoading}
+                />
 
-                {/* Can use push */}
-                {canUsePush && (
-                  <>
-                    <p className="text-xs text-slate-400">
-                      Get browser alerts on this device when events match your rules. Each device
-                      can have different rules.
-                    </p>
-
-                    {/* Error */}
-                    {pushError && (
-                      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
-                        {pushError}
-                      </div>
-                    )}
-
-                    {/* Quick Setup */}
-                    {showQuickSetup && !pushSubscribed && (
-                      <QuickSetup
-                        onSelectPreset={handlePresetSelect}
-                        onCustomRules={handleCustomRules}
-                      />
-                    )}
-
-                    {/* Push Rules */}
-                    {pushSubscribed && (
-                      <>
-                        <NotificationRules
-                          rules={pushPrefs.rules || []}
-                          onRulesChange={updatePushRules}
-                          disabled={pushLoading}
-                        />
-
-                        <QuietHoursSettings
-                          quietHours={pushPrefs.quietHours}
-                          onChange={handleQuietHoursChange}
-                          disabled={pushLoading}
-                        />
-                      </>
-                    )}
-
-                    {/* Connected Devices */}
-                    <div className="pt-2">
-                      <h4 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-slate-400">
-                        Your Devices
-                      </h4>
-                      <DeviceList />
-                    </div>
-                  </>
-                )}
+                {/* Connected Devices */}
+                <div className="pt-2">
+                  <h4 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Your Devices
+                  </h4>
+                  <DeviceList />
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Show warnings when collapsed */}
+        {!pushSubscribed && (
+          <AnimatePresence>
+            {(iosNeedsInstall || pushBlocked || (pushNotSupported && !iosNeedsInstall)) && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="border-t border-slate-700/50 p-4">
+                  {iosNeedsInstall && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                      <p className="text-xs text-amber-200/70">
+                        iOS requires the app to be installed. Tap Share → Add to Home Screen.
+                      </p>
+                    </div>
+                  )}
+
+                  {pushBlocked && (
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                      <p className="text-xs text-slate-300/70">
+                        Notifications blocked. Click the lock icon in your address bar →
+                        Notifications → Allow
+                      </p>
+                    </div>
+                  )}
+
+                  {pushNotSupported && !iosNeedsInstall && (
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                      <p className="text-xs text-red-400">
+                        Your browser doesn&apos;t support push notifications.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
       </div>
     </div>
   );
