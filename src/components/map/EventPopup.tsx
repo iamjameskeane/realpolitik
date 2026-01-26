@@ -5,6 +5,7 @@ import { GeoEvent, CATEGORY_COLORS } from "@/types/events";
 import { SourceTimeline } from "../SourceTimeline";
 import { ReactionPucks, ReactionResults } from "../reactions";
 import { ConsensusBadge } from "../ConsensusBadge";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Helper to share an event
 async function shareEvent(event: GeoEvent): Promise<"shared" | "copied" | "error"> {
@@ -62,6 +63,7 @@ export function EventPopup({
   onRequestBriefing,
   stackLabel = "events here",
 }: EventPopupProps) {
+  const { user } = useAuth();
   const hasStack = stackedEvents.length > 1;
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "shared">("idle");
 
@@ -236,8 +238,26 @@ export function EventPopup({
           {/* Summary */}
           <p className="text-sm leading-relaxed text-foreground/70">{selectedEvent.summary}</p>
 
+          {/* Auth Banner */}
+          {!user && (
+            <button
+              onClick={() => {
+                const { openAuthModal } = require("@/contexts/AuthContext");
+                openAuthModal();
+              }}
+              className="mt-4 w-full rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-center transition-all hover:border-yellow-500/50 hover:bg-yellow-500/15"
+            >
+              <div className="font-mono text-xs uppercase tracking-wide text-yellow-400">
+                Sign in to access smart features
+              </div>
+              <div className="mt-1 text-xs text-yellow-400/70">
+                Reactions • Fallout Analysis • AI Briefing
+              </div>
+            </button>
+          )}
+
           {/* Fallout Analysis */}
-          {selectedEvent.fallout_prediction && (
+          {user && selectedEvent.fallout_prediction && (
             <div className="mt-4 rounded border border-amber-500/20 bg-amber-500/5 p-3">
               <div className="mb-1 font-mono text-[10px] font-medium uppercase tracking-wide text-amber-400/80">
                 🔮 Fallout Analysis
@@ -249,7 +269,7 @@ export function EventPopup({
           )}
 
           {/* Brief Me button - after fallout, before sources */}
-          {onRequestBriefing && (
+          {user && onRequestBriefing && (
             <div className="mt-4 flex flex-col items-center gap-4">
               <button
                 onClick={() => onRequestBriefing(selectedEvent)}

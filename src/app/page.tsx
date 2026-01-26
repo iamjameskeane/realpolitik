@@ -1,39 +1,62 @@
 import { ClientPage } from "./ClientPage";
 import { GeoEvent } from "@/types/events";
+import { createClient } from "@supabase/supabase-js";
 
-// Events URL for SSR fetch
-// In production: Use env var or production URL
-// In development: Use localhost
-function getEventsUrl(): string {
-  if (process.env.NEXT_PUBLIC_EVENTS_URL) {
-    return process.env.NEXT_PUBLIC_EVENTS_URL;
-  }
-  // In development, use localhost; in production, use the domain
-  if (process.env.NODE_ENV === "development") {
-    return "http://localhost:3000/events.json";
-  }
-  return "https://realpolitik.world/events.json";
-}
+// Default SSR time window: last 24 hours (matches useEvents default)
+const SSR_DEFAULT_HOURS = 24;
 
 /**
- * Fetch events on the server for SSR
+ * Fetch events from Supabase for SSR
  *
- * This runs at request time (or cached via revalidate).
+ * Creates a server-side Supabase client to fetch events.
+ * Only fetches recent events (default: last 7 days) for faster initial load.
  * The data is passed to the client and used as SWR's initial data.
  */
 async function getEvents(): Promise<GeoEvent[]> {
   try {
-    const url = getEventsUrl();
-    const response = await fetch(url, {
-      next: { revalidate: 60 }, // Cache for 60 seconds on the edge
-    });
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!response.ok) {
-      console.error(`Failed to fetch events: ${response.status}`);
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error("Missing Supabase environment variables for SSR");
       return [];
     }
 
-    return response.json();
+    // Create a server-side client (no session persistence needed)
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false },
+    });
+
+    // Calculate time cutoff for SSR (default: 7 days)
+    const cutoff = new Date(Date.now() - SSR_DEFAULT_HOURS * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from("events_with_reactions")
+      .select("*")
+      .gte("timestamp", cutoff)
+      .order("timestamp", { ascending: false })
+      .limit(500);
+
+    if (error) {
+      console.error("Error fetching events from Supabase:", error);
+      return [];
+    }
+
+    // Transform Supabase data to GeoEvent interface
+    return (data || []).map((event) => ({
+      id: event.id,
+      title: event.title,
+      category: event.category,
+      coordinates: event.coordinates,
+      location_name: event.location_name,
+      region: event.region,
+      severity: event.severity,
+      summary: event.summary,
+      timestamp: event.timestamp,
+      last_updated: event.last_updated,
+      fallout_prediction: event.fallout_prediction || "",
+      sources: event.sources,
+    }));
   } catch (error) {
     console.error("Error fetching events for SSR:", error);
     return [];
@@ -43,7 +66,7 @@ async function getEvents(): Promise<GeoEvent[]> {
 /**
  * Home Page - Server Component
  *
- * Fetches events on the server and passes to ClientPage.
+ * Fetches events from Supabase on the server and passes to ClientPage.
  * Benefits:
  * - Faster first contentful paint (events in initial HTML)
  * - Works briefly without JavaScript

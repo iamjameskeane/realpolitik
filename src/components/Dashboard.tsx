@@ -10,6 +10,8 @@ import { BriefingModal } from "./BriefingModal";
 import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "./AboutModal";
 import { SettingsModal } from "./SettingsModal";
+import { UserMenu } from "./auth/UserMenu";
+import { useAuth } from "@/contexts/AuthContext";
 import { GeoEvent, CATEGORY_COLORS, CATEGORY_DESCRIPTIONS, EventCategory } from "@/types/events";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
@@ -38,14 +40,36 @@ interface DashboardProps {
   lastUpdated?: Date | null;
   isRefreshing?: boolean;
   initialEventId?: string | null;
+  /** Callback to expand time range - fetches more data from server */
+  onExpandTimeRange?: (hours: number) => Promise<void>;
+  /** Maximum hours currently loaded from server */
+  maxHoursLoaded?: number;
 }
 
 const CATEGORIES: EventCategory[] = ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"];
 const ALL_CATEGORIES = new Set<EventCategory>(CATEGORIES);
 
-export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }: DashboardProps) {
+export function Dashboard({ 
+  events, 
+  lastUpdated, 
+  isRefreshing, 
+  initialEventId,
+  onExpandTimeRange,
+  maxHoursLoaded = 24,
+}: DashboardProps) {
   const [showSplash, setShowSplash] = useState(false); // Disabled - set to true to re-enable
   const [timeRangeIndex, setTimeRangeIndex] = useState(4); // Default to 24H
+  
+  // Handle time range change - expand data fetch if needed
+  const handleTimeRangeChange = useCallback((newIndex: number) => {
+    setTimeRangeIndex(newIndex);
+    
+    // Check if we need to fetch more data
+    const selectedRange = TIME_RANGES[newIndex];
+    if (selectedRange && onExpandTimeRange && selectedRange.hours > maxHoursLoaded) {
+      onExpandTimeRange(selectedRange.hours);
+    }
+  }, [onExpandTimeRange, maxHoursLoaded]);
   const [isSliderActive, setIsSliderActive] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [hoveredCategory, setHoveredCategory] = useState<EventCategory | null>(null);
@@ -112,17 +136,21 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
     isLoaded: eventStatesLoaded,
   } = useEventStates(timeFilteredEvents);
 
+  // Auth context for gating features
+  const { user } = useAuth();
+
   // Notification inbox - tracks events that arrived via push notifications
   // Uses ALL events (not time-filtered) so notifications don't disappear based on time range
+  // Only enabled if user is signed in
   const {
     inboxEvents,
     inboxCount,
     removeFromInbox,
     clearInbox: clearNotificationInbox,
     isLoaded: inboxLoaded,
-  } = useNotificationInbox(events);
+  } = useNotificationInbox(user ? events : []);
 
-  // Push notification subscription status
+  // Push notification subscription status (only check if signed in)
   const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
     usePushNotifications();
 
@@ -290,10 +318,11 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
     label: "in flight",
   });
 
-  // Start catch up with notification inbox events
+  // Start catch up with notification inbox events (only if signed in)
   const startCatchUp = useCallback(() => {
+    if (!user) return;
     catchUp.start(inboxEvents);
-  }, [catchUp, inboxEvents]);
+  }, [user, catchUp, inboxEvents]);
 
   // Sidebar toggle that ignores clicks immediately after a map event click
   // This prevents the toggle button from opening sidebar when clicking dots near the right edge
@@ -355,7 +384,10 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                     <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-medium uppercase text-accent">
-                        Notifications
+                        Inbox
+                        </span>
+                        <span className="font-mono text-[9px] uppercase text-foreground/30">
+                          Synced
                         </span>
                       {inboxCount > 0 && (
                         <>
@@ -411,9 +443,9 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                             d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
                           />
                         </svg>
-                        <p className="text-sm text-foreground/70">Notifications not enabled</p>
+                        <p className="text-sm text-foreground/70">Push notifications not enabled</p>
                         <p className="mt-1 text-xs text-foreground/40">
-                          Enable push notifications in{" "}
+                          Enable alerts on this device in{" "}
                           <button
                             onClick={() => {
                               setInboxOpen(false);
@@ -422,8 +454,10 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                             className="text-accent hover:underline"
                           >
                             Settings
-                          </button>{" "}
-                          to receive alerts
+                          </button>
+                        </p>
+                        <p className="mt-2 text-xs text-foreground/30">
+                          Your inbox syncs across all devices
                         </p>
                       </div>
                     ) : inboxCount === 0 ? (
@@ -608,7 +642,7 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                   min={0}
                   max={availableTimeRanges.length - 1}
                   value={clampedTimeRangeIndex}
-                  onChange={(e) => setTimeRangeIndex(Number(e.target.value))}
+                  onChange={(e) => handleTimeRangeChange(Number(e.target.value))}
                   onMouseDown={() => setIsSliderActive(true)}
                   onMouseUp={() => setIsSliderActive(false)}
                   onMouseLeave={() => setIsSliderActive(false)}
@@ -633,8 +667,9 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
           </div>
         </div>
 
-        {/* Settings Button - hidden on mobile, positioned above category legend */}
-        <div className="absolute bottom-52 left-4 z-10 hidden md:bottom-48 md:left-6 md:block">
+        {/* User Menu & Settings - hidden on mobile, positioned above category legend */}
+        <div className="absolute bottom-52 left-4 z-10 hidden flex-col gap-2 md:bottom-48 md:left-6 md:flex">
+          <UserMenu />
           <button
             onClick={() => setSettingsOpen(true)}
             className="glass-panel flex items-center gap-2 px-3 py-2 transition-all hover:bg-foreground/10"

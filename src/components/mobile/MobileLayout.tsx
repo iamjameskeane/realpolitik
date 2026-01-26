@@ -18,6 +18,8 @@ import { formatRelativeTime } from "@/lib/formatters";
 import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "../AboutModal";
 import { SettingsModal } from "../SettingsModal";
+import { UserMenu } from "../auth/UserMenu";
+import { useAuth } from "@/contexts/AuthContext";
 
 const CATEGORIES: EventCategory[] = ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"];
 const ALL_CATEGORIES = new Set<EventCategory>(CATEGORIES);
@@ -27,6 +29,10 @@ interface MobileLayoutProps {
   lastUpdated?: Date | null;
   isRefreshing?: boolean;
   initialEventId?: string | null;
+  /** Callback to expand time range - fetches more data from server */
+  onExpandTimeRange?: (hours: number) => Promise<void>;
+  /** Maximum hours currently loaded from server */
+  maxHoursLoaded?: number;
 }
 
 /**
@@ -60,14 +66,30 @@ function MobileLayoutInner({
   lastUpdated,
   isRefreshing,
   initialEventId,
+  onExpandTimeRange,
+  maxHoursLoaded = 24,
 }: MobileLayoutProps) {
   const mapRef = useRef<WorldMapHandle>(null);
+  
+  // Auth context for gating features
+  const { user } = useAuth();
 
   // Fix Safari viewport height on older iOS
   useViewportHeight();
 
   // UI State (not related to event selection)
   const [timeRangeIndex, setTimeRangeIndex] = useState(4); // Default to 24H (index 4), will clamp to max available
+  
+  // Handle time range change - expand data fetch if needed
+  const handleTimeRangeChange = useCallback((newIndex: number) => {
+    setTimeRangeIndex(newIndex);
+    
+    // Check if we need to fetch more data
+    const selectedRange = TIME_RANGES[newIndex];
+    if (selectedRange && onExpandTimeRange && selectedRange.hours > maxHoursLoaded) {
+      onExpandTimeRange(selectedRange.hours);
+    }
+  }, [onExpandTimeRange, maxHoursLoaded]);
   const [sortBy, setSortBy] = useState<SortOption>("hot");
   const [hideSeen, setHideSeen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<EventCategory>>(ALL_CATEGORIES);
@@ -142,14 +164,15 @@ function MobileLayoutInner({
 
   // Notification inbox - tracks events that arrived via push notifications
   // Uses ALL events (not time-filtered) so notifications don't disappear based on time range
+  // Only enabled if user is signed in
   const {
     inboxEvents,
     inboxCount,
     removeFromInbox,
     clearInbox: clearNotificationInbox,
-  } = useNotificationInbox(events);
+  } = useNotificationInbox(user ? events : []);
 
-  // Push notification subscription status
+  // Push notification subscription status (only check if signed in)
   const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
     usePushNotifications();
 
@@ -662,8 +685,11 @@ function MobileLayoutInner({
           </button>
         </div>
 
-        {/* Right side: Settings + Live indicator */}
+        {/* Right side: User Menu + Settings + Live indicator */}
         <div className="flex items-center gap-2">
+          {/* User Menu */}
+          <UserMenu />
+
           {/* Settings button */}
           <button
             onClick={() => setSettingsOpen(true)}
@@ -718,7 +744,7 @@ function MobileLayoutInner({
         stackIndex={touringIndex}
         // Filters
         timeRangeIndex={clampedTimeRangeIndex}
-        onTimeRangeChange={setTimeRangeIndex}
+        onTimeRangeChange={handleTimeRangeChange}
         availableTimeRanges={availableTimeRanges}
         sortBy={sortBy}
         onSortChange={setSortBy}

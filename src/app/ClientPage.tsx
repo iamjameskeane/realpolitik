@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Dashboard } from "@/components/Dashboard";
 import { MobileLayout } from "@/components/mobile";
@@ -22,12 +22,24 @@ interface ClientPageProps {
  * - Automatic polling every 60s
  * - Stale-while-revalidate pattern
  * - Revalidation on window focus
+ * - Deep link support for events outside current time window
  */
 function HomeContent({ initialEvents }: ClientPageProps) {
-  const { events, isLoading, isRefreshing, refresh, dataUpdatedAt } = useEvents(initialEvents);
+  const { 
+    events, 
+    isLoading, 
+    isRefreshing, 
+    isExpanding,
+    refresh, 
+    dataUpdatedAt, 
+    fetchEventById,
+    expandToHours,
+    maxHoursLoaded,
+  } = useEvents({ initialEvents });
 
   const searchParams = useSearchParams();
   const isMobileScreen = useIsMobile();
+  const [deepLinkLoading, setDeepLinkLoading] = useState(false);
 
   // Allow forcing mobile mode via ?mobile=1 URL parameter for testing
   const forceMobile = searchParams.get("mobile") === "1";
@@ -41,6 +53,24 @@ function HomeContent({ initialEvents }: ClientPageProps) {
       window.location.href = "/";
     }
   }, [searchParams]);
+
+  // Deep linking - get event ID from URL
+  const initialEventId = searchParams.get("event");
+
+  // Handle deep link - fetch event if not in current data
+  useEffect(() => {
+    if (!initialEventId || isLoading) return;
+    
+    // Check if event is already loaded
+    const eventExists = events.some(e => e.id === initialEventId);
+    if (eventExists) return;
+    
+    // Fetch the event from Supabase
+    setDeepLinkLoading(true);
+    fetchEventById(initialEventId)
+      .catch(err => console.error('Failed to load deep-linked event:', err))
+      .finally(() => setDeepLinkLoading(false));
+  }, [initialEventId, events, isLoading, fetchEventById]);
 
   // Listen for notification clicks from service worker (when app is already open)
   useEffect(() => {
@@ -57,6 +87,9 @@ function HomeContent({ initialEvents }: ClientPageProps) {
           window.history.pushState({}, "", newUrl.toString());
           // Dispatch a custom event to notify components
           window.dispatchEvent(new CustomEvent("notification-event-select", { detail: { eventId } }));
+          
+          // Fetch event if not already loaded
+          fetchEventById(eventId).catch(console.error);
         }
       }
     };
@@ -65,10 +98,7 @@ function HomeContent({ initialEvents }: ClientPageProps) {
     return () => {
       navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
     };
-  }, []);
-
-  // Deep linking - get event ID from URL
-  const initialEventId = searchParams.get("event");
+  }, [fetchEventById]);
 
   // Convert timestamp to Date (memoized to avoid creating new Date on every render)
   const lastUpdated = useMemo(
@@ -88,8 +118,10 @@ function HomeContent({ initialEvents }: ClientPageProps) {
       <MobileLayout
         events={events}
         lastUpdated={lastUpdated}
-        isRefreshing={isRefreshing}
+        isRefreshing={isRefreshing || isExpanding}
         initialEventId={initialEventId}
+        onExpandTimeRange={expandToHours}
+        maxHoursLoaded={maxHoursLoaded}
       />
     );
   }
@@ -104,8 +136,10 @@ function HomeContent({ initialEvents }: ClientPageProps) {
       events={events}
       onRefresh={handleRefresh}
       lastUpdated={lastUpdated}
-      isRefreshing={isRefreshing}
+      isRefreshing={isRefreshing || isExpanding}
       initialEventId={initialEventId}
+      onExpandTimeRange={expandToHours}
+      maxHoursLoaded={maxHoursLoaded}
     />
   );
 }

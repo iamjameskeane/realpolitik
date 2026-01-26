@@ -363,7 +363,7 @@ export function EventsSidebar({
                     }`}
                   >
                     {"isPulsing" in option && option.isPulsing && (
-                      <span className="relative flex h-2 w-2">
+                      <span className="relative flex h-2 w-2" suppressHydrationWarning>
                         {incomingEvents.length > 0 ? (
                           <>
                             <span
@@ -372,11 +372,13 @@ export function EventsSidebar({
                                   ? "bg-white animate-ping"
                                   : "bg-violet-500 animate-ping"
                               }`}
+                              suppressHydrationWarning
                             />
                             <span
                               className={`relative inline-flex h-2 w-2 rounded-full ${
                                 sortBy === option.value ? "bg-white" : "bg-violet-500"
                               }`}
+                              suppressHydrationWarning
                             />
                           </>
                         ) : (
@@ -384,6 +386,7 @@ export function EventsSidebar({
                             className={`relative inline-flex h-2 w-2 rounded-full ${
                               sortBy === option.value ? "bg-white/50" : "bg-foreground/30"
                             }`}
+                            suppressHydrationWarning
                           />
                         )}
                       </span>

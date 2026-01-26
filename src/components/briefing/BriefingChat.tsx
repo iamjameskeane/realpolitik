@@ -6,6 +6,8 @@ import { useBriefingChat } from "@/hooks/useBriefingChat";
 import { ChatMessage } from "./ChatMessage";
 import { ChatChips } from "./ChatChips";
 import { ChatInput } from "./ChatInput";
+import { useAuth } from "@/contexts/AuthContext";
+import { SignInPrompt } from "../auth/SignInPrompt";
 
 interface BriefingChatProps {
   event: GeoEvent;
@@ -17,6 +19,7 @@ interface BriefingChatProps {
  * Combines messages, chips, and input into a cohesive chat experience.
  */
 export function BriefingChat({ event, className = "" }: BriefingChatProps) {
+  const { user } = useAuth();
   const { messages, isLoading, statusLabel, sendMessage, availableChips } = useBriefingChat({
     event,
     onError: (err) => console.error("Briefing error:", err),
@@ -24,6 +27,15 @@ export function BriefingChat({ event, className = "" }: BriefingChatProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
+
+  // Gate behind auth
+  if (!user) {
+    return (
+      <div className={`flex items-center justify-center p-8 ${className}`}>
+        <SignInPrompt feature="briefing" />
+      </div>
+    );
+  }
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
