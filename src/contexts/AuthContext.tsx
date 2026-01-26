@@ -129,10 +129,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
-      setUser(session?.user ?? null);
+
+      // Only update user if ID actually changes (prevents unnecessary re-renders)
+      setUser((prevUser) => {
+        const newUserId = session?.user?.id ?? null;
+        const prevUserId = prevUser?.id ?? null;
+        if (newUserId === prevUserId) {
+          return prevUser; // Keep same reference
+        }
+        return session?.user ?? null;
+      });
 
       if (session?.user) {
-        await fetchProfile(session.user.id);
+        // Only refetch profile if user ID changed
+        setProfile((prevProfile) => {
+          if (prevProfile?.id === session.user.id) {
+            return prevProfile; // Keep existing profile
+          }
+          // Fetch new profile (but don't await to avoid blocking)
+          fetchProfile(session.user.id);
+          return prevProfile;
+        });
       } else {
         setProfile(null);
       }

@@ -14,6 +14,7 @@ interface PushSubscription {
 
 export function DeviceList() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [devices, setDevices] = useState<PushSubscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,7 @@ export function DeviceList() {
   const isMountedRef = useRef(true);
 
   const loadDevices = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setLoading(false);
       return;
     }
@@ -38,7 +39,7 @@ export function DeviceList() {
       });
 
       const fetchPromise = supabase.rpc("get_user_subscriptions", {
-        user_uuid: user.id,
+        user_uuid: userId,
       });
 
       const { data, error: rpcError } = await Promise.race([
@@ -63,7 +64,7 @@ export function DeviceList() {
         setLoading(false);
       }
     }
-  }, [user]);
+  }, [userId]);
 
   // Load user's devices
   useEffect(() => {

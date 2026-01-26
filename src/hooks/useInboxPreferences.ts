@@ -64,11 +64,14 @@ export function useInboxPreferences() {
   const [error, setError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
 
+  // Store user ID to use in callbacks
+  const userId = user?.id;
+
   // Load preferences from Supabase
   useEffect(() => {
     isMountedRef.current = true;
 
-    if (!user) {
+    if (!userId) {
       setPreferences(DEFAULT_PREFERENCES);
       setIsLoading(false);
       return;
@@ -83,7 +86,7 @@ export function useInboxPreferences() {
       try {
         const supabase = getSupabaseClient();
         const { data, error: fetchError } = await supabase.rpc("get_inbox_preferences", {
-          user_uuid: user.id,
+          user_uuid: userId,
         });
 
         if (!isMountedRef.current) return;
@@ -112,12 +115,12 @@ export function useInboxPreferences() {
     return () => {
       isMountedRef.current = false;
     };
-  }, [user]);
+  }, [userId]);
 
   // Toggle inbox enabled/disabled
   const setEnabled = useCallback(
     async (enabled: boolean) => {
-      if (!user) return;
+      if (!userId) return;
 
       const oldPrefs = preferences;
       const newPrefs = { ...preferences, enabled };
@@ -128,7 +131,7 @@ export function useInboxPreferences() {
       try {
         const supabase = getSupabaseClient();
         await supabase.rpc("update_inbox_preferences", {
-          user_uuid: user.id,
+          user_uuid: userId,
           prefs: newPrefs,
         });
       } catch (err) {
@@ -141,13 +144,13 @@ export function useInboxPreferences() {
         setIsSaving(false);
       }
     },
-    [user, preferences]
+    [userId, preferences]
   );
 
   // Update rules
   const updateRules = useCallback(
     async (rules: NotificationRule[]) => {
-      if (!user) return;
+      if (!userId) return;
 
       const oldPrefs = preferences;
       const newPrefs = { ...preferences, rules };
@@ -158,7 +161,7 @@ export function useInboxPreferences() {
       try {
         const supabase = getSupabaseClient();
         await supabase.rpc("update_inbox_preferences", {
-          user_uuid: user.id,
+          user_uuid: userId,
           prefs: newPrefs,
         });
       } catch (err) {
@@ -171,7 +174,7 @@ export function useInboxPreferences() {
         setIsSaving(false);
       }
     },
-    [user, preferences]
+    [userId, preferences]
   );
 
   return {
