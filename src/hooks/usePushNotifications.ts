@@ -328,6 +328,64 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // VERIFY SUBSCRIPTION WITH SERVER
+  // ---------------------------------------------------------------------------
+  // If we have a local subscription but it's not on the server, clean it up
+  useEffect(() => {
+    const verifySubscription = async () => {
+      // Only run if we think we're subscribed and not loading
+      if (!state.isSubscribed || state.isLoading) return;
+
+      try {
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        // Can't verify without auth
+        if (!session) return;
+
+        // Get local subscription endpoint
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        if (registrations.length === 0) return;
+
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (!subscription) return;
+
+        // Check if this subscription exists on the server
+        const { data: devices, error } = await supabase.rpc("get_user_subscriptions", {
+          user_uuid: session.user.id,
+        });
+
+        if (error) {
+          console.error("[Push] Error verifying subscription:", error);
+          return;
+        }
+
+        // Check if our endpoint is in the list
+        const endpoint = subscription.endpoint;
+        const isOnServer = devices?.some((d: { endpoint: string }) => d.endpoint === endpoint);
+
+        if (!isOnServer) {
+          console.log("[Push] Local subscription not on server, cleaning up...");
+          // Unsubscribe locally to sync state
+          await subscription.unsubscribe();
+          setState((prev) => ({
+            ...prev,
+            isSubscribed: false,
+            isFirstTimeSetup: true,
+          }));
+        }
+      } catch (e) {
+        console.error("[Push] Error verifying subscription:", e);
+      }
+    };
+
+    verifySubscription();
+  }, [state.isSubscribed, state.isLoading]);
+
+  // ---------------------------------------------------------------------------
   // REGISTER SERVICE WORKER
   // ---------------------------------------------------------------------------
 
@@ -442,6 +500,12 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         } = await supabase.auth.getSession();
 
         if (!session) {
+          // No session - unsubscribe locally to keep state in sync
+          try {
+            await subscription.unsubscribe();
+          } catch (e) {
+            console.error("[Push] Failed to unsubscribe after auth error:", e);
+          }
           throw new Error("You must be signed in to enable notifications");
         }
 
@@ -459,6 +523,12 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         });
 
         if (!response.ok) {
+          // API failed - unsubscribe locally to keep state in sync
+          try {
+            await subscription.unsubscribe();
+          } catch (e) {
+            console.error("[Push] Failed to unsubscribe after API error:", e);
+          }
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.message || "Failed to save subscription");
         }
