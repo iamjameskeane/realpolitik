@@ -7,7 +7,7 @@
 
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
-import { shouldNotify, type EventForMatching } from "./notificationRules";
+import { shouldSendPush, shouldAddToInbox, type EventForMatching } from "./notificationRules";
 import type { NotificationPreferences } from "@/types/notifications";
 
 // =============================================================================
@@ -176,10 +176,11 @@ async function sendToSubscription(
  * Flow:
  * 1. Query all active subscriptions from database
  * 2. For each subscription, check if user was already notified (dedup)
- * 3. Check if event matches subscription's notification rules
- * 4. Send push notification
- * 5. Add event to user's inbox (marks as notified)
- * 6. Deactivate subscriptions that returned 404/410
+ * 3. Check if event matches any inbox rules (shouldAddToInbox)
+ * 4. Check if event matches push rules (shouldSendPush) - only rules with sendPush: true
+ * 5. Send push notification if matched
+ * 6. Add event to user's inbox (marks as notified for future dedup)
+ * 7. Deactivate subscriptions that returned 404/410
  */
 export async function sendNotificationToAll(payload: NotificationPayload): Promise<SendResult> {
   console.log("[Push] sendNotificationToAll:", payload.title);
@@ -227,28 +228,34 @@ export async function sendNotificationToAll(payload: NotificationPayload): Promi
         }
       }
 
-      // Check if event matches subscription rules
-      const matches = shouldNotify(eventForMatching, sub.preferences);
-      if (!matches) {
+      // Check if event matches any inbox rules (determines if we process at all)
+      const matchesInbox = shouldAddToInbox(eventForMatching, sub.preferences);
+      if (!matchesInbox) {
         continue;
       }
 
-      // Send notification
-      const sendResult = await sendToSubscription(sub, payload);
+      // Check if event should trigger push (rules with sendPush: true)
+      const matchesPush = shouldSendPush(eventForMatching, sub.preferences);
 
-      if (sendResult.success) {
-        result.success++;
-        // Mark user as notified (add to inbox)
-        if (payload.id) {
-          notifiedUsers.push({ userId: sub.user_id, eventId: payload.id });
+      if (matchesPush) {
+        // Send push notification
+        const sendResult = await sendToSubscription(sub, payload);
+
+        if (sendResult.success) {
+          result.success++;
+        } else {
+          result.failed++;
         }
-      } else {
-        result.failed++;
+
+        if (sendResult.shouldDeactivate) {
+          toDeactivate.push(sub.endpoint);
+          result.removed++;
+        }
       }
 
-      if (sendResult.shouldDeactivate) {
-        toDeactivate.push(sub.endpoint);
-        result.removed++;
+      // Always add to inbox if event matched any rule (marks as notified)
+      if (payload.id) {
+        notifiedUsers.push({ userId: sub.user_id, eventId: payload.id });
       }
     }
 
