@@ -11,7 +11,6 @@ import type {
   NotificationPreferences,
   Condition,
   ConditionField,
-  RegionName,
 } from "@/types/notifications";
 import { getRegionFromLocation, isInQuietHours } from "@/types/notifications";
 
@@ -178,6 +177,48 @@ export function shouldNotify(
   }
 
   // Check if event matches any rules
+  return matchesRules(event, preferences.rules);
+}
+
+/**
+ * Check if an event should trigger a PUSH notification (vs inbox only)
+ * Only matches rules with sendPush: true
+ */
+export function shouldSendPush(
+  event: EventForMatching,
+  preferences: NotificationPreferences
+): boolean {
+  // Notifications must be enabled
+  if (!preferences.enabled) {
+    return false;
+  }
+
+  // Check quiet hours (suppress push notifications during quiet period)
+  if (isInQuietHours(preferences.quietHours)) {
+    return false;
+  }
+
+  // Only check rules with sendPush enabled
+  const pushRules = preferences.rules.filter((rule) => rule.sendPush === true);
+
+  // Check if event matches any push-enabled rules
+  return matchesRules(event, pushRules);
+}
+
+/**
+ * Check if an event should be added to inbox
+ * Matches any enabled rule (regardless of sendPush setting)
+ */
+export function shouldAddToInbox(
+  event: EventForMatching,
+  preferences: NotificationPreferences
+): boolean {
+  // Inbox must be enabled
+  if (!preferences.enabled) {
+    return false;
+  }
+
+  // Check if event matches any rules (push or inbox-only)
   return matchesRules(event, preferences.rules);
 }
 

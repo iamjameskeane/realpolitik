@@ -30,15 +30,7 @@ export const REGIONS = {
     "Bahrain",
     "Oman",
   ],
-  EAST_ASIA: [
-    "China",
-    "Taiwan",
-    "Japan",
-    "South Korea",
-    "North Korea",
-    "Hong Kong",
-    "Mongolia",
-  ],
+  EAST_ASIA: ["China", "Taiwan", "Japan", "South Korea", "North Korea", "Hong Kong", "Mongolia"],
   SOUTHEAST_ASIA: [
     "Vietnam",
     "Philippines",
@@ -164,13 +156,7 @@ export const REGIONS = {
     "Armenia",
     "Georgia",
   ],
-  OCEANIA: [
-    "Australia",
-    "New Zealand",
-    "Papua New Guinea",
-    "Fiji",
-    "Solomon Islands",
-  ],
+  OCEANIA: ["Australia", "New Zealand", "Papua New Guinea", "Fiji", "Solomon Islands"],
 } as const;
 
 export type RegionName = keyof typeof REGIONS;
@@ -367,6 +353,7 @@ export interface NotificationRule {
   name: string;
   enabled: boolean;
   conditions: Condition[];
+  sendPush?: boolean; // If true, sends push notifications (default: false, inbox only)
 }
 
 // =============================================================================
@@ -425,7 +412,7 @@ export const DEFAULT_QUIET_HOURS: QuietHours = {
  */
 export function isInQuietHours(quietHours: QuietHours | undefined): boolean {
   if (!quietHours?.enabled) return false;
-  
+
   try {
     // Get current time in the user's timezone
     const now = new Date();
@@ -436,15 +423,15 @@ export function isInQuietHours(quietHours: QuietHours | undefined): boolean {
       hour12: false,
     });
     const currentTime = formatter.format(now); // "22:30" format
-    
+
     const [currentHour, currentMin] = currentTime.split(":").map(Number);
     const [startHour, startMin] = quietHours.start.split(":").map(Number);
     const [endHour, endMin] = quietHours.end.split(":").map(Number);
-    
+
     const currentMinutes = currentHour * 60 + currentMin;
     const startMinutes = startHour * 60 + startMin;
     const endMinutes = endHour * 60 + endMin;
-    
+
     // Handle overnight quiet hours (e.g., 22:00 to 07:00)
     if (startMinutes > endMinutes) {
       // Quiet hours span midnight
@@ -492,6 +479,7 @@ export const DEFAULT_RULE: NotificationRule = {
   id: "default-breaking",
   name: "Breaking Only",
   enabled: true,
+  sendPush: true, // Push notifications enabled for breaking news
   conditions: [
     { field: "severity", operator: ">=", value: 8 },
     { field: "sources", operator: ">=", value: 2 },
@@ -500,7 +488,7 @@ export const DEFAULT_RULE: NotificationRule = {
 
 export const DEFAULT_PREFERENCES: NotificationPreferences = {
   enabled: false,
-  rules: [DEFAULT_RULE],
+  rules: [], // Empty by default - users must opt-in to avoid spam
   mode: "realtime",
 };
 
@@ -531,6 +519,7 @@ export const RULE_PRESETS: RulePreset[] = [
         id: "breaking",
         name: "Breaking Only",
         enabled: true,
+        sendPush: true, // Push notifications for breaking news
         conditions: [
           { field: "severity", operator: ">=", value: 8 },
           { field: "sources", operator: ">=", value: 2 },
@@ -549,6 +538,7 @@ export const RULE_PRESETS: RulePreset[] = [
         id: "significant",
         name: "Significant Events",
         enabled: true,
+        sendPush: false, // Inbox only - too many for push
         conditions: [{ field: "severity", operator: ">=", value: 6 }],
       },
     ],
@@ -564,6 +554,7 @@ export const RULE_PRESETS: RulePreset[] = [
         id: "military",
         name: "Military Events",
         enabled: true,
+        sendPush: true, // Push for military events
         conditions: [
           { field: "category", operator: "=", value: "MILITARY" },
           { field: "sources", operator: ">=", value: 2 },
@@ -582,6 +573,7 @@ export const RULE_PRESETS: RulePreset[] = [
         id: "europe",
         name: "Europe 7+",
         enabled: true,
+        sendPush: true, // Push for high severity Europe
         conditions: [
           { field: "region", operator: "=", value: "EUROPE" },
           { field: "severity", operator: ">=", value: 7 },
@@ -591,6 +583,7 @@ export const RULE_PRESETS: RulePreset[] = [
         id: "mena",
         name: "Middle East 5+",
         enabled: true,
+        sendPush: false, // Inbox only - high volume region
         conditions: [
           { field: "region", operator: "=", value: "MIDDLE_EAST" },
           { field: "severity", operator: ">=", value: 5 },
@@ -609,6 +602,7 @@ export const RULE_PRESETS: RulePreset[] = [
         id: "asia-military",
         name: "Asia Military",
         enabled: true,
+        sendPush: false, // Inbox only
         conditions: [
           { field: "region", operator: "in", value: ["EAST_ASIA", "SOUTH_ASIA", "SOUTHEAST_ASIA"] },
           { field: "category", operator: "=", value: "MILITARY" },
@@ -619,6 +613,7 @@ export const RULE_PRESETS: RulePreset[] = [
         id: "asia-critical",
         name: "Asia Critical",
         enabled: true,
+        sendPush: true, // Push for critical Asia events
         conditions: [
           { field: "region", operator: "in", value: ["EAST_ASIA", "SOUTH_ASIA", "SOUTHEAST_ASIA"] },
           { field: "severity", operator: ">=", value: 8 },
@@ -635,9 +630,7 @@ export const RULE_PRESETS: RulePreset[] = [
 /**
  * Convert legacy preferences (minSeverity + categories) to new rule-based format
  */
-export function migrateLegacyPreferences(
-  legacy: LegacyPreferences
-): NotificationPreferences {
+export function migrateLegacyPreferences(legacy: LegacyPreferences): NotificationPreferences {
   const conditions: Condition[] = [];
 
   if (legacy.minSeverity) {
@@ -712,6 +705,7 @@ export function createEmptyRule(): NotificationRule {
     id: generateRuleId(),
     name: "New Rule",
     enabled: true,
+    sendPush: false, // Default to inbox only (safer)
     conditions: [{ field: "severity", operator: ">=", value: 7 }],
   };
 }
@@ -738,19 +732,25 @@ export function validateRule(rule: NotificationRule): ValidationResult {
   if (!rule.name.trim()) {
     return { valid: false, error: "Rule name is required" };
   }
-  
+
   if (rule.name.length > RULE_LIMITS.MAX_RULE_NAME_LENGTH) {
-    return { valid: false, error: `Rule name must be ${RULE_LIMITS.MAX_RULE_NAME_LENGTH} characters or less` };
+    return {
+      valid: false,
+      error: `Rule name must be ${RULE_LIMITS.MAX_RULE_NAME_LENGTH} characters or less`,
+    };
   }
-  
+
   if (rule.conditions.length === 0) {
     return { valid: false, error: "At least one condition is required" };
   }
-  
+
   if (rule.conditions.length > RULE_LIMITS.MAX_CONDITIONS_PER_RULE) {
-    return { valid: false, error: `Maximum ${RULE_LIMITS.MAX_CONDITIONS_PER_RULE} conditions per rule` };
+    return {
+      valid: false,
+      error: `Maximum ${RULE_LIMITS.MAX_CONDITIONS_PER_RULE} conditions per rule`,
+    };
   }
-  
+
   // Validate each condition
   for (const condition of rule.conditions) {
     const result = validateCondition(condition);
@@ -758,7 +758,7 @@ export function validateRule(rule: NotificationRule): ValidationResult {
       return result;
     }
   }
-  
+
   return { valid: true };
 }
 
@@ -769,16 +769,16 @@ export function validateCondition(condition: Condition): ValidationResult {
   if (condition.value === undefined || condition.value === "") {
     return { valid: false, error: "Condition value is required" };
   }
-  
+
   // Validate "in" operator has non-empty array
   if (condition.operator === "in") {
     if (!Array.isArray(condition.value) || condition.value.length === 0) {
       return { valid: false, error: "Select at least one value" };
     }
   }
-  
+
   // Validate numeric fields
-  const fieldConfig = FIELD_CONFIGS.find(f => f.field === condition.field);
+  const fieldConfig = FIELD_CONFIGS.find((f) => f.field === condition.field);
   if (fieldConfig?.type === "numeric") {
     const numValue = Number(condition.value);
     if (isNaN(numValue)) {
@@ -791,7 +791,7 @@ export function validateCondition(condition: Condition): ValidationResult {
       return { valid: false, error: `${fieldConfig.label} must be at most ${fieldConfig.max}` };
     }
   }
-  
+
   return { valid: true };
 }
 
@@ -802,14 +802,14 @@ export function validatePreferences(prefs: NotificationPreferences): ValidationR
   if (prefs.rules.length > RULE_LIMITS.MAX_RULES) {
     return { valid: false, error: `Maximum ${RULE_LIMITS.MAX_RULES} rules allowed` };
   }
-  
+
   for (const rule of prefs.rules) {
     const result = validateRule(rule);
     if (!result.valid) {
       return { valid: false, error: `Rule "${rule.name}": ${result.error}` };
     }
   }
-  
+
   return { valid: true };
 }
 

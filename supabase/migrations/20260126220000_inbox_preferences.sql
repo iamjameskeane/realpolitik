@@ -5,15 +5,11 @@
 -- Purpose: Allow users to configure inbox rules separately from push notifications
 
 -- Add inbox_preferences to user_state
+-- Default: Empty rules array (users must opt-in to avoid 100+ notifications/day)
 ALTER TABLE user_state 
 ADD COLUMN IF NOT EXISTS inbox_preferences JSONB DEFAULT '{
   "enabled": true,
-  "rules": [{
-    "id": "default",
-    "name": "All Events",
-    "enabled": true,
-    "conditions": []
-  }]
+  "rules": []
 }';
 
 -- Function to update inbox preferences
@@ -43,16 +39,11 @@ BEGIN
     FROM user_state
     WHERE user_id = user_uuid;
     
-    -- Return default if not found
+    -- Return default if not found (empty rules = no notifications)
     IF prefs IS NULL THEN
         RETURN '{
             "enabled": true,
-            "rules": [{
-                "id": "default",
-                "name": "All Events", 
-                "enabled": true,
-                "conditions": []
-            }]
+            "rules": []
         }'::JSONB;
     END IF;
     
