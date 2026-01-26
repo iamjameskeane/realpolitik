@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign in to Realpolitik</title>
+  <title>Your Realpolitik verification code</title>
   <!--[if mso]>
   <style type="text/css">
     body, table, td {font-family: Consolas, Monaco, 'Courier New', monospace !important;}
@@ -74,26 +74,37 @@
           <tr>
             <td style="text-align: center; padding-bottom: 32px;">
               <p style="margin: 0 0 16px 0; font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 14px; line-height: 1.6; color: #cbd5e1;">
-                Secure access requested for your account.
+                Your verification code is ready.
               </p>
               <p style="margin: 0; font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 13px; color: #64748b;">
-                This link expires in <span style="color: #f1f5f9;">1 hour</span>.
+                This code expires in <span style="color: #f1f5f9;">10 minutes</span>.
               </p>
             </td>
           </tr>
 
-          <!-- CTA Button -->
+          <!-- OTP Code Display -->
           <tr>
             <td style="text-align: center; padding-bottom: 40px;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto;">
                 <tr>
-                  <td style="border-radius: 6px; background-color: #6366f1;">
-                    <a href="{{ .ConfirmationURL }}" target="_blank" style="display: inline-block; padding: 14px 40px; font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #ffffff; text-decoration: none;">
-                      Authenticate →
-                    </a>
+                  <td style="border-radius: 8px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 2px;">
+                    <div style="background-color: #0f172a; border-radius: 6px; padding: 24px 48px;">
+                      <div style="font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 48px; font-weight: 700; letter-spacing: 0.3em; color: #f1f5f9; text-align: center;">
+                        {{ .Token }}
+                      </div>
+                    </div>
                   </td>
                 </tr>
               </table>
+            </td>
+          </tr>
+
+          <!-- Instructions -->
+          <tr>
+            <td style="text-align: center; padding-bottom: 32px;">
+              <p style="margin: 0; font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 12px; line-height: 1.6; color: #94a3b8;">
+                Enter this 6-digit code in the app to authenticate.
+              </p>
             </td>
           </tr>
 
@@ -106,23 +117,11 @@
 
           <!-- Security notice -->
           <tr>
-            <td style="text-align: center; padding-bottom: 24px;">
+            <td style="text-align: center; padding-bottom: 40px;">
               <p style="margin: 0; font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 11px; line-height: 1.6; color: #475569;">
-                Did not request this? Ignore this message.<br>
+                Did not request this code? Ignore this message.<br>
                 Your account remains secure.
               </p>
-            </td>
-          </tr>
-
-          <!-- Fallback URL -->
-          <tr>
-            <td style="text-align: center; padding-bottom: 40px;">
-              <p style="margin: 0 0 8px 0; font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.1em;">
-                Manual link:
-              </p>
-              <a href="{{ .ConfirmationURL }}" style="font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace; font-size: 10px; color: #6366f1; text-decoration: none; word-break: break-all;">
-                {{ .ConfirmationURL }}
-              </a>
             </td>
           </tr>
 

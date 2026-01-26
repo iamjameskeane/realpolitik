@@ -1,6 +1,6 @@
 # Supabase Auth Setup Guide
 
-## Magic Link Configuration
+## OTP (One-Time Password) Configuration
 
 ### Step 1: Enable Email Provider
 
@@ -14,14 +14,15 @@
 In the Email provider settings:
 
 **Confirm email:**
-- ❌ **Turn OFF** (we want passwordless magic links, not email confirmation)
+- Can be ON or OFF (OTP works with both)
+- Recommend: ❌ **Turn OFF** for simpler flow
 
 **Secure email change:**
 - ✅ **Turn ON** (security best practice)
 
-**Magic Link:**
-- This is enabled by default when "Confirm email" is OFF
-- Users will receive a link they click to sign in (no password)
+**Email OTP:**
+- Enabled by default with the Email provider
+- Users will receive a 6-digit code via email to authenticate (no password, no link)
 
 ### Step 3: Set Site URL
 
@@ -30,45 +31,33 @@ In the Email provider settings:
    - Development: `http://localhost:3000`
    - Production: `https://realpolitik.world`
 
-This tells Supabase where to redirect users after clicking the magic link.
+**Note:** For OTP authentication, the Site URL is less critical than with magic links since there's no browser redirect. However, it's still good practice to set it.
 
-### Step 4: Configure Redirect URLs
-
-Add allowed redirect URLs (optional, for extra security):
-
-1. Still in **URL Configuration**
-2. Under **Redirect URLs**, add:
-   ```
-   http://localhost:3000/**
-   https://realpolitik.world/**
-   ```
-
-This restricts where magic links can redirect to.
-
-### Step 5: Customize Email Template (Recommended)
+### Step 4: Customize Email Template (Recommended)
 
 1. Go to **Authentication** → **Email Templates**
-2. Find **Magic Link**
+2. Find **Confirm signup** or **Magic Link** template
 3. Replace the default template with the custom one:
 
-**Custom template:** See `plans/magic-link-email-template.html`
+**Custom template:** See `plans/otp-email-template.html`
 
 Copy the entire HTML file into the template editor.
 
 **Features:**
 - Dark theme matching the app
 - Monospace fonts (intelligence aesthetic)
-- Violet gradient button
+- Large, prominent 6-digit OTP code display
+- Violet gradient border around code
 - Globe icon
 - Professional layout
 - Mobile-responsive
 
 **Variables available:**
-- `{{ .ConfirmationURL }}` - The magic link
+- `{{ .Token }}` - The 6-digit OTP code
 - `{{ .SiteURL }}` - Your site URL
 - `{{ .Email }}` - User's email address
 
-### Step 6: SMTP Settings (Optional)
+### Step 5: SMTP Settings (Optional)
 
 By default, Supabase uses their SMTP server (limited to 3-4 emails/hour in development).
 
@@ -93,7 +82,7 @@ By default, Supabase uses their SMTP server (limited to 3-4 emails/hour in devel
 
 ---
 
-## Testing Magic Links
+## Testing OTP Authentication
 
 ### 1. Start Dev Server
 
@@ -114,21 +103,41 @@ Go to `http://localhost:3000`
 ### 4. Enter Email
 
 - Enter your email: `you@example.com`
-- Click "Send magic link"
+- Click "Send Code"
 
 ### 5. Check Email
 
-You'll receive an email with subject: **"Confirm your signup"** (default template)
+You'll receive an email with a **6-digit OTP code** (e.g., `123456`)
 
-### 6. Click Link
+### 6. Enter Code
 
-Click the link in email → redirects to `http://localhost:3000`
+- Enter the 6-digit code in the app
+- Click "Verify Code"
 
 ### 7. Verify Signed In
 
 - UserMenu appears in top-left
 - Shows your email and "9 of 10" briefings
 - Features are now unlocked
+
+---
+
+## How It Works
+
+**OTP Flow:**
+
+1. **User enters email** → App calls `supabase.auth.signInWithOtp({ email })`
+2. **Supabase sends 6-digit code** via email
+3. **User enters code in app** → App calls `supabase.auth.verifyOtp({ email, token: code, type: "email" })`
+4. **User is authenticated** in the same session (no browser redirect!)
+
+**Benefits vs Magic Links:**
+
+✅ **Works in PWA mode** - no browser context switching  
+✅ **Works in browser mode** - same flow everywhere  
+✅ **Better mobile UX** - numeric keyboard, auto-complete  
+✅ **No redirect complexity** - all happens in one session  
+✅ **Simpler setup** - no redirect URL configuration needed
 
 ---
 
@@ -146,17 +155,18 @@ Click the link in email → redirects to `http://localhost:3000`
 - Wait 15 minutes if rate limited
 - Configure custom SMTP for higher limits
 
-### "Magic link doesn't redirect"
+### "Invalid code" or "Code doesn't work"
 
 **Check:**
-1. Site URL matches your development URL exactly
-2. No typos in redirect URLs
-3. Browser isn't blocking redirects
+1. Code is 6 digits exactly
+2. Code hasn't expired (10 minutes)
+3. You're using the most recent code (old codes are invalidated)
+4. Email address matches exactly
 
 **Solution:**
-- Verify Site URL in dashboard
-- Try different browser
-- Check browser console for errors
+- Request a new code
+- Check for typos in email or code
+- Try copy-paste from email
 
 ### "User created but profile not created"
 
@@ -192,13 +202,13 @@ Before going live:
 
 - [ ] Site URL set to production domain
 - [ ] Custom SMTP configured (optional but recommended)
-- [ ] Email template customized with branding
+- [ ] Email template customized with OTP code display
 - [ ] Rate limiting configured (Supabase Pro if needed)
 - [ ] Auth logs monitored for suspicious activity
-- [ ] Redirect URLs restricted to your domain only
-- [ ] Test magic link flow on production URL
+- [ ] Test OTP flow on production URL
 - [ ] Verify profile auto-creation works
 - [ ] Test cross-device sync
+- [ ] Verify OTP expiry is appropriate (default: 1 hour, can be adjusted)
 
 ---
 
