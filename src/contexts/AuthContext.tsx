@@ -92,20 +92,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Sign out
   const signOut = useCallback(async () => {
+    console.log("[Auth] Signing out...");
+
+    // Create a timeout promise
+    const timeoutPromise = new Promise<{ error: Error }>((_, reject) => {
+      setTimeout(() => reject(new Error("Sign out timed out after 5s")), 5000);
+    });
+
     try {
-      console.log("[Auth] Signing out...");
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error("[Auth] Sign out error:", error);
-        throw error;
+      // Race between sign out and timeout
+      const result = await Promise.race([supabase.auth.signOut(), timeoutPromise]);
+
+      if (result.error) {
+        console.error("[Auth] Sign out error:", result.error);
+      } else {
+        console.log("[Auth] Sign out successful");
       }
-      console.log("[Auth] Sign out successful");
-      setUser(null);
-      setProfile(null);
-      setSession(null);
     } catch (error) {
-      console.error("[Auth] Error signing out:", error);
+      console.error("[Auth] Sign out failed:", error);
     }
+
+    // Always clear local state, even if Supabase call fails
+    console.log("[Auth] Clearing local state");
+    setUser(null);
+    setProfile(null);
+    setSession(null);
   }, [supabase]);
 
   // Open/close auth modal

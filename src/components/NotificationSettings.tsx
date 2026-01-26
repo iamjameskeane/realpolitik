@@ -105,21 +105,33 @@ export function NotificationSettings() {
 
   // Push notification handlers
   const handlePushToggle = async () => {
+    console.log("[Push Toggle] Clicked", {
+      pushSubscribed,
+      pushPermission,
+      isFirstTimeSetup,
+      pushLoading,
+    });
+
     if (pushSubscribed) {
+      console.log("[Push Toggle] Unsubscribing...");
       await unsubscribePush();
     } else {
       // If permission is already granted, skip quick setup and just subscribe
       // This handles the case where user previously denied/unsubscribed
       if (pushPermission === "granted") {
+        console.log("[Push Toggle] Permission granted, subscribing...");
         await subscribePush();
       } else if (isFirstTimeSetup) {
         // First time - expand section and show quick setup
+        console.log("[Push Toggle] First time setup, showing quick setup");
         setExpandedSection("push");
         setShowQuickSetup(true);
       } else {
+        console.log("[Push Toggle] Subscribing...");
         await subscribePush();
       }
     }
+    console.log("[Push Toggle] Done");
   };
 
   const handlePresetSelect = async (rules: NotificationRule[]) => {

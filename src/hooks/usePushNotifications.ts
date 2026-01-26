@@ -378,6 +378,8 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
   const subscribe = useCallback(
     async (initialRules?: NotificationRule[]): Promise<boolean> => {
+      console.log("[Push] Subscribe called, isSupported:", state.isSupported);
+
       if (!state.isSupported) {
         setState((prev) => ({ ...prev, error: "Push not supported" }));
         return false;
@@ -388,8 +390,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       try {
         // Request permission if not granted
         let permission = Notification.permission;
+        console.log("[Push] Current permission:", permission);
         if (permission === "default") {
           permission = await requestPermission();
+          console.log("[Push] Permission after request:", permission);
         }
 
         if (permission !== "granted") {
@@ -402,6 +406,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         }
 
         // Register service worker
+        console.log("[Push] Registering service worker...");
         const registration = await registerServiceWorker();
         if (!registration) {
           setState((prev) => ({
@@ -411,6 +416,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           }));
           return false;
         }
+        console.log("[Push] Service worker registered");
 
         // Subscribe to push
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -423,10 +429,12 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           return false;
         }
 
+        console.log("[Push] Subscribing to push manager...");
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
         });
+        console.log("[Push] Push subscription created");
 
         // Build new preferences with initial rules if provided
         const newPrefs: NotificationPreferences = {
@@ -436,6 +444,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         };
 
         // Get auth session
+        console.log("[Push] Getting auth session...");
         const supabase = getSupabaseClient();
         const {
           data: { session },
@@ -444,6 +453,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         if (!session) {
           throw new Error("You must be signed in to enable notifications");
         }
+        console.log("[Push] Sending subscription to server...");
 
         // Send subscription to server with auth token
         const response = await fetch("/api/push/subscribe", {
@@ -460,8 +470,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+          console.error("[Push] Server error:", response.status, errorData);
           throw new Error(errorData.message || "Failed to save subscription");
         }
+        console.log("[Push] Subscription saved to server");
 
         // Save preferences locally
         localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
@@ -479,6 +491,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         // Notify other instances that subscription state changed
         window.dispatchEvent(new CustomEvent(SUBSCRIPTION_CHANGE_EVENT));
 
+        console.log("[Push] Subscribe complete!");
         return true;
       } catch (error: unknown) {
         console.error("[Push] Subscribe failed:", error);
