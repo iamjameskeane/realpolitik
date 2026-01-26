@@ -896,7 +896,7 @@ export function IntelligenceSheet({
                     Notifications not enabled
                   </p>
                   <p className="mb-4 text-xs text-foreground/40">
-                    Enable push notifications to receive alerts for major events
+                    Enable notifications in Settings to track events
                   </p>
                   <button
                     onClick={() => {

@@ -12,7 +12,7 @@ import { useEventSelection } from "@/hooks/useEventSelection";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
 import { useNotificationInbox } from "@/hooks/useNotificationInbox";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useInboxPreferences } from "@/hooks/useInboxPreferences";
 import { TIME_DISPLAY_UPDATE_MS, TIME_RANGES, MIN_TIME_RANGE_OPTIONS } from "@/lib/constants";
 import { formatRelativeTime } from "@/lib/formatters";
 import { AnimatePresence } from "framer-motion";
@@ -170,9 +170,8 @@ function MobileLayoutInner({
     clearInbox: clearNotificationInbox,
   } = useNotificationInbox(user ? events : []);
 
-  // Push notification subscription status (only check if signed in)
-  const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
-    usePushNotifications();
+  // Inbox preferences - determines if inbox is enabled
+  const { preferences: inboxPrefs, isLoading: inboxPrefsLoading } = useInboxPreferences();
 
   // Smart default sort: "What's New" if there are incoming events, else "Hot"
   const hasSetInitialSort = useRef(false);
@@ -764,8 +763,8 @@ function MobileLayoutInner({
         inboxCount={inboxCount}
         removeFromInbox={removeFromInbox}
         clearNotificationInbox={clearNotificationInbox}
-        notificationsEnabled={notificationsEnabled}
-        notificationsLoading={notificationsLoading}
+        notificationsEnabled={inboxPrefs.enabled}
+        notificationsLoading={inboxPrefsLoading}
         onOpenSettings={() => setSettingsOpen(true)}
         // What's New - shows only new events since last visit
         incomingEvents={incomingEvents}

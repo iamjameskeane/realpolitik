@@ -16,6 +16,7 @@ import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReact
 import { useEventStates } from "@/hooks/useEventStates";
 import { useNotificationInbox } from "@/hooks/useNotificationInbox";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useInboxPreferences } from "@/hooks/useInboxPreferences";
 import { TIME_DISPLAY_UPDATE_MS, TIME_RANGES, MIN_TIME_RANGE_OPTIONS } from "@/lib/constants";
 import { formatRelativeTime } from "@/lib/formatters";
 import { useTouringMode } from "@/hooks/useTouringMode";
@@ -148,9 +149,11 @@ export function Dashboard({
     isLoaded: inboxLoaded,
   } = useNotificationInbox(user ? events : []);
 
-  // Push notification subscription status (only check if signed in)
-  const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
-    usePushNotifications();
+  // Push notification subscription status (for showing push-specific messages)
+  const { isSubscribed: pushSubscribed } = usePushNotifications();
+
+  // Inbox preferences - determines if inbox is enabled
+  const { preferences: inboxPrefs, isLoading: inboxPrefsLoading } = useInboxPreferences();
 
   // Update URL with event ID (for sharing)
   const updateUrlWithEvent = useCallback((eventId: string | null) => {
@@ -427,8 +430,8 @@ export function Dashboard({
                     )}
                   </div>
                   <div className="custom-scrollbar max-h-80 overflow-y-auto">
-                    {/* Not subscribed - prompt to set up notifications */}
-                    {notificationsLoading !== true && notificationsEnabled === false ? (
+                    {/* Inbox not enabled - prompt to set up notifications */}
+                    {!inboxPrefsLoading && !inboxPrefs.enabled ? (
                       <div className="px-4 py-8 text-center">
                         <svg
                           className="mx-auto mb-3 h-8 w-8 text-foreground/30"
@@ -443,9 +446,9 @@ export function Dashboard({
                             d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
                           />
                         </svg>
-                        <p className="text-sm text-foreground/70">Push notifications not enabled</p>
+                        <p className="text-sm text-foreground/70">Notifications not enabled</p>
                         <p className="mt-1 text-xs text-foreground/40">
-                          Enable alerts on this device in{" "}
+                          Enable notifications in{" "}
                           <button
                             onClick={() => {
                               setInboxOpen(false);
@@ -456,9 +459,11 @@ export function Dashboard({
                             Settings
                           </button>
                         </p>
-                        <p className="mt-2 text-xs text-foreground/30">
-                          Your inbox syncs across all devices
-                        </p>
+                        {!pushSubscribed && (
+                          <p className="mt-2 text-xs text-foreground/30">
+                            Push alerts available after enabling
+                          </p>
+                        )}
                       </div>
                     ) : inboxCount === 0 ? (
                       <div className="px-4 py-8 text-center">
