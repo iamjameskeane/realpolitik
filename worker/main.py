@@ -50,9 +50,13 @@ from regions import get_region
 
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GCS_BUCKET = os.getenv("GCS_BUCKET", "")  # For production
+GCS_BUCKET = os.getenv("GCS_BUCKET", "")  # For production (deprecated)
 
-# Upstash Redis for caching processed articles
+# Supabase configuration
+SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+# Upstash Redis for caching processed articles (deprecated - will migrate to Supabase)
 UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 
@@ -2027,64 +2031,59 @@ def notify_high_severity_events(events: list[dict]) -> int:
     return notified_count
 
 
-async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> list[dict]:
-    """Write events to Cloudflare R2 (S3-compatible storage).
+async def write_supabase(events: list[GeoEvent], gemini_client: genai.Client) -> list[dict]:
+    """Write events to Supabase using the insert_event RPC function.
     
-    Returns the final merged event list for notification processing.
+    Returns the final event list for notification processing.
     """
-    import boto3
+    from supabase import create_client, Client
     
-    endpoint_url = os.getenv("R2_ENDPOINT_URL")
-    access_key = os.getenv("R2_ACCESS_KEY_ID")
-    secret_key = os.getenv("R2_SECRET_ACCESS_KEY")
-    bucket_name = os.getenv("R2_BUCKET_NAME")
+    if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY]):
+        raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables required")
     
-    if not all([endpoint_url, access_key, secret_key, bucket_name]):
-        raise ValueError("R2 environment variables not fully configured")
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=endpoint_url,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-    )
+    print(f"\n💾 Writing {len(events)} events to Supabase...")
     
-    # Download existing events and merge
-    existing_data = []
-    try:
-        response = s3.get_object(Bucket=bucket_name, Key="events.json")
-        existing_data = json.loads(response["Body"].read().decode("utf-8"))
-        
-        # SAFETY NET: Backup current events.json before overwriting
-        print("💾 Backing up current events.json...")
+    inserted_events = []
+    errors = 0
+    
+    for event in events:
         try:
-            s3.copy_object(
-                Bucket=bucket_name,
-                CopySource=f"{bucket_name}/events.json",
-                Key="events-backup.json",
-            )
-        except Exception as backup_err:
-            print(f"⚠️ Backup failed: {type(backup_err).__name__}")
-    except Exception as e:
-        if "NoSuchKey" in str(type(e).__name__) or "404" in str(e):
-            print("📄 No existing events.json found, starting fresh")
-        else:
-            print(f"⚠️ Could not load existing events: {type(e).__name__}")
+            # Call insert_event RPC function
+            # It handles deduplication, merging, and returns the final event UUID
+            result = supabase.rpc("insert_event", {
+                "event_data": event.model_dump()
+            }).execute()
+            
+            if result.data:
+                # Get the event back with its UUID
+                event_dict = event.model_dump()
+                event_dict["id"] = result.data  # UUID from database
+                inserted_events.append(event_dict)
+            else:
+                errors += 1
+                print(f"   ⚠️ Failed to insert: {event.title[:50]}...")
+                
+        except Exception as e:
+            errors += 1
+            print(f"   ⚠️ Error inserting {event.title[:50]}...: {type(e).__name__}: {e}")
     
-    final_events = await merge_with_existing(events, existing_data, gemini_client)
+    total_sources = sum(len(e.get("sources", [])) for e in inserted_events)
+    print(f"☁️  Wrote {len(inserted_events)} events ({total_sources} total sources) to Supabase")
     
-    # Upload merged events
-    s3.put_object(
-        Bucket=bucket_name,
-        Key="events.json",
-        Body=json.dumps(final_events, indent=2),
-        ContentType="application/json",
-    )
+    if errors > 0:
+        print(f"⚠️  {errors} events failed to insert")
     
-    total_sources = sum(len(e.get("sources", [])) for e in final_events)
-    print(f"☁️  Wrote {len(final_events)} incidents ({total_sources} total sources) to R2")
+    return inserted_events
+
+
+async def write_r2(events: list[GeoEvent], gemini_client: genai.Client) -> list[dict]:
+    """DEPRECATED: Write events to Cloudflare R2.
     
-    return final_events
+    Use write_supabase() instead.
+    """
+    raise NotImplementedError("R2 storage is deprecated. Use write_supabase() or --output supabase")
 
 
 # ---------------------------------------------------------------------------
@@ -2187,8 +2186,10 @@ async def async_main(sources: str = "all"):
     
     # Output - write events and get final merged list
     storage_mode = os.getenv("STORAGE_MODE", "local")
-    if storage_mode == "r2":
-        final_events = await write_r2(events, gemini_client)
+    if storage_mode == "supabase":
+        final_events = await write_supabase(events, gemini_client)
+    elif storage_mode == "r2":
+        raise ValueError("R2 storage is deprecated. Use 'supabase' instead.")
     elif GCS_BUCKET:
         final_events = await write_gcs(events, GCS_BUCKET, gemini_client)
     else:
@@ -2220,7 +2221,7 @@ def main():
     )
     parser.add_argument(
         "--output",
-        choices=["local", "gcs", "r2"],
+        choices=["local", "gcs", "supabase"],
         default=None,
         help="Override output destination (default: auto-detect from env)"
     )
@@ -2265,7 +2266,7 @@ def main():
         print(f"\nDetails: {e}")
         print("\nCheck that all required environment variables are set:")
         print("  - GEMINI_API_KEY")
-        print("  - R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT_URL, R2_BUCKET_NAME")
+        print("  - NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (for Supabase storage)")
         print("=" * 60)
         sys.exit(1)
     except Exception as e:
