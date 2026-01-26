@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getSupabaseClient } from "@/lib/supabase";
 
@@ -16,7 +16,9 @@ export function DeviceList() {
   const { user } = useAuth();
   const [devices, setDevices] = useState<PushSubscription[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
 
   const loadDevices = useCallback(async () => {
     if (!user) {
@@ -25,25 +27,52 @@ export function DeviceList() {
     }
 
     setLoading(true);
+    setError(null);
+
     try {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase.rpc("get_user_subscriptions", {
+
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Request timeout")), 10000);
+      });
+
+      const fetchPromise = supabase.rpc("get_user_subscriptions", {
         user_uuid: user.id,
       });
 
-      if (error) throw error;
+      const { data, error: rpcError } = await Promise.race([
+        fetchPromise,
+        timeoutPromise.then(() => {
+          throw new Error("Request timeout");
+        }),
+      ]);
+
+      if (!isMountedRef.current) return;
+
+      if (rpcError) throw rpcError;
 
       setDevices(data || []);
-    } catch (error) {
-      console.error("Error loading devices:", error);
+    } catch (err) {
+      console.error("Error loading devices:", err);
+      if (isMountedRef.current) {
+        setError("Failed to load devices");
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [user]);
 
   // Load user's devices
   useEffect(() => {
+    isMountedRef.current = true;
     loadDevices();
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [loadDevices]);
 
   const removeDevice = async (endpoint: string, deviceId: string) => {
@@ -89,6 +118,20 @@ export function DeviceList() {
       <div className="space-y-2">
         <div className="h-16 animate-pulse rounded-md bg-slate-700/30" />
         <div className="h-16 animate-pulse rounded-md bg-slate-700/30" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-4 text-center">
+        <p className="text-sm text-red-300">{error}</p>
+        <button
+          onClick={loadDevices}
+          className="mt-2 text-xs text-red-400 underline hover:text-red-300"
+        >
+          Retry
+        </button>
       </div>
     );
   }

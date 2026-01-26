@@ -5,7 +5,7 @@
  * Push = browser push notifications on specific devices
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getSupabaseClient } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import type { NotificationRule } from "@/types/notifications";
@@ -27,15 +27,47 @@ const DEFAULT_PREFERENCES: InboxPreferences = {
   ],
 };
 
+const CACHE_KEY = "realpolitik_inbox_prefs_cache";
+
+// Load from localStorage cache
+function getCachedPreferences(): InboxPreferences | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached) as InboxPreferences;
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
+// Save to localStorage cache
+function setCachedPreferences(prefs: InboxPreferences): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Ignore
+  }
+}
+
 export function useInboxPreferences() {
   const { user } = useAuth();
-  const [preferences, setPreferences] = useState<InboxPreferences>(DEFAULT_PREFERENCES);
-  const [isLoading, setIsLoading] = useState(true);
+  // Initialize from cache if available, so we don't show loading state
+  const cached = getCachedPreferences();
+  const [preferences, setPreferences] = useState<InboxPreferences>(cached || DEFAULT_PREFERENCES);
+  // Only show loading if we don't have cached data
+  const [isLoading, setIsLoading] = useState(!cached);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
 
   // Load preferences from Supabase
   useEffect(() => {
+    isMountedRef.current = true;
+
     if (!user) {
       setPreferences(DEFAULT_PREFERENCES);
       setIsLoading(false);
@@ -43,27 +75,43 @@ export function useInboxPreferences() {
     }
 
     const loadPreferences = async () => {
-      try {
+      // Only show loading if we don't have cached data
+      if (!getCachedPreferences()) {
         setIsLoading(true);
+      }
+
+      try {
         const supabase = getSupabaseClient();
         const { data, error: fetchError } = await supabase.rpc("get_inbox_preferences", {
           user_uuid: user.id,
         });
 
+        if (!isMountedRef.current) return;
+
         if (fetchError) throw fetchError;
 
         if (data) {
-          setPreferences(data as InboxPreferences);
+          const prefs = data as InboxPreferences;
+          setPreferences(prefs);
+          setCachedPreferences(prefs);
         }
       } catch (err) {
         console.error("[Inbox] Failed to load preferences:", err);
-        setError("Failed to load inbox preferences");
+        if (isMountedRef.current) {
+          setError("Failed to load inbox preferences");
+        }
       } finally {
-        setIsLoading(false);
+        if (isMountedRef.current) {
+          setIsLoading(false);
+        }
       }
     };
 
     loadPreferences();
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [user]);
 
   // Toggle inbox enabled/disabled
@@ -74,6 +122,7 @@ export function useInboxPreferences() {
       const oldPrefs = preferences;
       const newPrefs = { ...preferences, enabled };
       setPreferences(newPrefs);
+      setCachedPreferences(newPrefs); // Update cache immediately
       setIsSaving(true);
 
       try {
@@ -86,6 +135,7 @@ export function useInboxPreferences() {
         console.error("[Inbox] Failed to update enabled:", err);
         // Revert on error
         setPreferences(oldPrefs);
+        setCachedPreferences(oldPrefs);
         setError("Failed to update inbox settings");
       } finally {
         setIsSaving(false);
@@ -102,6 +152,7 @@ export function useInboxPreferences() {
       const oldPrefs = preferences;
       const newPrefs = { ...preferences, rules };
       setPreferences(newPrefs);
+      setCachedPreferences(newPrefs); // Update cache immediately
       setIsSaving(true);
 
       try {
@@ -114,6 +165,7 @@ export function useInboxPreferences() {
         console.error("[Inbox] Failed to update rules:", err);
         // Revert on error
         setPreferences(oldPrefs);
+        setCachedPreferences(oldPrefs);
         setError("Failed to update inbox rules");
       } finally {
         setIsSaving(false);
