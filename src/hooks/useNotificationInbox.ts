@@ -1,9 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { GeoEvent } from "@/types/events";
+import { useAuth } from "@/contexts/AuthContext";
+import * as userState from "@/lib/userState";
+import { useInboxPreferences } from "./useInboxPreferences";
+import { matchesInboxRules, EventForMatching } from "@/lib/notificationRules";
 
 const STORAGE_KEY = "realpolitik_notification_inbox";
+const PROCESSED_KEY = "realpolitik_inbox_processed";
 
 // IndexedDB constants (must match service worker)
 const DB_NAME = "realpolitik-notifications";
@@ -31,6 +36,40 @@ function saveInbox(eventIds: string[]) {
   } catch {
     // Storage full or unavailable
   }
+}
+
+// Track which events we've already processed for inbox rules
+function getProcessedEvents(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const stored = localStorage.getItem(PROCESSED_KEY);
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveProcessedEvents(eventIds: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    // Keep only last 1000 to prevent unbounded growth
+    const arr = Array.from(eventIds).slice(-1000);
+    localStorage.setItem(PROCESSED_KEY, JSON.stringify(arr));
+  } catch {
+    // Storage full or unavailable
+  }
+}
+
+// Convert GeoEvent to EventForMatching
+function toMatchingEvent(event: GeoEvent): EventForMatching {
+  return {
+    id: event.id,
+    title: event.title,
+    category: event.category,
+    location_name: event.location_name,
+    severity: event.severity,
+    sources: event.sources || [],
+  };
 }
 
 // =============================================================================
@@ -153,17 +192,24 @@ function checkUrlForNotification(): string | null {
 // =============================================================================
 
 /**
- * Hook to manage the notification inbox - events that arrived via push notifications.
+ * Hook to manage the notification inbox - events matching user's inbox rules.
+ *
+ * The inbox is now SEPARATE from push notifications:
+ * - Inbox: Events saved based on inbox rules (synced across devices)
+ * - Push: Browser alerts based on push rules (per-device)
  *
  * iOS COMPATIBILITY (Hybrid Approach):
  * - Service Worker writes to IndexedDB when push arrives
  * - App syncs from IndexedDB on visibility change
- * - URL params used when notification is clicked (removes from IndexedDB to prevent duplicates)
+ * - URL params used when notification is clicked
  * - postMessage still works for Android/Desktop real-time updates
  */
 export function useNotificationInbox(allEvents: GeoEvent[]) {
+  const { user } = useAuth();
+  const { preferences: inboxPrefs } = useInboxPreferences();
   const [inboxEventIds, setInboxEventIds] = useState<string[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const processedRef = useRef<Set<string>>(new Set());
 
   // Sync pending notifications from IndexedDB into inbox
   const syncFromIndexedDB = useCallback(async () => {
@@ -241,6 +287,47 @@ export function useNotificationInbox(allEvents: GeoEvent[]) {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [syncFromIndexedDB]);
 
+  // Process new events against inbox rules
+  useEffect(() => {
+    if (!isLoaded || !inboxPrefs.enabled || !user) return;
+
+    // Load processed set on first run
+    if (processedRef.current.size === 0) {
+      processedRef.current = getProcessedEvents();
+    }
+
+    // Find events we haven't processed yet
+    const newEvents = allEvents.filter(
+      (e) => !processedRef.current.has(e.id) && !inboxEventIds.includes(e.id)
+    );
+
+    if (newEvents.length === 0) return;
+
+    // Check which new events match inbox rules
+    const matchingEvents = newEvents.filter((event) =>
+      matchesInboxRules(toMatchingEvent(event), inboxPrefs.rules || [])
+    );
+
+    // Mark all new events as processed (whether they matched or not)
+    newEvents.forEach((e) => processedRef.current.add(e.id));
+    saveProcessedEvents(processedRef.current);
+
+    // Add matching events to inbox
+    if (matchingEvents.length > 0) {
+      const newIds = matchingEvents.map((e) => e.id);
+      setInboxEventIds((prev) => {
+        const combined = [...newIds.filter((id) => !prev.includes(id)), ...prev];
+        saveInbox(combined);
+        setAppBadge(combined.length);
+        // Also save to backend
+        if (user) {
+          newIds.forEach((id) => userState.addToInbox(user.id, id));
+        }
+        return combined;
+      });
+    }
+  }, [allEvents, inboxPrefs.enabled, inboxPrefs.rules, isLoaded, user, inboxEventIds]);
+
   // Listen for messages from service worker (works on Android/Desktop)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -285,34 +372,46 @@ export function useNotificationInbox(allEvents: GeoEvent[]) {
   }, [allEvents, inboxEventIds]);
 
   // Add event to inbox
-  const addToInbox = useCallback((eventId: string) => {
-    removePendingNotification(eventId); // Remove from pending if exists
+  const addToInbox = useCallback(async (eventId: string) => {
+    await removePendingNotification(eventId); // Remove from pending if exists
     setInboxEventIds((prev) => {
       if (prev.includes(eventId)) return prev;
       const updated = [eventId, ...prev];
       saveInbox(updated);
       setAppBadge(updated.length);
+      // Also save to backend if signed in
+      if (user) {
+        userState.addToInbox(user.id, eventId);
+      }
       return updated;
     });
-  }, []);
+  }, [user]);
 
   // Remove single event from inbox
-  const removeFromInbox = useCallback((eventId: string) => {
+  const removeFromInbox = useCallback(async (eventId: string) => {
     setInboxEventIds((prev) => {
       const updated = prev.filter((id) => id !== eventId);
       saveInbox(updated);
       setAppBadge(updated.length);
+      // Also remove from backend if signed in
+      if (user) {
+        userState.removeFromInbox(user.id, eventId);
+      }
       return updated;
     });
-  }, []);
+  }, [user]);
 
   // Clear entire inbox
-  const clearInbox = useCallback(() => {
+  const clearInbox = useCallback(async () => {
     setInboxEventIds([]);
     saveInbox([]);
     clearAppBadge();
-    clearAllPending(); // Also clear any pending in IndexedDB
-  }, []);
+    await clearAllPending(); // Also clear any pending in IndexedDB
+    // Also clear from backend if signed in
+    if (user) {
+      await userState.clearInbox(user.id);
+    }
+  }, [user]);
 
   // Check if event is in inbox
   const isInInbox = useCallback(

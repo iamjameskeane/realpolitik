@@ -22,6 +22,7 @@ import {
   migrateLegacyPreferences,
   DEFAULT_RULE,
 } from "@/types/notifications";
+import { getSupabaseClient } from "@/lib/supabase";
 
 // =============================================================================
 // TYPES
@@ -428,10 +429,23 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         rules: initialRules ?? state.preferences.rules ?? [DEFAULT_RULE],
       };
 
-      // Send subscription to server
+      // Get auth session
+      const supabase = getSupabaseClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("You must be signed in to enable notifications");
+      }
+
+      // Send subscription to server with auth token
       const response = await fetch("/api/push/subscribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           subscription: subscription.toJSON(),
           preferences: newPrefs,
@@ -439,7 +453,8 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save subscription");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to save subscription");
       }
 
       // Save preferences locally
@@ -483,13 +498,26 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       const subscription = await registration.pushManager.getSubscription();
 
       if (subscription) {
+        // Get auth session
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          throw new Error("You must be signed in to manage notifications");
+        }
+
         // Unsubscribe from push manager
         await subscription.unsubscribe();
 
-        // Remove from server
+        // Remove from server with auth token
         await fetch("/api/push/unsubscribe", {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
           body: JSON.stringify({ endpoint: subscription.endpoint }),
         });
       }
@@ -536,13 +564,26 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       try {
         // If subscribed, update server
         if (state.isSubscribed) {
+          // Get auth session
+          const supabase = getSupabaseClient();
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
+          if (!session) {
+            throw new Error("You must be signed in to update notification preferences");
+          }
+
           const registration = await navigator.serviceWorker.ready;
           const subscription = await registration.pushManager.getSubscription();
 
           if (subscription) {
             const response = await fetch("/api/push/subscribe", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
               body: JSON.stringify({
                 subscription: subscription.toJSON(),
                 preferences: updatedPrefs,

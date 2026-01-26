@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef } from "react";
 import { GeoEvent, EventCategory } from "@/types/events";
-import { solveChallenge } from "@/lib/pow";
+import { getSupabaseClient } from "@/lib/supabase";
 
 // Preset chips by category
 const UNIVERSAL_CHIPS = ["What's happening?", "What happens next?", "Historical context?"];
@@ -199,6 +199,16 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
       sseBufferRef.current = "";
 
       try {
+        // Get user's auth session for API request
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          throw new Error("You must be signed in to use the briefing agent.");
+        }
+
         // Build base request payload
         const basePayload = {
           eventId: event.id,
@@ -210,51 +220,21 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
           history: messages.map((m) => ({ role: m.role, content: m.content })),
         };
 
-        // Make request with session token if available
+        // Make request with auth token in header
         let response = await fetch("/api/briefing", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...basePayload,
-            sessionToken: sessionToken || undefined,
-          }),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(basePayload),
           signal: abortControllerRef.current.signal,
         });
 
-        // Handle PoW challenge (401 response)
+        // Handle authentication errors
         if (response.status === 401) {
-          const challengeData = await response.json();
-
-          if (challengeData.requiresPow) {
-            setStatus("authenticating");
-
-            // Solve the proof of work challenge
-            const { nonce } = await solveChallenge(
-              challengeData.challenge,
-              challengeData.difficulty
-            );
-
-            // Retry with PoW solution
-            response = await fetch("/api/briefing", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...basePayload,
-                powSolution: {
-                  challenge: challengeData.challenge,
-                  nonce,
-                },
-              }),
-              signal: abortControllerRef.current.signal,
-            });
-
-            // If still 401, clear token and throw
-            if (response.status === 401) {
-              sessionToken = null;
-              const errorData = await response.json();
-              throw new Error(errorData.message || "Authentication failed");
-            }
-          }
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Authentication failed. Please sign in again.");
         }
 
         if (!response.ok) {
