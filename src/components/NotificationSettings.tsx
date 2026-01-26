@@ -108,7 +108,13 @@ export function NotificationSettings() {
     if (pushSubscribed) {
       await unsubscribePush();
     } else {
-      if (isFirstTimeSetup) {
+      // If permission is already granted, skip quick setup and just subscribe
+      // This handles the case where user previously denied/unsubscribed
+      if (pushPermission === "granted") {
+        await subscribePush();
+      } else if (isFirstTimeSetup) {
+        // First time - expand section and show quick setup
+        setExpandedSection("push");
         setShowQuickSetup(true);
       } else {
         await subscribePush();

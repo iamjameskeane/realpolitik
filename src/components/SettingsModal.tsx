@@ -153,8 +153,8 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                   </div>
 
                   <button
-                    onClick={() => {
-                      signOut();
+                    onClick={async () => {
+                      await signOut();
                       onClose();
                     }}
                     className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-600 bg-slate-700/50 px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-700"
