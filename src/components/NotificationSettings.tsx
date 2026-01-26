@@ -26,6 +26,7 @@ export function NotificationSettings() {
   const {
     preferences: inboxPrefs,
     isLoading: inboxLoading,
+    isSaving: inboxSaving,
     setEnabled: setInboxEnabled,
     updateRules: updateInboxRules,
   } = useInboxPreferences();
@@ -178,18 +179,24 @@ export function NotificationSettings() {
 
           <button
             onClick={() => setInboxEnabled(!inboxPrefs.enabled)}
-            disabled={inboxLoading}
+            disabled={inboxLoading || inboxSaving}
             className={`relative h-7 w-12 rounded-full transition-colors ${
               inboxPrefs.enabled ? "bg-violet-500" : "bg-slate-600"
-            } ${inboxLoading ? "cursor-wait opacity-50" : "cursor-pointer"}`}
+            } ${inboxLoading || inboxSaving ? "cursor-wait opacity-50" : "cursor-pointer"}`}
             role="switch"
             aria-checked={inboxPrefs.enabled}
           >
-            <motion.span
-              className="absolute top-1 h-5 w-5 rounded-full bg-white shadow-md"
-              animate={{ left: inboxPrefs.enabled ? 24 : 4 }}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            />
+            {inboxSaving ? (
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              </span>
+            ) : (
+              <motion.span
+                className="absolute top-1 h-5 w-5 rounded-full bg-white shadow-md"
+                animate={{ left: inboxPrefs.enabled ? 24 : 4 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              />
+            )}
           </button>
         </div>
       </div>
@@ -244,11 +251,17 @@ export function NotificationSettings() {
               role="switch"
               aria-checked={pushSubscribed}
             >
-              <motion.span
-                className="absolute top-1 h-5 w-5 rounded-full bg-white shadow-md"
-                animate={{ left: pushSubscribed ? 24 : 4 }}
-                transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              />
+              {pushLoading ? (
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                </span>
+              ) : (
+                <motion.span
+                  className="absolute top-1 h-5 w-5 rounded-full bg-white shadow-md"
+                  animate={{ left: pushSubscribed ? 24 : 4 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              )}
             </button>
           )}
         </div>
@@ -339,7 +352,7 @@ export function NotificationSettings() {
           <NotificationRules
             rules={inboxPrefs.rules || []}
             onRulesChange={updateInboxRules}
-            disabled={inboxLoading}
+            disabled={inboxLoading || inboxSaving}
             showPushToggle={pushSubscribed}
           />
         </div>

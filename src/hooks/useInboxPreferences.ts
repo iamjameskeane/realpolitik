@@ -31,6 +31,7 @@ export function useInboxPreferences() {
   const { user } = useAuth();
   const [preferences, setPreferences] = useState<InboxPreferences>(DEFAULT_PREFERENCES);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load preferences from Supabase
@@ -70,8 +71,10 @@ export function useInboxPreferences() {
     async (enabled: boolean) => {
       if (!user) return;
 
+      const oldPrefs = preferences;
       const newPrefs = { ...preferences, enabled };
       setPreferences(newPrefs);
+      setIsSaving(true);
 
       try {
         const supabase = getSupabaseClient();
@@ -82,8 +85,10 @@ export function useInboxPreferences() {
       } catch (err) {
         console.error("[Inbox] Failed to update enabled:", err);
         // Revert on error
-        setPreferences(preferences);
+        setPreferences(oldPrefs);
         setError("Failed to update inbox settings");
+      } finally {
+        setIsSaving(false);
       }
     },
     [user, preferences]
@@ -94,8 +99,10 @@ export function useInboxPreferences() {
     async (rules: NotificationRule[]) => {
       if (!user) return;
 
+      const oldPrefs = preferences;
       const newPrefs = { ...preferences, rules };
       setPreferences(newPrefs);
+      setIsSaving(true);
 
       try {
         const supabase = getSupabaseClient();
@@ -106,8 +113,10 @@ export function useInboxPreferences() {
       } catch (err) {
         console.error("[Inbox] Failed to update rules:", err);
         // Revert on error
-        setPreferences(preferences);
+        setPreferences(oldPrefs);
         setError("Failed to update inbox rules");
+      } finally {
+        setIsSaving(false);
       }
     },
     [user, preferences]
@@ -116,6 +125,7 @@ export function useInboxPreferences() {
   return {
     preferences,
     isLoading,
+    isSaving,
     error,
     setEnabled,
     updateRules,
