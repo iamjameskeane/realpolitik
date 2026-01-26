@@ -1,10 +1,11 @@
 /**
  * Notification Settings Component
  *
- * Architecture:
- * - ONE set of rules determines what events you care about (synced across devices)
- * - Each rule has a `sendPush` flag to also trigger OS-level push notifications
- * - Push toggle enables/disables push delivery on THIS device
+ * Four distinct sections:
+ * 1. NOTIFICATIONS - Master toggle for the whole system
+ * 2. PUSH NOTIFICATIONS - Device-level OS alerts toggle with quiet hours
+ * 3. RULES - Unified rules list with per-rule push toggles
+ * 4. DEVICES - Connected devices list
  */
 
 "use client";
@@ -134,7 +135,7 @@ export function NotificationSettings() {
     await updatePushPreferences({ quietHours });
   };
 
-  // Count rules with push enabled
+  // Count rules
   const pushEnabledRules = inboxPrefs.rules?.filter((r) => r.enabled && r.sendPush).length || 0;
   const activeRules = inboxPrefs.rules?.filter((r) => r.enabled).length || 0;
 
@@ -147,11 +148,10 @@ export function NotificationSettings() {
   return (
     <div className="space-y-3">
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* NOTIFICATIONS - Main toggle and rules */}
+      {/* SECTION 1: NOTIFICATIONS - Master toggle */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
-        {/* Header with toggle */}
-        <div className="flex items-center justify-between p-4">
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
+        <div className="flex items-center justify-between">
           <div className="flex flex-1 items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-700/50">
               <svg
@@ -171,9 +171,7 @@ export function NotificationSettings() {
             <div>
               <p className="text-sm font-medium text-slate-100">Notifications</p>
               <p className="text-xs text-slate-400">
-                {inboxPrefs.enabled
-                  ? `${activeRules} rule${activeRules !== 1 ? "s" : ""} active`
-                  : "Disabled"}
+                {inboxPrefs.enabled ? "Events saved to your inbox" : "Disabled"}
               </p>
             </div>
           </div>
@@ -194,39 +192,12 @@ export function NotificationSettings() {
             />
           </button>
         </div>
-
-        {/* Rules section - always visible when enabled */}
-        <AnimatePresence>
-          {inboxPrefs.enabled && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="border-t border-slate-700/50 p-4 space-y-4">
-                <p className="text-xs text-slate-400">
-                  Events matching your rules are saved to your inbox. Rules with the bell icon also
-                  trigger push notifications on devices where push is enabled.
-                </p>
-
-                <NotificationRules
-                  rules={inboxPrefs.rules || []}
-                  onRulesChange={updateInboxRules}
-                  disabled={inboxLoading}
-                  showPushToggle={pushSubscribed}
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* PUSH NOTIFICATIONS - Device registration only */}
+      {/* SECTION 2: PUSH NOTIFICATIONS - Device toggle with quiet hours */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
-        {/* Header with toggle */}
         <div className="flex items-center justify-between p-4">
           <div className="flex flex-1 items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-700/50">
@@ -245,7 +216,7 @@ export function NotificationSettings() {
               </svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-100">Push to this device</p>
+              <p className="text-sm font-medium text-slate-100">Push Notifications</p>
               <p className="text-xs text-slate-400">
                 {!canUsePush
                   ? iosNeedsInstall
@@ -256,7 +227,7 @@ export function NotificationSettings() {
                   : !inboxPrefs.enabled
                     ? "Enable notifications first"
                     : pushSubscribed
-                      ? `${pushEnabledRules} rule${pushEnabledRules !== 1 ? "s" : ""} with push`
+                      ? "OS-level alerts enabled"
                       : "OS-level alerts disabled"}
               </p>
             </div>
@@ -282,9 +253,9 @@ export function NotificationSettings() {
           )}
         </div>
 
-        {/* Push settings - only show when subscribed */}
+        {/* Nested: Quiet Hours (only when push subscribed) */}
         <AnimatePresence>
-          {pushSubscribed && inboxPrefs.enabled && (
+          {pushSubscribed && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
@@ -313,20 +284,12 @@ export function NotificationSettings() {
                   onChange={handleQuietHoursChange}
                   disabled={pushLoading}
                 />
-
-                {/* Connected Devices */}
-                <div className="pt-2">
-                  <h4 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Your Devices
-                  </h4>
-                  <DeviceList />
-                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Show warnings when collapsed */}
+        {/* Show warnings when not subscribed */}
         {!pushSubscribed && (
           <AnimatePresence>
             {(iosNeedsInstall || pushBlocked || (pushNotSupported && !iosNeedsInstall)) && (
@@ -367,6 +330,32 @@ export function NotificationSettings() {
           </AnimatePresence>
         )}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* SECTION 3: RULES - Only shown when notifications enabled */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {inboxPrefs.enabled && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
+          <NotificationRules
+            rules={inboxPrefs.rules || []}
+            onRulesChange={updateInboxRules}
+            disabled={inboxLoading}
+            showPushToggle={pushSubscribed}
+          />
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* SECTION 4: DEVICES - Only shown when push subscribed */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {pushSubscribed && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
+          <h4 className="mb-3 font-mono text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Your Devices
+          </h4>
+          <DeviceList />
+        </div>
+      )}
     </div>
   );
 }
