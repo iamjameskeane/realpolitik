@@ -1,114 +1,140 @@
 /**
  * POST /api/push/subscribe
  *
- * Receives a PushSubscription from the client and stores it in Redis.
+ * Receives a PushSubscription from the client and stores it in Supabase.
  * Called when user enables notifications or updates preferences.
  *
- * Supports both legacy preferences (minSeverity + categories) and
- * new rule-based preferences for granular notification filtering.
+ * Requires authentication - push subscriptions are linked to user accounts.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { storeSubscription, ClientPushSubscription, StoredPreferences } from "@/lib/push";
-import type { NotificationPreferences, LegacyPreferences } from "@/types/notifications";
+import { createClient } from "@supabase/supabase-js";
+import type { NotificationPreferences } from "@/types/notifications";
 import { DEFAULT_PREFERENCES, RULE_LIMITS, validatePreferences } from "@/types/notifications";
 
-// Type guard for new preferences format
-function isNewFormat(prefs: unknown): prefs is NotificationPreferences {
-  return (
-    typeof prefs === "object" &&
-    prefs !== null &&
-    "rules" in prefs &&
-    Array.isArray((prefs as NotificationPreferences).rules)
-  );
+interface ClientPushSubscription {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
 }
 
-// Type guard for legacy preferences format
-function isLegacyFormat(prefs: unknown): prefs is LegacyPreferences {
-  return (
-    typeof prefs === "object" && prefs !== null && "minSeverity" in prefs && !("rules" in prefs)
-  );
+// Helper to extract device name from user agent
+function getDeviceName(userAgent: string): string {
+  // Mobile devices
+  if (/iPhone/i.test(userAgent)) return "iPhone Safari";
+  if (/iPad/i.test(userAgent)) return "iPad Safari";
+  if (/Android.*Chrome/i.test(userAgent)) return "Android Chrome";
+  if (/Android.*Firefox/i.test(userAgent)) return "Android Firefox";
+
+  // Desktop browsers
+  if (/Chrome/i.test(userAgent) && !/Edge/i.test(userAgent)) return "Desktop Chrome";
+  if (/Firefox/i.test(userAgent)) return "Desktop Firefox";
+  if (/Safari/i.test(userAgent) && !/Chrome/i.test(userAgent)) return "Desktop Safari";
+  if (/Edge/i.test(userAgent)) return "Desktop Edge";
+
+  return "Unknown Device";
 }
 
 export async function POST(request: NextRequest) {
   console.log("[Subscribe] Received subscription request");
 
   try {
-    const body = await request.json();
-    console.log("[Subscribe] Parsed body, checking subscription...");
+    // ========== AUTHENTICATION ==========
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json(
+        {
+          error: "Authentication required",
+          message: "You must be signed in to enable notifications.",
+        },
+        { status: 401 }
+      );
+    }
 
-    const { subscription, preferences, resubscribe } = body as {
+    const token = authHeader.substring(7);
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid session", message: "Please sign in again." },
+        { status: 401 }
+      );
+    }
+
+    console.log(`[Subscribe] Authenticated user: ${user.email}`);
+
+    // ========== PARSE REQUEST ==========
+    const body = await request.json();
+    const { subscription, preferences } = body as {
       subscription: ClientPushSubscription;
-      preferences?: Partial<NotificationPreferences> | Partial<LegacyPreferences>;
-      resubscribe?: boolean;
+      preferences?: Partial<NotificationPreferences>;
     };
 
     // Validate subscription object
     if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
-      console.log("[Subscribe] Invalid subscription object - missing required fields");
       return NextResponse.json({ error: "Invalid subscription object" }, { status: 400 });
     }
 
-    console.log(
-      `[Subscribe] Valid subscription for endpoint: ${subscription.endpoint.substring(0, 50)}...`
-    );
+    // ========== VALIDATE PREFERENCES ==========
+    let prefs: NotificationPreferences = { ...DEFAULT_PREFERENCES };
 
-    // Determine preferences format and build stored preferences
-    let prefs: StoredPreferences;
-
-    if (isNewFormat(preferences)) {
+    if (preferences) {
       // Validate rule limits
-      if (preferences.rules.length > RULE_LIMITS.MAX_RULES) {
+      if (preferences.rules && preferences.rules.length > RULE_LIMITS.MAX_RULES) {
         return NextResponse.json(
           { error: `Maximum ${RULE_LIMITS.MAX_RULES} rules allowed` },
           { status: 400 }
         );
       }
 
-      // Validate each rule
-      const validation = validatePreferences(preferences as NotificationPreferences);
+      // Validate preferences
+      const validation = validatePreferences({ ...DEFAULT_PREFERENCES, ...preferences });
       if (!validation.valid) {
         return NextResponse.json({ error: validation.error }, { status: 400 });
       }
 
-      // New rule-based format
-      prefs = {
-        enabled: preferences.enabled ?? true,
-        rules: preferences.rules,
-        mode: preferences.mode ?? "realtime",
-        digestTime: preferences.digestTime,
-        quietHours: preferences.quietHours,
-      };
-      console.log("[Subscribe] Using new rule-based preferences:", prefs.rules?.length, "rules");
-    } else if (isLegacyFormat(preferences)) {
-      // Legacy format (minSeverity + categories)
-      prefs = {
-        enabled: preferences.enabled ?? true,
-        minSeverity: preferences.minSeverity ?? 8,
-        categories: preferences.categories ?? ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"],
-      };
-      console.log("[Subscribe] Using legacy preferences:", prefs);
-    } else {
-      // Default to new format with default rule
-      prefs = {
-        ...DEFAULT_PREFERENCES,
-        enabled: true,
-      };
-      console.log("[Subscribe] Using default rule-based preferences");
+      prefs = { ...DEFAULT_PREFERENCES, ...preferences };
     }
 
-    // Get user agent for debugging
+    console.log(`[Subscribe] Preferences: ${prefs.rules?.length || 0} rules`);
+
+    // ========== STORE SUBSCRIPTION ==========
     const userAgent = request.headers.get("user-agent") || "unknown";
+    const deviceName = getDeviceName(userAgent);
 
-    // Store subscription
-    console.log("[Subscribe] Storing subscription in Redis...");
-    await storeSubscription(subscription, prefs, userAgent);
+    const { data, error } = await supabase.rpc("upsert_push_subscription", {
+      user_uuid: user.id,
+      sub_endpoint: subscription.endpoint,
+      sub_p256dh: subscription.keys.p256dh,
+      sub_auth: subscription.keys.auth,
+      sub_device_name: deviceName,
+      sub_user_agent: userAgent,
+      sub_preferences: prefs,
+    });
 
-    console.log(
-      `[Subscribe] ${resubscribe ? "Re-subscribed" : "New subscription"}: ${subscription.endpoint.substring(0, 50)}...`
-    );
+    if (error) {
+      console.error("[Subscribe] Database error:", error);
+      throw error;
+    }
 
-    return NextResponse.json({ success: true });
+    console.log(`[Subscribe] Success: ${deviceName} subscribed`);
+
+    return NextResponse.json({
+      success: true,
+      deviceName,
+      subscriptionId: data,
+    });
   } catch (error) {
     console.error("[Subscribe] Error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";

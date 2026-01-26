@@ -1,21 +1,9 @@
 import { GoogleGenAI, Content, Part, FunctionDeclaration, Type } from "@google/genai";
 import { tavily } from "@tavily/core";
 import { NextRequest } from "next/server";
-import {
-  checkBriefingLimit,
-  incrementBriefingCount,
-  logBriefingUsage,
-  checkAndIncrementGlobalLimit,
-  storeSessionToken,
-  validateSessionToken,
-} from "@/lib/usage";
+import { createClient } from "@supabase/supabase-js";
 import { getClientIP } from "@/lib/request";
-import { generateChallenge, verifySolution, generateSessionToken } from "@/lib/pow";
-import {
-  MAX_QUESTION_LENGTH,
-  MAX_HISTORY_LENGTH,
-  POW_DIFFICULTY,
-} from "@/lib/constants";
+import { MAX_QUESTION_LENGTH, MAX_HISTORY_LENGTH } from "@/lib/constants";
 
 // Vercel function configuration - increase timeout for AI streaming
 export const maxDuration = 60; // seconds (requires Pro plan for > 10s)
@@ -37,11 +25,6 @@ interface ChatMessage {
   content: string;
 }
 
-interface PowSolution {
-  challenge: string;
-  nonce: number;
-}
-
 interface BriefingRequest {
   eventId: string;
   eventTitle: string;
@@ -50,9 +33,6 @@ interface BriefingRequest {
   eventLocation: string;
   question: string;
   history: ChatMessage[];
-  // Session authentication (one of these required)
-  sessionToken?: string;
-  powSolution?: PowSolution;
 }
 
 // Lazily initialize Tavily client
@@ -187,19 +167,60 @@ BAD: "It's difficult to predict what will happen. Many factors could influence t
 export async function POST(request: NextRequest) {
   try {
     const body: BriefingRequest = await request.json();
-    const {
-      eventId,
-      eventTitle,
-      eventSummary,
-      eventCategory,
-      eventLocation,
-      question,
-      history,
-      sessionToken,
-      powSolution,
-    } = body;
+    const { eventId, eventTitle, eventSummary, eventCategory, eventLocation, question, history } =
+      body;
 
-    const clientIP = getClientIP(request);
+    // ==========================================================================
+    // STEP 0: User Authentication (Required)
+    // ==========================================================================
+
+    // Get authorization header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({
+          error: "Authentication required",
+          message: "You must be signed in to use the briefing agent.",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const token = authHeader.substring(7);
+
+    // Validate user session with Supabase
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      }
+    );
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid session",
+          message: "Please sign in again.",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    console.log(`[Briefing] Authenticated user: ${user.email} (${user.id})`);
 
     // ==========================================================================
     // STEP 1: Input Validation
@@ -244,147 +265,44 @@ export async function POST(request: NextRequest) {
 
       // Validate each history message
       for (const msg of history) {
-        if (
-          !msg.role ||
-          !msg.content ||
-          (msg.role !== "user" && msg.role !== "assistant")
-        ) {
-          return new Response(
-            JSON.stringify({ error: "Invalid history message format" }),
-            {
-              status: 400,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
-      }
-    }
-
-    // ==========================================================================
-    // STEP 2: Session Authentication (PoW or Token)
-    // ==========================================================================
-
-    let newSessionToken: string | undefined;
-
-    try {
-      if (sessionToken) {
-        // Validate existing session token
-        const isValid = await validateSessionToken(sessionToken, clientIP);
-        if (!isValid) {
-          // Token invalid or expired - need new PoW
-          const challenge = generateChallenge();
-          return new Response(
-            JSON.stringify({
-              error: "Session expired",
-              requiresPow: true,
-              challenge,
-              difficulty: POW_DIFFICULTY,
-            }),
-            {
-              status: 401,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
-        // Token valid, continue with request
-        console.log("[Briefing] Valid session token");
-      } else if (powSolution) {
-        // Verify PoW solution and issue new token
-        const result = await verifySolution(
-          powSolution.challenge,
-          powSolution.nonce,
-          POW_DIFFICULTY
-        );
-
-        if (!result.valid) {
-          console.warn(`[Briefing] Invalid PoW: ${result.error}`);
-          return new Response(
-            JSON.stringify({
-              error: "Invalid proof of work",
-              message: result.error,
-              requiresPow: true,
-              challenge: generateChallenge(),
-              difficulty: POW_DIFFICULTY,
-            }),
-            {
-              status: 401,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
-
-        // PoW verified - generate and store session token
-        newSessionToken = generateSessionToken();
-        await storeSessionToken(newSessionToken, clientIP);
-        console.log("[Briefing] PoW verified, new session token issued");
-      } else {
-        // No token or solution - need to solve PoW
-        const challenge = generateChallenge();
-        return new Response(
-          JSON.stringify({
-            error: "Authentication required",
-            requiresPow: true,
-            challenge,
-            difficulty: POW_DIFFICULTY,
-          }),
-          {
-            status: 401,
+        if (!msg.role || !msg.content || (msg.role !== "user" && msg.role !== "assistant")) {
+          return new Response(JSON.stringify({ error: "Invalid history message format" }), {
+            status: 400,
             headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-    } catch (authError) {
-      console.error("[Briefing] Auth error:", authError);
-      return new Response(
-        JSON.stringify({
-          error: "Authentication failed",
-          message: "Please try again.",
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
+          });
         }
-      );
+      }
     }
 
     // ==========================================================================
-    // STEP 3: Rate Limiting (Global + Per-IP)
+    // STEP 2: Rate Limiting (User-based)
     // ==========================================================================
 
     let limitChecked = false;
 
     try {
-      // Check global rate limit first (protects against distributed attacks)
-      const globalLimit = await checkAndIncrementGlobalLimit();
-      if (!globalLimit.allowed) {
-        console.warn(
-          `[Briefing] Global rate limit exceeded: ${globalLimit.current}/${globalLimit.limit}`
-        );
-        return new Response(
-          JSON.stringify({
-            error: "Service busy",
-            message: "Too many requests right now. Please try again in a minute.",
-          }),
-          {
-            status: 429,
-            headers: {
-              "Content-Type": "application/json",
-              "Retry-After": "60",
-            },
-          }
-        );
-      }
+      // Check user's daily briefing quota
+      const { data: canUse, error: quotaError } = await supabase.rpc("increment_briefing_usage", {
+        user_uuid: user.id,
+      });
 
-      // Check per-IP daily limit
-      const { allowed, remaining, limit } = await checkBriefingLimit(clientIP);
+      if (quotaError) throw quotaError;
 
-      if (!allowed) {
+      if (!canUse) {
+        // Get current usage to show in error message
+        const { data: usage } = await supabase.rpc("get_briefing_usage", {
+          user_uuid: user.id,
+        });
+
+        const usageData = usage?.[0];
+
         return new Response(
           JSON.stringify({
             error: "Daily limit reached",
-            message: `You've used all ${limit} briefings for today. Check back tomorrow!`,
+            message: `You've used all 10 briefings for today. Check back tomorrow!`,
             remaining: 0,
-            limit,
+            limit: 10,
+            resetsAt: usageData?.resets_at,
           }),
           {
             status: 429,
@@ -393,11 +311,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Get remaining quota
+      const { data: usage } = await supabase.rpc("get_briefing_usage", {
+        user_uuid: user.id,
+      });
+
+      const usageData = usage?.[0];
+
       limitChecked = true;
-      console.log(`[Briefing] IP has ${remaining} requests remaining today`);
-    } catch (redisError) {
-      // Fail CLOSED on Redis errors - deny the request
-      console.error("[Briefing] Redis error (denying request):", redisError);
+      console.log(`[Briefing] User has ${usageData?.remaining || 0} briefings remaining today`);
+    } catch (dbError) {
+      // Fail CLOSED on database errors - deny the request
+      console.error("[Briefing] Database error (denying request):", dbError);
       return new Response(
         JSON.stringify({
           error: "Service temporarily unavailable",
@@ -456,11 +381,6 @@ EVENT CONTEXT:
         };
 
         try {
-          // Send new session token if one was just created
-          if (newSessionToken) {
-            sendEvent({ sessionToken: newSessionToken });
-          }
-
           const ai = getGeminiClient();
 
           // Tool calling loop
@@ -589,18 +509,10 @@ EVENT CONTEXT:
               searches: tavilySearchCount,
             });
 
-            // Log usage (non-blocking)
-            if (limitChecked) {
-              incrementBriefingCount(clientIP).catch((err) =>
-                console.error("[Briefing] Failed to increment counter:", err)
-              );
-
-              logBriefingUsage({
-                inputTokens: totalInputTokens || 500,
-                outputTokens: totalOutputTokens || Math.ceil(totalChars / 4),
-                tavilySearches: tavilySearchCount,
-              }).catch((err) => console.error("[Briefing] Failed to log usage:", err));
-            }
+            // Usage already tracked in Supabase via increment_briefing_usage RPC call
+            console.log(
+              `[Briefing] Usage: ${totalInputTokens || 0} input tokens, ${totalOutputTokens || 0} output tokens, ${tavilySearchCount} searches`
+            );
 
             sendEvent({ done: true });
             console.log("[Briefing] Done event sent, closing stream");
