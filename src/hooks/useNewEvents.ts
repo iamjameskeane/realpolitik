@@ -32,14 +32,11 @@ export function useNewEvents() {
 
   // Use lazy initialization to avoid setState in effect
   const [lastVisit, setLastVisit] = useState<Date | null>(loadLastVisit);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(() => !user);
 
   // Load from backend on mount (if signed in)
   useEffect(() => {
-    if (!user) {
-      setIsLoaded(true);
-      return;
-    }
+    if (!user) return;
 
     userState.getLastVisit(user.id).then((backendLastVisit) => {
       if (backendLastVisit) {

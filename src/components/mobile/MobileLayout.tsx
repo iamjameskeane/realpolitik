@@ -179,6 +179,7 @@ function MobileLayoutInner({
   useEffect(() => {
     if (hasSetInitialSort.current) return;
     if (incomingCount > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSortBy("unread");
       hasSetInitialSort.current = true;
     } else if (timeFilteredEvents.length > 0) {
@@ -206,6 +207,7 @@ function MobileLayoutInner({
   // Update pinned event when initialEventId changes (notification deep link)
   useEffect(() => {
     if (initialEventId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPinnedEventId(initialEventId);
     }
   }, [initialEventId]);

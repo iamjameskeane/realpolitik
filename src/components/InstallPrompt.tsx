@@ -12,7 +12,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { STORAGE_KEYS } from "@/lib/constants";
 
@@ -25,9 +25,17 @@ interface BeforeInstallPromptEvent extends Event {
 
 export function InstallPrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isAndroid, setIsAndroid] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  // Detect platform once
+  const { isIOS, isAndroid } = useMemo(() => {
+    if (typeof window === "undefined") return { isIOS: false, isAndroid: false };
+    const userAgent = navigator.userAgent.toLowerCase();
+    return {
+      isIOS: /iphone|ipad|ipod/.test(userAgent) && !/crios|fxios/.test(userAgent),
+      isAndroid: /android/.test(userAgent),
+    };
+  }, []);
 
   // Check if permanently dismissed
   const isPermanentlyDismissed = useCallback(() => {
@@ -59,14 +67,6 @@ export function InstallPrompt() {
   useEffect(() => {
     // Early exit if shouldn't show
     if (!shouldShowPrompt()) return;
-
-    // Detect platform
-    const userAgent = navigator.userAgent.toLowerCase();
-    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent) && !/crios|fxios/.test(userAgent);
-    const isAndroidDevice = /android/.test(userAgent);
-
-    setIsIOS(isIOSDevice);
-    setIsAndroid(isAndroidDevice);
 
     // Listen for Android's beforeinstallprompt event
     const handleBeforeInstall = (e: Event) => {

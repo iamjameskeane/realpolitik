@@ -38,6 +38,7 @@ export function QuietHoursSettings({
   // Sync with prop changes
   useEffect(() => {
     if (quietHours) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocalQuietHours(quietHours);
     }
   }, [quietHours]);

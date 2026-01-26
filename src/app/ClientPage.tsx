@@ -66,6 +66,7 @@ function HomeContent({ initialEvents }: ClientPageProps) {
     if (eventExists) return;
 
     // Fetch the event from Supabase
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDeepLinkLoading(true);
     fetchEventById(initialEventId)
       .catch((err) => console.error("Failed to load deep-linked event:", err))

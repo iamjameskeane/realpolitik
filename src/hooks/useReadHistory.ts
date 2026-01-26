@@ -30,14 +30,11 @@ export function useReadHistory(currentEventIds: string[]) {
 
   // Use lazy initialization to load from localStorage once
   const [readIds, setReadIds] = useState<Set<string>>(() => new Set(loadStoredIds()));
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(() => !user);
 
   // Load from backend on mount (if signed in)
   useEffect(() => {
-    if (!user) {
-      setIsLoaded(true);
-      return;
-    }
+    if (!user) return;
 
     userState.getUserReadEvents(user.id).then((backendReadIds) => {
       setReadIds(backendReadIds);
