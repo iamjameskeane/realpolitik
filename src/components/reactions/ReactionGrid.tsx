@@ -6,6 +6,7 @@ import { ReactionType, REACTION_TYPES } from "@/types/reactions";
 import { ThreatBar, ThreatBarSkeleton } from "./ThreatBar";
 import { InfoPopover } from "./InfoPopover";
 import { PuckButton, VoteButton } from "./VoteButtons";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ReactionGridProps {
   eventId: string;
@@ -25,18 +26,25 @@ export const ReactionPucks = memo(function ReactionPucks({
   eventId: string;
   className?: string;
 }) {
+  const { user } = useAuth();
   const { counts, userVote, isFetching, isLoading, vote, unvote } = useReactions({ eventId });
 
   const handleVote = useCallback(
     (type: ReactionType) => {
+      if (!user) return; // Safety check
       if (userVote === type) {
         unvote();
       } else {
         vote(type);
       }
     },
-    [userVote, vote, unvote]
+    [user, userVote, vote, unvote]
   );
+
+  // Hide reactions entirely if not signed in
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className={`flex items-center gap-1.5 ${className}`}>
@@ -104,18 +112,25 @@ export const ReactionGrid = memo(function ReactionGrid({
   variant = "full",
   className = "",
 }: ReactionGridProps) {
+  const { user } = useAuth();
   const { counts, userVote, isFetching, isLoading, vote, unvote } = useReactions({ eventId });
 
   const handleVote = useCallback(
     (type: ReactionType) => {
+      if (!user) return; // Safety check
       if (userVote === type) {
         unvote();
       } else {
         vote(type);
       }
     },
-    [userVote, vote, unvote]
+    [user, userVote, vote, unvote]
   );
+
+  // Hide reactions entirely if not signed in
+  if (!user) {
+    return null;
+  }
 
   // Pucks variant - just the small buttons
   if (variant === "pucks") {

@@ -3,6 +3,7 @@
 import { useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { NotificationSettings } from "./NotificationSettings";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -14,6 +15,7 @@ interface SettingsModalProps {
  * Settings Modal - Contains map toggle and notification settings
  */
 export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsModalProps) {
+  const { user, profile, openAuthModal, signOut } = useAuth();
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
@@ -71,20 +73,20 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
         transition={{ duration: 0.2 }}
       >
         {/* Close Button */}
-            <button
-              onClick={onClose}
+        <button
+          onClick={onClose}
           className="absolute right-3 top-3 rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-              aria-label="Close settings"
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
+          aria-label="Close settings"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
 
         {/* Header Section */}
         <div className="border-b border-slate-700/50 px-6 py-5">
@@ -97,11 +99,94 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
           <p className="mt-1 font-mono text-sm tracking-wide text-slate-400">
             Configure your experience
           </p>
-          </div>
+        </div>
 
         {/* Content - Scrollable */}
         <div className="custom-scrollbar max-h-[60vh] overflow-y-auto">
           <div className="space-y-5 px-6 py-5">
+            {/* User Profile Section */}
+            <div className="rounded-md border border-slate-700/50 bg-slate-800/50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <svg
+                  className="h-4 w-4 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
+                </svg>
+                <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Account
+                </span>
+              </div>
+
+              {user ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-sm font-bold text-white">
+                      {(profile?.display_name || user.email)?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <div className="truncate text-sm font-medium text-slate-200">
+                        {profile?.display_name || user.email?.split("@")[0]}
+                      </div>
+                      <div className="truncate text-xs text-slate-400">{user.email}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      signOut();
+                      onClose();
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-600 bg-slate-700/50 px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-700"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                      />
+                    </svg>
+                    Sign Out
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    openAuthModal();
+                    onClose();
+                  }}
+                  className="flex w-full items-center gap-3 rounded-md border border-accent/30 bg-accent/10 px-3 py-2.5 transition-all hover:bg-accent/20"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20">
+                    <svg
+                      className="h-4 w-4 text-accent"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="text-sm font-medium text-accent">Sign In</div>
+                    <div className="text-xs text-slate-400">Free • No password needed</div>
+                  </div>
+                </button>
+              )}
+            </div>
+
             {/* Map View Toggle */}
             <div className="rounded-md border border-slate-700/50 bg-slate-800/50 p-4">
               <div className="mb-3 flex items-center gap-2">
@@ -119,7 +204,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                   />
                 </svg>
                 <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-                Map View
+                  Map View
                 </span>
               </div>
 
@@ -197,7 +282,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                   />
                 </svg>
                 <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-                Notifications
+                  Notifications
                 </span>
               </div>
               <NotificationSettings />
