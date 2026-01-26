@@ -141,17 +141,17 @@ export function AuthModal() {
                     htmlFor="code"
                     className="mb-2 block font-mono text-xs uppercase text-foreground/70"
                   >
-                    6-Digit Code
+                    8-Digit Code
                   </label>
                   <input
                     id="code"
                     type="text"
                     inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    maxLength={6}
+                    pattern="[0-9]{8}"
+                    maxLength={8}
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                    placeholder="000000"
+                    placeholder="00000000"
                     required
                     autoFocus
                     autoComplete="one-time-code"
@@ -167,7 +167,7 @@ export function AuthModal() {
 
                 <button
                   type="submit"
-                  disabled={loading || code.length !== 6}
+                  disabled={loading || code.length !== 8}
                   className="w-full rounded-md bg-accent px-4 py-2.5 font-mono text-xs uppercase tracking-wide text-white transition-all hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? "Verifying..." : "Verify Code"}
@@ -222,7 +222,7 @@ export function AuthModal() {
                 </button>
 
                 <p className="mt-4 text-center text-xs text-foreground/50">
-                  No password needed. We&apos;ll email you a 6-digit code.
+                  No password needed. We&apos;ll email you an 8-digit code.
                 </p>
               </form>
             )}
