@@ -10,7 +10,7 @@ interface NotificationRulesProps {
   rules: NotificationRule[];
   onRulesChange: (rules: NotificationRule[]) => void;
   disabled?: boolean;
-  showPushToggle?: boolean; // Show bell icon to toggle sendPush per rule
+  showPushToggle?: boolean; // Show phone icon to toggle sendPush per rule
 }
 
 export function NotificationRules({
@@ -167,21 +167,20 @@ export function NotificationRules({
                         </p>
                       </div>
 
-                      {/* Push toggle - bell icon */}
+                      {/* Push toggle - phone icon */}
                       {showPushToggle && (
                         <button
                           onClick={() => handleTogglePush(rule.id)}
                           className={`flex-shrink-0 rounded-lg p-1.5 transition-all ${
                             rule.sendPush
-                              ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
-                              : "text-slate-500 opacity-60 hover:bg-slate-700 hover:text-slate-400 hover:opacity-100"
+                              ? "bg-cyan-500/20 text-cyan-400"
+                              : "text-slate-500 opacity-60"
                           }`}
                           aria-label={
                             rule.sendPush
                               ? "Disable push for this rule"
                               : "Enable push for this rule"
                           }
-                          title={rule.sendPush ? "Push enabled" : "Push disabled"}
                         >
                           <svg
                             className="h-4 w-4"
@@ -193,16 +192,16 @@ export function NotificationRules({
                             <path
                               strokeLinecap="round"
                               strokeLinejoin="round"
-                              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                              d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
                             />
                           </svg>
                         </button>
                       )}
 
-                      {/* Edit button */}
+                      {/* Edit button - always visible for touch devices */}
                       <button
                         onClick={() => handleEditRule(rule)}
-                        className="flex-shrink-0 rounded-lg p-1.5 text-slate-500 opacity-0 transition-all group-hover:opacity-100 hover:bg-slate-700 hover:text-slate-300"
+                        className="flex-shrink-0 rounded-lg p-1.5 text-slate-500 transition-all hover:bg-slate-700 hover:text-slate-300"
                         aria-label="Edit rule"
                       >
                         <svg
@@ -220,8 +219,8 @@ export function NotificationRules({
                         </svg>
                       </button>
 
-                      {/* Drag handle */}
-                      <div className="flex-shrink-0 cursor-grab text-slate-600 opacity-0 transition-opacity group-hover:opacity-100">
+                      {/* Drag handle - always visible */}
+                      <div className="flex-shrink-0 cursor-grab text-slate-600">
                         <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                           <circle cx="9" cy="6" r="1.5" />
                           <circle cx="15" cy="6" r="1.5" />

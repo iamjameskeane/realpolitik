@@ -346,9 +346,9 @@ export function NotificationSettings() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* SECTION 4: DEVICES - Only shown when push subscribed */}
+      {/* SECTION 4: DEVICES - Show when notifications enabled */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {pushSubscribed && (
+      {inboxPrefs.enabled && (
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
           <h4 className="mb-3 font-mono text-xs font-semibold uppercase tracking-wider text-slate-400">
             Your Devices
