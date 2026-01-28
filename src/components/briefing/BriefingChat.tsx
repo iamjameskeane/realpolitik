@@ -28,7 +28,22 @@ export function BriefingChat({ event, className = "" }: BriefingChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
 
-  // Gate behind auth
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Handle input focus - on mobile, the modal handles viewport adjustments
+  // Don't use scrollIntoView as it can cause the modal to scroll out of view on Safari
+  const handleInputFocus = useCallback(() => {
+    // Let the modal's viewport tracking handle keyboard visibility
+    // We just ensure messages scroll to bottom after a short delay
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, 350);
+  }, []);
+
+  // Gate behind auth - must be after all hooks
   if (!user) {
     return (
       <div className={`flex items-center justify-center p-8 ${className}`}>
@@ -36,19 +51,6 @@ export function BriefingChat({ event, className = "" }: BriefingChatProps) {
       </div>
     );
   }
-
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Handle input focus - scroll input container into view on mobile when keyboard opens
-  const handleInputFocus = useCallback(() => {
-    // Small delay to let keyboard animate open
-    setTimeout(() => {
-      inputContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, 350);
-  }, []);
 
   const hasMessages = messages.length > 0;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GeoEvent, CATEGORY_COLORS } from "@/types/events";
 import { BriefingChat } from "../briefing";
@@ -13,32 +13,47 @@ interface MobileBriefingModalProps {
 /**
  * Full-screen Pythia modal for mobile.
  * Opens from the bottom with slide animation.
- * Handles keyboard viewport changes.
+ * Handles Safari's unique keyboard viewport behavior.
  */
 export function MobileBriefingModal({ event, onClose }: MobileBriefingModalProps) {
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const [viewportOffset, setViewportOffset] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(
+    typeof window !== "undefined" ? window.innerHeight : 0
+  );
 
-  // Track keyboard visibility via visualViewport API
+  // Track visual viewport changes (Safari scrolls page when keyboard opens)
   useEffect(() => {
-    if (!window.visualViewport) return;
+    if (typeof window === "undefined") return;
 
-    const handleViewportResize = () => {
-      if (!window.visualViewport) return;
-
-      // Calculate keyboard height
-      const viewportHeight = window.visualViewport.height;
-      const windowHeight = window.innerHeight;
-      const keyboardOpen = windowHeight - viewportHeight;
-
-      setKeyboardHeight(keyboardOpen > 0 ? keyboardOpen : 0);
+    const updateViewport = () => {
+      if (window.visualViewport) {
+        // Safari: visualViewport.offsetTop is the scroll offset when keyboard is open
+        setViewportOffset(window.visualViewport.offsetTop);
+        setViewportHeight(window.visualViewport.height);
+      } else {
+        setViewportOffset(0);
+        setViewportHeight(window.innerHeight);
+      }
     };
 
-    window.visualViewport.addEventListener("resize", handleViewportResize);
-    window.visualViewport.addEventListener("scroll", handleViewportResize);
+    // Initial measurement
+    updateViewport();
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateViewport);
+      window.visualViewport.addEventListener("scroll", updateViewport);
+    }
+
+    // Also listen to window resize as fallback
+    window.addEventListener("resize", updateViewport);
 
     return () => {
-      window.visualViewport?.removeEventListener("resize", handleViewportResize);
-      window.visualViewport?.removeEventListener("scroll", handleViewportResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", updateViewport);
+        window.visualViewport.removeEventListener("scroll", updateViewport);
+      }
+      window.removeEventListener("resize", updateViewport);
     };
   }, []);
 
@@ -71,19 +86,22 @@ export function MobileBriefingModal({ event, onClose }: MobileBriefingModalProps
 
   const categoryColor = CATEGORY_COLORS[event.category];
 
+  // Check if keyboard is likely open (viewport significantly smaller than window)
+  const keyboardOpen = typeof window !== "undefined" && window.innerHeight - viewportHeight > 100;
+
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[200] flex flex-col bg-background"
+        ref={modalRef}
+        className="fixed left-0 right-0 z-[200] flex flex-col bg-background"
         style={{
-          // Use visualViewport height when keyboard is open, otherwise full height
-          height:
-            keyboardHeight > 0
-              ? `${window.visualViewport?.height || window.innerHeight}px`
-              : "calc(var(--vh, 1vh) * 100)",
+          // Pin to top of visual viewport (handles Safari keyboard scroll)
+          top: `${viewportOffset}px`,
+          // Use visual viewport height
+          height: `${viewportHeight}px`,
+          // Safe area padding - skip bottom when keyboard is open
           paddingTop: "env(safe-area-inset-top, 0px)",
-          // Don't add bottom padding when keyboard is open
-          paddingBottom: keyboardHeight > 0 ? "0px" : "env(safe-area-inset-bottom, 0px)",
+          paddingBottom: keyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)",
         }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
