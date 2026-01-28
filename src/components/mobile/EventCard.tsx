@@ -53,6 +53,8 @@ interface EventCardProps {
   catchUpMode?: boolean;
   flyoverMode?: boolean;
   onExitTouring?: () => void;
+  // Entity navigation (mobile)
+  onEntityClick?: (entity: import("@/types/entities").EventEntity) => void;
 }
 
 /**
@@ -73,6 +75,7 @@ export function EventCard({
   catchUpMode,
   flyoverMode,
   onExitTouring,
+  onEntityClick,
 }: EventCardProps) {
   const { user, openAuthModal } = useAuth();
   // currentIndex and totalCount kept for API compatibility but not displayed for single events
@@ -317,7 +320,7 @@ export function EventCard({
           {/* Entity badges */}
           {entities.length > 0 && (
             <div className="mt-3">
-              <EntityList entities={entities} maxVisible={4} />
+              <EntityList entities={entities} maxVisible={4} onEntityClick={onEntityClick} />
             </div>
           )}
 

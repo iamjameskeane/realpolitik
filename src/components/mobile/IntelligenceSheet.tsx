@@ -12,12 +12,13 @@ import { motion, useAnimation } from "framer-motion";
 import { GeoEvent, EventCategory } from "@/types/events";
 import { EventList } from "./EventList";
 import { EventCard } from "./EventCard";
+import { EntityEventView } from "./EntityEventView";
 import { FilterBar, SortOption } from "./FilterBar";
 import { BriefingChat } from "../briefing";
 import { EventVisualState } from "@/hooks/useEventStates";
 import { TimeRange } from "@/lib/constants";
 
-export type SheetPhase = "scanner" | "pilot" | "analyst";
+export type SheetPhase = "scanner" | "pilot" | "analyst" | "entity";
 
 // Sheet height levels (percentage of viewport) - independent of phase
 type SheetHeight = "collapsed" | "medium" | "expanded";
@@ -88,6 +89,19 @@ interface IntelligenceSheetProps {
   onClusterEventSelect?: (event: GeoEvent, index: number) => void;
   onExitClusterView?: () => void;
   onStartClusterFlyover?: () => void;
+  // Entity browsing (viewing events related to an entity)
+  entityContext?: {
+    entityId: string;
+    entityName: string;
+    entityType: import("@/types/entities").EntityType;
+  } | null;
+  entityEvents?: import("@/types/entities").EntityEvent[];
+  entityIndex?: number;
+  entityLoading?: boolean;
+  onEntityClick?: (entity: import("@/types/entities").EventEntity) => void;
+  onEntityNext?: () => void;
+  onEntityPrevious?: () => void;
+  onEntityEventSelect?: (event: import("@/types/entities").EntityEvent) => void;
 }
 
 /**
@@ -143,6 +157,15 @@ export function IntelligenceSheet({
   onClusterEventSelect,
   onExitClusterView,
   onStartClusterFlyover,
+  // Entity browsing
+  entityContext,
+  entityEvents = [],
+  entityIndex = 0,
+  entityLoading,
+  onEntityClick,
+  onEntityNext,
+  onEntityPrevious,
+  onEntityEventSelect,
 }: IntelligenceSheetProps) {
   const controls = useAnimation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -208,8 +231,8 @@ export function IntelligenceSheet({
       // Reset scroll expansion flag when phase changes
       hasExpandedThisScrollRef.current = false;
 
-      // Analyst mode (chat) needs space - expand if not already
-      if (phase === "analyst" && sheetHeight !== "expanded") {
+      // Analyst mode (chat) and entity mode need space - expand if not already
+      if ((phase === "analyst" || phase === "entity") && sheetHeight !== "expanded") {
         setSheetHeight("expanded");
       }
     });
@@ -580,8 +603,12 @@ export function IntelligenceSheet({
                           // In inbox view, back closes inbox
                           onInboxToggle();
                         } else if (phase !== "scanner") {
-                          // In pilot/analyst, go back to previous view (inbox stays open if it was)
-                          onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
+                          // In pilot/analyst/entity, go back to previous view (inbox stays open if it was)
+                          if (phase === "entity") {
+                            onPhaseChange("pilot"); // Entity always goes back to pilot
+                          } else {
+                            onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
+                          }
                         }
                       }}
                       className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
@@ -606,6 +633,7 @@ export function IntelligenceSheet({
                     {phase === "pilot" &&
                       (isTouringMode ? (catchUpMode ? "Catching Up" : "Flyover") : "Event Details")}
                     {phase === "analyst" && "Ask Pythia"}
+                    {phase === "entity" && entityContext && entityContext.entityName}
                   </h2>
                   {/* Event count for scanner mode - only show in feed, not inbox */}
                   {phase === "scanner" && !inboxOpen && (
@@ -965,12 +993,43 @@ export function IntelligenceSheet({
                 catchUpMode={catchUpMode}
                 flyoverMode={flyoverMode}
                 onExitTouring={onExitTouring}
+                onEntityClick={onEntityClick}
               />
             </div>
           )}
 
           {phase === "analyst" && displayEvent && (
             <BriefingChat event={displayEvent} className="h-full" />
+          )}
+
+          {phase === "entity" && entityContext && entityEvents.length > 0 && (
+            <div className="flex h-full flex-col overflow-hidden pt-2">
+              <EntityEventView
+                entity={entityContext}
+                events={entityEvents}
+                currentIndex={entityIndex}
+                onNext={onEntityNext}
+                onPrevious={onEntityPrevious}
+                onEventSelect={onEntityEventSelect}
+              />
+            </div>
+          )}
+
+          {phase === "entity" && entityLoading && (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" />
+                <p className="font-mono text-xs text-foreground/40">Loading events...</p>
+              </div>
+            </div>
+          )}
+
+          {phase === "entity" && !entityLoading && entityEvents.length === 0 && (
+            <div className="flex h-full items-center justify-center px-4">
+              <p className="font-mono text-sm text-foreground/40">
+                No events found for this entity
+              </p>
+            </div>
           )}
         </div>
       </div>

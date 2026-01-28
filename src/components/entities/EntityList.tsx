@@ -15,6 +15,8 @@ interface EntityListProps {
   className?: string;
   /** Callback when clicking an event in the entity modal */
   onEventClick?: (eventId: string) => void;
+  /** Callback when clicking an entity badge (for mobile navigation) */
+  onEntityClick?: (entity: EventEntity) => void;
 }
 
 export function EntityList({
@@ -22,6 +24,7 @@ export function EntityList({
   maxVisible = 5,
   className = "",
   onEventClick,
+  onEntityClick,
 }: EntityListProps) {
   const [selectedEntity, setSelectedEntity] = useState<EventEntity | null>(null);
 
@@ -37,7 +40,14 @@ export function EntityList({
           key={entity.entity_id}
           name={entity.name}
           type={entity.node_type}
-          onClick={() => setSelectedEntity(entity)}
+          onClick={() => {
+            // If mobile callback provided, use it instead of modal
+            if (onEntityClick) {
+              onEntityClick(entity);
+            } else {
+              setSelectedEntity(entity);
+            }
+          }}
         />
       ))}
 
@@ -47,7 +57,8 @@ export function EntityList({
         </span>
       )}
 
-      {selectedEntity && (
+      {/* Only render modal if not using mobile callback */}
+      {!onEntityClick && selectedEntity && (
         <EntityModal
           entityId={selectedEntity.entity_id}
           entityName={selectedEntity.name}
