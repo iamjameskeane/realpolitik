@@ -12,6 +12,7 @@ import { motion, useAnimation } from "framer-motion";
 import { GeoEvent, EventCategory } from "@/types/events";
 import { EventList } from "./EventList";
 import { EventCard } from "./EventCard";
+import { EntityEventList } from "./EntityEventList";
 import { EntityBrowser } from "./EntityBrowser";
 import { FilterBar, SortOption } from "./FilterBar";
 import { BriefingChat } from "../briefing";
@@ -94,9 +95,10 @@ interface IntelligenceSheetProps {
   currentFrame: NavigationFrame;
   entityLoading?: boolean;
   onEntityClick?: (entity: import("@/types/entities").EventEntity) => void;
+  onEntityEventSelect?: (event: GeoEvent, index: number) => void;
   onNavigateWithinEntity?: (index: number) => void;
   onEventFromEntity?: (event: GeoEvent) => void;
-  onEntityBriefing?: (event: GeoEvent) => void;
+  onRequestBriefing?: (event: GeoEvent) => void;
 }
 
 /**
@@ -156,9 +158,10 @@ export function IntelligenceSheet({
   currentFrame,
   entityLoading,
   onEntityClick,
+  onEntityEventSelect,
   onNavigateWithinEntity,
   onEventFromEntity,
-  onEntityBriefing,
+  onRequestBriefing,
 }: IntelligenceSheetProps) {
   const controls = useAnimation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -627,7 +630,8 @@ export function IntelligenceSheet({
                       (isTouringMode ? (catchUpMode ? "Catching Up" : "Flyover") : "Event Details")}
                     {phase === "analyst" && "Ask Pythia"}
                     {phase === "entity" &&
-                      currentFrame.type === "entity" &&
+                      (currentFrame.type === "entity-list" ||
+                        currentFrame.type === "entity-browser") &&
                       currentFrame.entity.name}
                   </h2>
                   {/* Event count for scanner mode - only show in feed, not inbox */}
@@ -983,7 +987,7 @@ export function IntelligenceSheet({
                 stackIndex={stackIndex}
                 onNext={onNextEvent}
                 onPrevious={onPreviousEvent}
-                onRequestBriefing={handleRequestBriefing}
+                onRequestBriefing={() => onRequestBriefing?.(displayEvent)}
                 isTouringMode={isTouringMode}
                 catchUpMode={catchUpMode}
                 flyoverMode={flyoverMode}
@@ -993,14 +997,30 @@ export function IntelligenceSheet({
             </div>
           )}
 
-          {phase === "analyst" && displayEvent && (
-            <BriefingChat event={displayEvent} className="h-full" />
+          {/* Entity list view - shows feed of events for entity */}
+          {phase === "entity" && currentFrame.type === "entity-list" && !entityLoading && (
+            <div
+              ref={scrollRef}
+              className="custom-scrollbar h-full overflow-y-auto overscroll-contain"
+              onScroll={handleScroll}
+            >
+              <EntityEventList
+                entity={currentFrame.entity}
+                events={currentFrame.events}
+                onEventSelect={onEntityEventSelect ?? (() => {})}
+                onBack={() => onPhaseChange("scanner")}
+                eventStateMap={eventStateMap}
+              />
+            </div>
           )}
 
-          {phase === "entity" &&
-            currentFrame.type === "entity" &&
-            currentFrame.events.length > 0 &&
-            !entityLoading && (
+          {/* Entity browser view - swipeable event cards within entity */}
+          {phase === "entity" && currentFrame.type === "entity-browser" && !entityLoading && (
+            <div
+              ref={scrollRef}
+              className="flex h-full flex-col overflow-hidden"
+              onScroll={handleScroll}
+            >
               <EntityBrowser
                 entity={currentFrame.entity}
                 events={currentFrame.events}
@@ -1008,10 +1028,11 @@ export function IntelligenceSheet({
                 onNavigate={onNavigateWithinEntity ?? (() => {})}
                 onEventClick={onEventFromEntity ?? (() => {})}
                 onEntityClick={onEntityClick ?? (() => {})}
-                onRequestBriefing={onEntityBriefing ?? (() => {})}
-                onBack={() => onPhaseChange("pilot")}
+                onRequestBriefing={onRequestBriefing ?? (() => {})}
+                onBack={() => onPhaseChange("scanner")}
               />
-            )}
+            </div>
+          )}
 
           {phase === "entity" && entityLoading && (
             <div className="flex h-full items-center justify-center">
@@ -1021,17 +1042,6 @@ export function IntelligenceSheet({
               </div>
             </div>
           )}
-
-          {phase === "entity" &&
-            !entityLoading &&
-            currentFrame.type === "entity" &&
-            currentFrame.events.length === 0 && (
-              <div className="flex h-full items-center justify-center px-4">
-                <p className="font-mono text-sm text-foreground/40">
-                  No events found for {currentFrame.entity.name}
-                </p>
-              </div>
-            )}
         </div>
       </div>
     </motion.div>

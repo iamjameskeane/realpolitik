@@ -14,8 +14,8 @@ import { EventEntity } from "@/types/entities";
 export type NavigationFrame =
   | { type: "scanner" }
   | { type: "event"; event: GeoEvent; stackEvents: GeoEvent[]; stackIndex: number }
-  | { type: "entity"; entity: EventEntity; events: GeoEvent[]; index: number }
-  | { type: "briefing"; event: GeoEvent };
+  | { type: "entity-list"; entity: EventEntity; events: GeoEvent[] }
+  | { type: "entity-browser"; entity: EventEntity; events: GeoEvent[]; index: number };
 
 export interface UseNavigationStackReturn {
   // Current state
@@ -25,8 +25,8 @@ export interface UseNavigationStackReturn {
 
   // Navigation actions
   pushEvent: (event: GeoEvent, stackEvents?: GeoEvent[]) => void;
-  pushEntity: (entity: EventEntity, events: GeoEvent[]) => void;
-  pushBriefing: (event: GeoEvent) => void;
+  pushEntityList: (entity: EventEntity, events: GeoEvent[]) => void;
+  pushEntityBrowser: (entity: EventEntity, events: GeoEvent[], startIndex: number) => void;
   goBack: () => void;
   goToScanner: () => void;
 
@@ -53,21 +53,31 @@ export function useNavigationStack(): UseNavigationStackReturn {
     ]);
   }, []);
 
-  const pushEntity = useCallback((entity: EventEntity, events: GeoEvent[]) => {
+  const pushEntityList = useCallback((entity: EventEntity, events: GeoEvent[]) => {
     setStack((prev) => [
       ...prev,
       {
-        type: "entity",
+        type: "entity-list",
         entity,
         events,
-        index: 0,
       },
     ]);
   }, []);
 
-  const pushBriefing = useCallback((event: GeoEvent) => {
-    setStack((prev) => [...prev, { type: "briefing", event }]);
-  }, []);
+  const pushEntityBrowser = useCallback(
+    (entity: EventEntity, events: GeoEvent[], startIndex: number) => {
+      setStack((prev) => [
+        ...prev,
+        {
+          type: "entity-browser",
+          entity,
+          events,
+          index: startIndex,
+        },
+      ]);
+    },
+    []
+  );
 
   const goBack = useCallback(() => {
     setStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
@@ -87,7 +97,7 @@ export function useNavigationStack(): UseNavigationStackReturn {
         if (newEvent) {
           newStack[newStack.length - 1] = { ...frame, event: newEvent, stackIndex: index };
         }
-      } else if (frame.type === "entity") {
+      } else if (frame.type === "entity-browser") {
         newStack[newStack.length - 1] = { ...frame, index };
       }
 
@@ -111,8 +121,8 @@ export function useNavigationStack(): UseNavigationStackReturn {
     currentFrame,
     canGoBack,
     pushEvent,
-    pushEntity,
-    pushBriefing,
+    pushEntityList,
+    pushEntityBrowser,
     goBack,
     goToScanner,
     navigateWithinFrame,

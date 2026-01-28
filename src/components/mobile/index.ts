@@ -5,4 +5,6 @@ export { EventList } from "./EventList";
 export { EventCard } from "./EventCard";
 export { FilterBar } from "./FilterBar";
 export type { SortOption } from "./FilterBar";
+export { EntityEventList } from "./EntityEventList";
 export { EntityBrowser } from "./EntityBrowser";
+export { MobileBriefingModal } from "./BriefingModal";

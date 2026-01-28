@@ -20,6 +20,7 @@ import { formatRelativeTime } from "@/lib/formatters";
 import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "../AboutModal";
 import { SettingsModal } from "../SettingsModal";
+import { MobileBriefingModal } from "./BriefingModal";
 import { useAuth } from "@/contexts/AuthContext";
 
 const CATEGORIES: EventCategory[] = ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"];
@@ -104,6 +105,8 @@ function MobileLayoutInner({
   const [inboxOpen, setInboxOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [briefingOpen, setBriefingOpen] = useState(false);
+  const [briefingEvent, setBriefingEvent] = useState<GeoEvent | null>(null);
   const [is2DMode, setIs2DMode] = useState(false);
   const [catchUpMode, setCatchUpMode] = useState(false);
   const [catchUpIndex, setCatchUpIndex] = useState(0);
@@ -124,8 +127,8 @@ function MobileLayoutInner({
     currentFrame,
     canGoBack: stackCanGoBack,
     pushEvent,
-    pushEntity,
-    pushBriefing,
+    pushEntityList,
+    pushEntityBrowser,
     goBack: stackGoBack,
     goToScanner,
     navigateWithinFrame,
@@ -134,8 +137,8 @@ function MobileLayoutInner({
   // Derive phase from current frame for backward compatibility
   const phase: SheetPhase = useMemo(() => {
     if (currentFrame.type === "scanner") return "scanner";
-    if (currentFrame.type === "briefing") return "analyst";
-    if (currentFrame.type === "entity") return "entity";
+    if (currentFrame.type === "entity-list" || currentFrame.type === "entity-browser")
+      return "entity";
     return "pilot"; // event frame
   }, [currentFrame.type]);
 
@@ -689,7 +692,7 @@ function MobileLayoutInner({
     pushEvent(firstEvent, clusterViewEvents);
   }, [clusterViewEvents, filteredEvents, selectEvent, markAsRead, pushEvent]);
 
-  // Handle entity click - fetch full events and push entity frame
+  // Handle entity click - fetch full events and push entity-list frame
   const handleEntityClick = useCallback(
     async (entity: EventEntity) => {
       setEntityLoading(true);
@@ -708,7 +711,7 @@ function MobileLayoutInner({
         if (!data || data.length === 0) {
           setEntityLoading(false);
           // Still push frame with empty events to show empty state
-          pushEntity(entity, []);
+          pushEntityList(entity, []);
           return;
         }
 
@@ -728,13 +731,8 @@ function MobileLayoutInner({
           }
         }
 
-        // Push entity frame to navigation stack
-        pushEntity(entity, fullEvents);
-
-        // Fly to first event if available
-        if (fullEvents.length > 0) {
-          mapRef.current?.flyToEvent(fullEvents[0]);
-        }
+        // Push entity-list frame to navigation stack
+        pushEntityList(entity, fullEvents);
       } catch (error) {
         console.error("Failed to fetch entity events:", error);
         // Don't push frame on error
@@ -742,16 +740,33 @@ function MobileLayoutInner({
         setEntityLoading(false);
       }
     },
-    [events, fetchEventById, pushEntity]
+    [events, fetchEventById, pushEntityList]
   );
 
-  // Handle navigating within entity frame (swipe between entity events)
+  // Handle event selection from entity list - push entity-browser frame
+  const handleEntityEventSelect = useCallback(
+    (event: GeoEvent, index: number) => {
+      if (currentFrame.type !== "entity-list") return;
+
+      // Push entity-browser frame with the full event list
+      pushEntityBrowser(currentFrame.entity, currentFrame.events, index);
+
+      // Mark as read
+      markAsRead(event.id);
+
+      // Fly to event
+      mapRef.current?.flyToEvent(event);
+    },
+    [currentFrame, pushEntityBrowser, markAsRead]
+  );
+
+  // Handle navigating within entity-browser frame (swipe between entity events)
   const handleNavigateWithinEntity = useCallback(
     (index: number) => {
       navigateWithinFrame(index);
 
       // Fly to the event at the new index
-      if (currentFrame.type === "entity" && currentFrame.events[index]) {
+      if (currentFrame.type === "entity-browser" && currentFrame.events[index]) {
         mapRef.current?.flyToEvent(currentFrame.events[index]);
       }
     },
@@ -773,13 +788,18 @@ function MobileLayoutInner({
     [pushEvent, markAsRead]
   );
 
-  // Handle request briefing from entity view
-  const handleEntityBriefing = useCallback(
-    (event: GeoEvent) => {
-      pushBriefing(event);
-    },
-    [pushBriefing]
-  );
+  // Handle request briefing - open full-screen modal instead of using stack
+  const handleRequestBriefing = useCallback((event: GeoEvent) => {
+    setBriefingEvent(event);
+    setBriefingOpen(true);
+  }, []);
+
+  // Close briefing modal
+  const handleCloseBriefing = useCallback(() => {
+    setBriefingOpen(false);
+    // Clear event after animation completes
+    setTimeout(() => setBriefingEvent(null), 300);
+  }, []);
 
   // Determine active touring mode (catchUp or flyover)
   const isTouringMode = catchUpMode || flyoverMode;
@@ -946,9 +966,10 @@ function MobileLayoutInner({
         currentFrame={currentFrame}
         entityLoading={entityLoading}
         onEntityClick={handleEntityClick}
+        onEntityEventSelect={handleEntityEventSelect}
         onNavigateWithinEntity={handleNavigateWithinEntity}
         onEventFromEntity={handleEventFromEntity}
-        onEntityBriefing={handleEntityBriefing}
+        onRequestBriefing={handleRequestBriefing}
       />
 
       {/* About Modal */}
@@ -964,6 +985,13 @@ function MobileLayoutInner({
             is2DMode={is2DMode}
             onToggle2DMode={() => setIs2DMode(!is2DMode)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Pythia Briefing Modal - Full screen on mobile */}
+      <AnimatePresence>
+        {briefingOpen && briefingEvent && (
+          <MobileBriefingModal event={briefingEvent} onClose={handleCloseBriefing} />
         )}
       </AnimatePresence>
     </main>
