@@ -4,4 +4,4 @@
 
 export { EntityBadge } from "./EntityBadge";
 export { EntityList } from "./EntityList";
-export { EntityPopover } from "./EntityPopover";
+export { EntityModal } from "./EntityModal";

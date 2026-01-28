@@ -7,38 +7,21 @@
 import { useState } from "react";
 import { EventEntity } from "@/types/entities";
 import { EntityBadge } from "./EntityBadge";
-import { EntityPopover } from "./EntityPopover";
+import { EntityModal } from "./EntityModal";
 
 interface EntityListProps {
   entities: EventEntity[];
   maxVisible?: number;
   className?: string;
-  onEventClick?: (eventId: string) => void;
 }
 
-export function EntityList({
-  entities,
-  maxVisible = 5,
-  className = "",
-  onEventClick,
-}: EntityListProps) {
+export function EntityList({ entities, maxVisible = 5, className = "" }: EntityListProps) {
   const [selectedEntity, setSelectedEntity] = useState<EventEntity | null>(null);
-  const [popoverAnchor, setPopoverAnchor] = useState<HTMLElement | null>(null);
 
   if (entities.length === 0) return null;
 
   const visibleEntities = entities.slice(0, maxVisible);
   const hiddenCount = entities.length - maxVisible;
-
-  const handleBadgeClick = (entity: EventEntity, event: React.MouseEvent) => {
-    setSelectedEntity(entity);
-    setPopoverAnchor(event.currentTarget as HTMLElement);
-  };
-
-  const handleClose = () => {
-    setSelectedEntity(null);
-    setPopoverAnchor(null);
-  };
 
   return (
     <div className={`flex flex-wrap gap-1.5 ${className}`}>
@@ -47,7 +30,7 @@ export function EntityList({
           key={entity.entity_id}
           name={entity.name}
           type={entity.node_type}
-          onClick={(e) => handleBadgeClick(entity, e)}
+          onClick={() => setSelectedEntity(entity)}
         />
       ))}
 
@@ -57,14 +40,12 @@ export function EntityList({
         </span>
       )}
 
-      {selectedEntity && popoverAnchor && (
-        <EntityPopover
+      {selectedEntity && (
+        <EntityModal
           entityId={selectedEntity.entity_id}
           entityName={selectedEntity.name}
           entityType={selectedEntity.node_type}
-          anchorEl={popoverAnchor}
-          onClose={handleClose}
-          onEventClick={onEventClick}
+          onClose={() => setSelectedEntity(null)}
         />
       )}
     </div>
