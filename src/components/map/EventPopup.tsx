@@ -281,7 +281,7 @@ export function EventPopup({
             </div>
           )}
 
-          {/* Brief Me button - after fallout, before sources */}
+          {/* Ask Pythia button - after fallout, before sources */}
           {user && onRequestBriefing && (
             <div className="mt-4 flex flex-col items-center gap-4">
               <button
@@ -301,7 +301,7 @@ export function EventPopup({
                   <path d="M20 3v4" />
                   <path d="M22 5h-4" />
                 </svg>
-                Brief Me
+                Ask Pythia
               </button>
               <div className="w-full border-t border-foreground/10" />
             </div>
