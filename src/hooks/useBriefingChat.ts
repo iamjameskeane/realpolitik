@@ -14,13 +14,15 @@ const CATEGORY_CHIPS: Record<EventCategory, string[]> = {
   UNREST: ["How widespread?", "Government response?", "What are the demands?"],
 };
 
-// Status labels for display
+// Status labels for display (fallbacks if no query provided)
 const STATUS_LABELS: Record<string, string> = {
   authenticating: "Authenticating...",
-  searching: "Searching sources...",
+  searching: "Searching the web...",
   analyzing: "Analyzing results...",
   thinking: "Reasoning...",
   generating: "Generating briefing...",
+  atlas: "Querying Atlas...",
+  constellation: "Traversing Constellation...",
 };
 
 export type BriefingStatus =
@@ -30,6 +32,8 @@ export type BriefingStatus =
   | "analyzing"
   | "thinking"
   | "generating"
+  | "atlas"
+  | "constellation"
   | "done";
 
 // Session token storage (persists across component remounts)
@@ -103,6 +107,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<BriefingStatus>("idle");
+  const [statusQuery, setStatusQuery] = useState<string | null>(null);
   const [error, setError] = useState<Error | undefined>();
   const [usedChipsMap, setUsedChipsMap] = useState<Record<string, Set<string>>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -120,8 +125,8 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
     [usedChipsMap, event.id]
   );
 
-  // Status label for display
-  const statusLabel = STATUS_LABELS[status] || "";
+  // Status label for display - prefer query message if available
+  const statusLabel = statusQuery || STATUS_LABELS[status] || "";
 
   // Parse SSE chunk - handles buffering of partial chunks across network packets
   const parseSSEChunk = useCallback((chunk: string): SSEEvent[] => {
@@ -284,6 +289,8 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
             // Status updates
             if ("status" in evt && evt.status) {
               setStatus(evt.status);
+              // Capture query message if provided
+              setStatusQuery(evt.query || null);
             }
 
             // Content chunks
@@ -291,6 +298,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
               if (!hasReceivedContent) {
                 hasReceivedContent = true;
                 setStatus("generating");
+                setStatusQuery(null); // Clear query when generating starts
               }
 
               accumulatedContent += evt.content;
@@ -377,6 +385,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
       } finally {
         setIsLoading(false);
         setStatus("idle");
+        setStatusQuery(null);
         abortControllerRef.current = null;
       }
     },

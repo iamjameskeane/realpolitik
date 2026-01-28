@@ -748,15 +748,27 @@ EVENT CONTEXT:
                   continue;
                 }
 
-                // Send status update to client
+                // Send status update to client with branded messages
                 if (name === "search_news") {
-                  sendEvent({ status: "searching", query: args.query });
+                  sendEvent({
+                    status: "searching",
+                    query: `Searching the web for "${args.query}"`,
+                  });
                 } else if (name === "get_entity_events") {
-                  sendEvent({ status: "analyzing", query: `Looking up ${args.entity_name}...` });
+                  sendEvent({
+                    status: "atlas",
+                    query: `Querying Atlas for ${args.entity_name} events`,
+                  });
                 } else if (name === "get_causal_chain") {
-                  sendEvent({ status: "thinking", query: "Tracing causal chain..." });
+                  sendEvent({
+                    status: "constellation",
+                    query: "Tracing causal chain in Constellation",
+                  });
                 } else if (name === "get_impact_chain") {
-                  sendEvent({ status: "thinking", query: "Tracing impact chain..." });
+                  sendEvent({
+                    status: "constellation",
+                    query: "Mapping impact chain in Constellation",
+                  });
                 }
 
                 const result = await executeToolCall(name, args, briefingContext);
