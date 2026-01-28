@@ -20,7 +20,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { DeviceList } from "./DeviceList";
 
 export function NotificationSettings() {
-  const { user, openAuthModal } = useAuth();
+  const { user, profile, openAuthModal } = useAuth();
 
   // Notifications (inbox - synced across devices)
   const {
@@ -354,6 +354,7 @@ export function NotificationSettings() {
             onRulesChange={updateInboxRules}
             disabled={inboxLoading || inboxSaving}
             showPushToggle={pushSubscribed}
+            userTier={profile?.tier || "free"}
           />
         </div>
       )}

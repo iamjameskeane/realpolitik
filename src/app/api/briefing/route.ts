@@ -560,13 +560,14 @@ export async function POST(request: NextRequest) {
         });
 
         const usageData = usage?.[0];
+        const limit = usageData?.limit_value || 5;
 
         return new Response(
           JSON.stringify({
             error: "Daily limit reached",
-            message: `You've used all 10 briefings for today. Check back tomorrow!`,
+            message: `You've used all ${limit} briefings for today. Check back tomorrow!`,
             remaining: 0,
-            limit: 10,
+            limit,
             resetsAt: usageData?.resets_at,
           }),
           {
@@ -586,6 +587,7 @@ export async function POST(request: NextRequest) {
       limitChecked = true;
       console.log(`[Briefing] User has ${usageData?.remaining || 0} briefings remaining today`);
     } catch (dbError) {
+      void limitChecked; // Suppress unused variable warning
       // Fail CLOSED on database errors - deny the request
       console.error("[Briefing] Database error (denying request):", dbError);
       return new Response(
@@ -599,6 +601,18 @@ export async function POST(request: NextRequest) {
         }
       );
     }
+
+    // Fetch user's tier for model selection
+    const { data: userProfile } = await supabase
+      .from("profiles")
+      .select("tier")
+      .eq("id", user.id)
+      .single();
+
+    const userTier = userProfile?.tier || "free";
+    // Pro users get the full Flash model, free users get Flash-Lite
+    const modelToUse = userTier === "pro" ? "gemini-2.5-flash" : "gemini-2.0-flash-lite";
+    console.log(`[Briefing] User tier: ${userTier}, using model: ${modelToUse}`);
 
     // Fetch entities for this event
     const { data: entities } = await supabase.rpc("get_event_entities", {
@@ -695,7 +709,7 @@ EVENT CONTEXT:
 
             // Call Gemini API
             const response = await ai.models.generateContent({
-              model: "gemini-2.5-flash",
+              model: modelToUse,
               contents,
               config: {
                 systemInstruction: SYSTEM_PROMPT,

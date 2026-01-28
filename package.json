@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.35.0",
+    "@stripe/stripe-js": "^8.7.0",
     "@supabase/supabase-js": "^2.93.1",
     "@tailwindcss/typography": "^0.5.19",
     "@tavily/core": "^0.6.4",
@@ -37,6 +38,7 @@
     "react-dom": "19.2.3",
     "react-map-gl": "^8.1.0",
     "react-markdown": "^10.1.0",
+    "stripe": "^20.3.0",
     "swr": "^2.3.8",
     "web-push": "^3.6.7"
   },

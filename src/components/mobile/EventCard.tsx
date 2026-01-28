@@ -77,7 +77,7 @@ export function EventCard({
   onExitTouring,
   onEntityClick,
 }: EventCardProps) {
-  const { user, openAuthModal } = useAuth();
+  const { user, profile, openAuthModal } = useAuth();
   // currentIndex and totalCount kept for API compatibility but not displayed for single events
   void _currentIndex;
   void _totalCount;
@@ -339,15 +339,26 @@ export function EventCard({
             </button>
           )}
 
-          {/* Fallout Analysis */}
+          {/* Fallout Analysis - Pro feature */}
           {user && event.fallout_prediction && (
             <div className="mt-4 rounded border border-amber-500/20 bg-amber-500/5 p-3">
               <div className="mb-1 font-mono text-[10px] font-medium uppercase tracking-wide text-amber-400/80">
                 🔮 Fallout Analysis
               </div>
-              <p className="text-sm leading-relaxed text-amber-400/90">
-                {event.fallout_prediction}
-              </p>
+              {profile?.tier === "pro" || profile?.tier === "enterprise" ? (
+                <p className="text-sm leading-relaxed text-amber-400/90">
+                  {event.fallout_prediction}
+                </p>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-amber-400/60 italic">
+                    Upgrade to Pro to unlock AI fallout predictions
+                  </p>
+                  <span className="ml-2 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400">
+                    Pro
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

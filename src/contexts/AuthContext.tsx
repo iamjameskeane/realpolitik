@@ -14,11 +14,17 @@ interface Profile {
   preferences: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  // Stripe subscription fields
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  subscription_status: "none" | "active" | "canceled" | "past_due";
+  subscription_ends_at: string | null;
 }
 
 interface BriefingUsage {
   used: number;
   remaining: number;
+  limit_value: number;
   resets_at: string;
 }
 

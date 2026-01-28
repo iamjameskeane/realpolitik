@@ -471,6 +471,40 @@ export const RULE_LIMITS = {
   MAX_RULE_NAME_LENGTH: 50,
 } as const;
 
+// Tier-based limits
+export type UserTier = "free" | "pro" | "enterprise";
+
+export interface TierLimits {
+  maxRules: number;
+  minSeverity: number; // Minimum allowed severity (free can only do 9-10)
+  canCustomize: boolean; // Can customize beyond presets
+}
+
+export const TIER_LIMITS: Record<UserTier, TierLimits> = {
+  free: {
+    maxRules: 1,
+    minSeverity: 9, // Only sev 9-10
+    canCustomize: false,
+  },
+  pro: {
+    maxRules: 10,
+    minSeverity: 1, // Any severity
+    canCustomize: true,
+  },
+  enterprise: {
+    maxRules: 50,
+    minSeverity: 1,
+    canCustomize: true,
+  },
+};
+
+/**
+ * Get tier limits for a given tier
+ */
+export function getTierLimits(tier: UserTier | undefined): TierLimits {
+  return TIER_LIMITS[tier || "free"];
+}
+
 // =============================================================================
 // DEFAULT VALUES
 // =============================================================================

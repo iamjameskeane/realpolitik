@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { NotificationSettings } from "./NotificationSettings";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,9 +15,84 @@ interface SettingsModalProps {
  * Settings Modal - Contains map toggle and notification settings
  */
 export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsModalProps) {
-  const { user, profile, openAuthModal, signOut } = useAuth();
+  const { user, profile, session, openAuthModal, signOut, getBriefingUsage } = useAuth();
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [briefingLimit, setBriefingLimit] = useState(5);
+
+  // Fetch briefing limit based on tier
+  useEffect(() => {
+    if (user) {
+      getBriefingUsage().then((usage) => {
+        if (usage?.limit_value) {
+          setBriefingLimit(usage.limit_value);
+        }
+      });
+    }
+  }, [user, getBriefingUsage]);
+
+  // Handle upgrade to Pro
+  const handleUpgrade = async () => {
+    if (!session?.access_token) return;
+
+    setUpgradeLoading(true);
+    try {
+      const response = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          returnUrl: window.location.origin,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error("Failed to create checkout session:", data.error);
+      }
+    } catch (error) {
+      console.error("Upgrade error:", error);
+    } finally {
+      setUpgradeLoading(false);
+    }
+  };
+
+  // Handle manage subscription
+  const handleManageSubscription = async () => {
+    if (!session?.access_token) return;
+
+    setUpgradeLoading(true);
+    try {
+      const response = await fetch("/api/stripe/portal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          returnUrl: window.location.href,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error("Failed to create portal session:", data.error);
+      }
+    } catch (error) {
+      console.error("Portal error:", error);
+    } finally {
+      setUpgradeLoading(false);
+    }
+  };
 
   // Close on escape key
   const handleKeyDown = useCallback(
@@ -139,6 +214,25 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                     </div>
                   </div>
 
+                  {/* Tier Badge */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
+                        profile?.tier === "pro"
+                          ? "bg-amber-500/20 text-amber-400"
+                          : "bg-slate-700 text-slate-400"
+                      }`}
+                    >
+                      {profile?.tier || "free"}
+                    </span>
+                    {profile?.subscription_status === "canceled" &&
+                      profile?.subscription_ends_at && (
+                        <span className="text-[10px] text-slate-500">
+                          ends {new Date(profile.subscription_ends_at).toLocaleDateString()}
+                        </span>
+                      )}
+                  </div>
+
                   {/* Pythia Usage */}
                   <div className="rounded-md border border-slate-700/30 bg-slate-900/50 px-3 py-2">
                     <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-slate-400">
@@ -146,11 +240,65 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                     </div>
                     <div className="flex items-baseline gap-1">
                       <span className="font-mono text-lg font-bold text-slate-200">
-                        {10 - (profile?.daily_briefings_used || 0)}
+                        {briefingLimit - (profile?.daily_briefings_used || 0)}
                       </span>
-                      <span className="text-xs text-slate-400">of 10 remaining</span>
+                      <span className="text-xs text-slate-400">
+                        of {briefingLimit} remaining today
+                      </span>
                     </div>
                   </div>
+
+                  {/* Upgrade / Manage Subscription */}
+                  {profile?.tier === "free" ? (
+                    <button
+                      onClick={handleUpgrade}
+                      disabled={upgradeLoading}
+                      className="flex w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
+                    >
+                      {upgradeLoading ? (
+                        <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                      ) : (
+                        <>
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M13 10V3L4 14h7v7l9-11h-7z"
+                            />
+                          </svg>
+                          Upgrade to Pro - $5/month
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleManageSubscription}
+                      disabled={upgradeLoading}
+                      className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-600 bg-slate-700/50 px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      {upgradeLoading ? "Loading..." : "Manage Subscription"}
+                    </button>
+                  )}
 
                   <button
                     onClick={async () => {

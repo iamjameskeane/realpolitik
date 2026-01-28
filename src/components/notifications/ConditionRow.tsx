@@ -10,6 +10,7 @@ interface ConditionRowProps {
   onChange: (condition: Condition) => void;
   onRemove: () => void;
   canRemove: boolean;
+  minSeverity?: number; // Minimum allowed severity (tier restriction)
 }
 
 const OPERATOR_LABELS: Record<Operator, string> = {
@@ -21,7 +22,13 @@ const OPERATOR_LABELS: Record<Operator, string> = {
   contains: "contains",
 };
 
-export function ConditionRow({ condition, onChange, onRemove, canRemove }: ConditionRowProps) {
+export function ConditionRow({
+  condition,
+  onChange,
+  onRemove,
+  canRemove,
+  minSeverity = 1,
+}: ConditionRowProps) {
   const fieldConfig = FIELD_CONFIGS.find((f) => f.field === condition.field);
 
   const handleFieldChange = (field: ConditionField) => {
@@ -87,18 +94,35 @@ export function ConditionRow({ condition, onChange, onRemove, canRemove }: Condi
     if (!fieldConfig) return null;
 
     switch (fieldConfig.type) {
-      case "numeric":
+      case "numeric": {
+        // Apply minSeverity restriction for severity field
+        const effectiveMin =
+          condition.field === "severity" && minSeverity > (fieldConfig.min ?? 1)
+            ? minSeverity
+            : fieldConfig.min;
+        const isRestricted = condition.field === "severity" && minSeverity > 1;
+
         return (
-          <input
-            type="number"
-            inputMode="numeric"
-            min={fieldConfig.min}
-            max={fieldConfig.max}
-            value={Number(condition.value)}
-            onChange={(e) => handleValueChange(Number(e.target.value))}
-            className="w-16 rounded-lg border border-slate-600 bg-slate-800/80 px-2.5 py-1.5 text-center text-sm text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-          />
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              inputMode="numeric"
+              min={effectiveMin}
+              max={fieldConfig.max}
+              value={Number(condition.value)}
+              onChange={(e) =>
+                handleValueChange(Math.max(effectiveMin ?? 1, Number(e.target.value)))
+              }
+              className="w-16 rounded-lg border border-slate-600 bg-slate-800/80 px-2.5 py-1.5 text-center text-sm text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            />
+            {isRestricted && (
+              <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
+                {minSeverity}+ only
+              </span>
+            )}
+          </div>
         );
+      }
 
       case "select":
         if (condition.operator === "in") {

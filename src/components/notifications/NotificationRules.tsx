@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
-import type { NotificationRule } from "@/types/notifications";
-import { getRuleSummary, createEmptyRule, RULE_LIMITS } from "@/types/notifications";
+import type { NotificationRule, UserTier } from "@/types/notifications";
+import { getRuleSummary, createEmptyRule, getTierLimits } from "@/types/notifications";
 import { RuleEditor } from "./RuleEditor";
 
 interface NotificationRulesProps {
@@ -11,6 +11,7 @@ interface NotificationRulesProps {
   onRulesChange: (rules: NotificationRule[]) => void;
   disabled?: boolean;
   showPushToggle?: boolean; // Show phone icon to toggle sendPush per rule
+  userTier?: UserTier; // User's subscription tier
 }
 
 export function NotificationRules({
@@ -18,9 +19,12 @@ export function NotificationRules({
   onRulesChange,
   disabled = false,
   showPushToggle = false,
+  userTier = "free",
 }: NotificationRulesProps) {
   const [editingRule, setEditingRule] = useState<NotificationRule | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+
+  const tierLimits = getTierLimits(userTier);
 
   const handleToggleRule = (ruleId: string) => {
     const updated = rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r));
@@ -65,7 +69,8 @@ export function NotificationRules({
   };
 
   const activeRulesCount = rules.filter((r) => r.enabled).length;
-  const atRuleLimit = rules.length >= RULE_LIMITS.MAX_RULES;
+  const atRuleLimit = rules.length >= tierLimits.maxRules;
+  const isFreeTier = userTier === "free";
 
   return (
     <>
@@ -83,7 +88,11 @@ export function NotificationRules({
           <button
             onClick={handleCreateRule}
             disabled={disabled || atRuleLimit}
-            title={atRuleLimit ? `Maximum ${RULE_LIMITS.MAX_RULES} rules` : undefined}
+            title={
+              atRuleLimit
+                ? `Maximum ${tierLimits.maxRules} rule${tierLimits.maxRules > 1 ? "s" : ""} on ${userTier} tier`
+                : undefined
+            }
             className="flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-700/50 px-2.5 py-1.5 text-xs text-slate-300 transition-colors hover:border-cyan-500 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -94,7 +103,7 @@ export function NotificationRules({
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            Add Rule {atRuleLimit && `(${RULE_LIMITS.MAX_RULES} max)`}
+            Add Rule {atRuleLimit && (isFreeTier ? "(Pro)" : `(${tierLimits.maxRules} max)`)}
           </button>
         </div>
 
@@ -254,6 +263,7 @@ export function NotificationRules({
             onCancel={handleCancelEdit}
             onDelete={isCreatingNew ? undefined : () => handleDeleteRule(editingRule.id)}
             isNew={isCreatingNew}
+            minSeverity={tierLimits.minSeverity}
           />
         )}
       </AnimatePresence>

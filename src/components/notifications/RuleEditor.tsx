@@ -12,9 +12,17 @@ interface RuleEditorProps {
   onCancel: () => void;
   onDelete?: () => void;
   isNew?: boolean;
+  minSeverity?: number; // Minimum allowed severity (tier restriction)
 }
 
-export function RuleEditor({ rule, onSave, onCancel, onDelete, isNew = false }: RuleEditorProps) {
+export function RuleEditor({
+  rule,
+  onSave,
+  onCancel,
+  onDelete,
+  isNew = false,
+  minSeverity = 1,
+}: RuleEditorProps) {
   const [editedRule, setEditedRule] = useState<NotificationRule>({ ...rule });
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +70,21 @@ export function RuleEditor({ rule, onSave, onCancel, onDelete, isNew = false }: 
       setError(validation.error || "Invalid rule");
       return;
     }
+
+    // Validate severity restrictions for tier
+    if (minSeverity > 1) {
+      for (const condition of editedRule.conditions) {
+        if (condition.field === "severity" && typeof condition.value === "number") {
+          if (condition.value < minSeverity) {
+            setError(
+              `Free tier is limited to severity ${minSeverity}+. Upgrade to Pro for custom rules.`
+            );
+            return;
+          }
+        }
+      }
+    }
+
     onSave(editedRule);
   };
 
@@ -211,6 +234,7 @@ export function RuleEditor({ rule, onSave, onCancel, onDelete, isNew = false }: 
                       onChange={(c) => updateCondition(index, c)}
                       onRemove={() => removeCondition(index)}
                       canRemove={editedRule.conditions.length > 1}
+                      minSeverity={minSeverity}
                     />
                   </div>
                 ))}
