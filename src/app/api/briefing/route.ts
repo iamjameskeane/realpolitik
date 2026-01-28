@@ -124,7 +124,8 @@ const getImpactChainTool: FunctionDeclaration = {
 interface BriefingContext {
   eventId: string;
   entities: Array<{ entity_id: string; name: string; node_type: string; relation_type: string }>;
-  supabase: ReturnType<typeof createClient>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any; // Supabase client with RPC methods (types not generated)
 }
 
 // Execute tool calls
