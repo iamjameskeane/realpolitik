@@ -200,18 +200,19 @@ async function executeToolCall(
       const eventList = events
         .map(
           (e: {
+            event_id: string;
             title: string;
             category: string;
             event_timestamp: string;
             relation_type: string;
           }) => {
             const date = new Date(e.event_timestamp).toLocaleDateString();
-            return `- [${e.category}] ${e.title} (${date}) - ${e.relation_type}`;
+            return `- [${e.category}] ${e.title} (${date}) - ${e.relation_type} [ID: ${e.event_id}]`;
           }
         )
         .join("\n");
 
-      return `Recent events involving "${entityName}" (${entity.node_type}):\n\n${eventList}`;
+      return `Recent events involving "${entityName}" (${entity.node_type}):\n\n${eventList}\n\nTo cite these events, use: [Event Title](/?event=EVENT_ID)`;
     } catch (error) {
       console.error("Entity events lookup error:", error);
       return `Failed to lookup events: ${error instanceof Error ? error.message : "Unknown error"}`;
@@ -385,15 +386,21 @@ TOOL CALLS: search_news("[specific event topic]") → get fresh updates
 </style>
 
 <source_citation>
-End every response with a Sources section. Use EXACT markdown link format:
+End every response with a **Sources:** section when you have citable sources.
 
-**Sources:**
+WEB sources (from search_news):
 - [The Guardian](https://www.theguardian.com/article-url)
 - [Reuters](https://www.reuters.com/article-url)
 
-CRITICAL: Links must be [Text](URL) with NO space between ] and (
-DO NOT use numbered references like [1] or put URLs in parentheses separately.
-Only cite sources you actually used.
+DATABASE events (from get_entity_events - each event has an ID):
+- [Event Title](/?event=EVENT_UUID)
+Use the event ID from the tool result to create clickable deep links to those events.
+
+Rules:
+- Links must be [Text](URL) with NO space between ] and (
+- Do NOT cite "Atlas", "Constellation", or tool names as sources
+- get_causal_chain and get_impact_chain provide analysis context, not citable sources - don't cite them
+- If you only used causal/impact chain, you can skip Sources
 </source_citation>
 
 <guardrails>
