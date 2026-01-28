@@ -345,7 +345,22 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         flyDuration,
       });
 
-      map.current.flyTo({
+      // Track if flyTo actually completes
+      const mapInstance = map.current;
+      const flyToStart = Date.now();
+
+      const onMoveEnd = () => {
+        const endCenter = mapInstance.getCenter();
+        console.log("[WorldMap] moveend fired:", {
+          endCenter: [endCenter.lng, endCenter.lat],
+          targetWas: event.coordinates,
+          elapsed: Date.now() - flyToStart,
+        });
+        mapInstance.off("moveend", onMoveEnd);
+      };
+      mapInstance.on("moveend", onMoveEnd);
+
+      mapInstance.flyTo({
         center: event.coordinates,
         zoom: targetZoom,
         pitch: 45,
@@ -361,8 +376,13 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         setIsFlying(false);
         setSelectedEvent(event);
         if (map.current) {
+          const currentCenter = map.current.getCenter();
           const point = map.current.project(event.coordinates);
-          console.log("[WorldMap] After fly, popup at:", { x: point.x, y: point.y });
+          console.log("[WorldMap] After fly timeout:", {
+            currentCenter: [currentCenter.lng, currentCenter.lat],
+            targetWas: event.coordinates,
+            popupAt: { x: point.x, y: point.y },
+          });
           setPopupPosition({ x: point.x, y: point.y });
         }
       }, flyDuration + 100);
