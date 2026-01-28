@@ -5,7 +5,8 @@
 "use client";
 
 import { EntityType } from "@/types/entities";
-import { getEntityIcon, getCountryFlag } from "@/lib/entities";
+import { getEntityIcon } from "@/lib/entities";
+import { CountryFlag } from "./CountryFlag";
 
 interface EntityBadgeProps {
   name: string;
@@ -15,9 +16,6 @@ interface EntityBadgeProps {
 }
 
 export function EntityBadge({ name, type, onClick, className = "" }: EntityBadgeProps) {
-  const icon =
-    type === "country" ? getCountryFlag(name) || getEntityIcon(type) : getEntityIcon(type);
-
   return (
     <button
       onClick={onClick}
@@ -31,7 +29,11 @@ export function EntityBadge({ name, type, onClick, className = "" }: EntityBadge
       `}
       type="button"
     >
-      <span>{icon}</span>
+      {type === "country" ? (
+        <CountryFlag countryName={name} size={16} />
+      ) : (
+        <span>{getEntityIcon(type)}</span>
+      )}
       <span className="truncate max-w-[120px]">{name}</span>
     </button>
   );

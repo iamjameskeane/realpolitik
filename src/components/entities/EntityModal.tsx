@@ -9,7 +9,8 @@ import { useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { EntityType } from "@/types/entities";
 import { useEntityEvents } from "@/hooks/useEntityEvents";
-import { getEntityIcon, getCountryFlag } from "@/lib/entities";
+import { getEntityIcon } from "@/lib/entities";
+import { CountryFlag } from "./CountryFlag";
 
 // Category colors matching the app's theme
 const CATEGORY_COLORS: Record<string, string> = {
@@ -38,11 +39,6 @@ export function EntityModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const { events, loading } = useEntityEvents({ entityId, limit: 20 });
-
-  const icon =
-    entityType === "country"
-      ? getCountryFlag(entityName) || getEntityIcon(entityType)
-      : getEntityIcon(entityType);
 
   // Close on escape key
   const handleKeyDown = useCallback(
@@ -86,7 +82,11 @@ export function EntityModal({
         {/* Header - matches BriefingModal pattern */}
         <div className="flex shrink-0 items-start justify-between border-b border-foreground/10 p-5">
           <div className="flex items-center gap-4">
-            <span className="text-4xl">{icon}</span>
+            {entityType === "country" ? (
+              <CountryFlag countryName={entityName} size={48} />
+            ) : (
+              <span className="text-4xl">{getEntityIcon(entityType)}</span>
+            )}
             <div>
               <h2 className="text-lg font-semibold leading-snug text-foreground">{entityName}</h2>
               <div className="mt-1 flex items-center gap-2 text-xs text-foreground/50">
