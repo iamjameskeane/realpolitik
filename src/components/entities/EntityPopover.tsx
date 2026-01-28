@@ -5,6 +5,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { EntityType } from "@/types/entities";
 import { useEntityEvents } from "@/hooks/useEntityEvents";
 import { getEntityIcon, getCountryFlag } from "@/lib/entities";
@@ -95,10 +96,13 @@ export function EntityPopover({
     return `${diffDays}d ago`;
   };
 
-  return (
+  // Don't render on server (SSR safety)
+  if (typeof document === "undefined") return null;
+
+  const popoverContent = (
     <div
       ref={popoverRef}
-      className="fixed z-50 w-72 bg-background border border-foreground/10 rounded-lg shadow-xl"
+      className="fixed z-[9999] w-72 bg-background border border-foreground/10 rounded-lg shadow-xl"
       style={{ top, left }}
     >
       {/* Header */}
@@ -141,4 +145,6 @@ export function EntityPopover({
       </div>
     </div>
   );
+
+  return createPortal(popoverContent, document.body);
 }
