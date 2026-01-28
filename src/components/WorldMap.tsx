@@ -63,6 +63,8 @@ interface WorldMapProps {
     onClose: () => void;
     label?: string;
   };
+  /** Fetch a single event by ID (for entity modal navigation when event not loaded) */
+  fetchEventById?: (id: string) => Promise<GeoEvent | null>;
 }
 
 export interface WorldMapHandle {
@@ -85,6 +87,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     onClusterLongPress,
     onClusterFlyover,
     externalStack,
+    fetchEventById,
   },
   ref
 ) {
@@ -349,12 +352,26 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
   // Handle event click from entity modal - fly to event by ID
   const handleEntityEventClick = useCallback(
-    (eventId: string) => {
-      const event = events.find((e) => e.id === eventId);
-      if (!event) return;
+    async (eventId: string) => {
+      // First try to find in loaded events
+      let event = events.find((e) => e.id === eventId);
+
+      // If not found, fetch from server
+      if (!event && fetchEventById) {
+        const fetchedEvent = await fetchEventById(eventId);
+        if (fetchedEvent) {
+          event = fetchedEvent;
+        }
+      }
+
+      if (!event) {
+        console.warn(`[WorldMap] Event ${eventId} not found`);
+        return;
+      }
+
       handleClusterEventClick(event);
     },
-    [events, handleClusterEventClick]
+    [events, handleClusterEventClick, fetchEventById]
   );
 
   // Start flyover from cluster popup

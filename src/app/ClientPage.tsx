@@ -143,6 +143,7 @@ function HomeContent({ initialEvents }: ClientPageProps) {
       initialEventId={initialEventId}
       onExpandTimeRange={expandToHours}
       maxHoursLoaded={maxHoursLoaded}
+      fetchEventById={fetchEventById}
     />
   );
 }

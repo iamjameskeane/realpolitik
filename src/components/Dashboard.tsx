@@ -40,6 +40,8 @@ interface DashboardProps {
   onExpandTimeRange?: (hours: number) => Promise<void>;
   /** Maximum hours currently loaded from server */
   maxHoursLoaded?: number;
+  /** Fetch a single event by ID (for entity modal navigation) */
+  fetchEventById?: (id: string) => Promise<GeoEvent | null>;
 }
 
 const CATEGORIES: EventCategory[] = ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"];
@@ -52,6 +54,7 @@ export function Dashboard({
   initialEventId,
   onExpandTimeRange,
   maxHoursLoaded = 24,
+  fetchEventById,
 }: DashboardProps) {
   const [showSplash, setShowSplash] = useState(false); // Disabled - set to true to re-enable
   const [timeRangeIndex, setTimeRangeIndex] = useState(4); // Default to 24H
@@ -548,6 +551,7 @@ export function Dashboard({
             eventStateMap={eventStateMap}
             sidebarOpen={sidebarOpen}
             onClusterFlyover={(events) => flyover.start(events)}
+            fetchEventById={fetchEventById}
             externalStack={
               catchUp.isActive && catchUp.events.length > 0
                 ? {
