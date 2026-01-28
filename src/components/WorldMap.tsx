@@ -308,7 +308,21 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Handle event click from cluster popup - fly to event
   const handleClusterEventClick = useCallback(
     (event: GeoEvent) => {
-      if (!map.current) return;
+      if (!map.current) {
+        console.warn("[WorldMap] handleClusterEventClick: map.current is null");
+        return;
+      }
+
+      const currentCenter = map.current.getCenter();
+      const currentZoom = map.current.getZoom();
+
+      console.log("[WorldMap] handleClusterEventClick:", {
+        eventId: event.id,
+        eventTitle: event.title,
+        targetCoords: event.coordinates,
+        currentCenter: [currentCenter.lng, currentCenter.lat],
+        currentZoom,
+      });
 
       // Clear everything and set flying state FIRST
       setSelectedEvent(null);
@@ -322,9 +336,14 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       // Notify parent to mark as read and update URL
       onEventClick?.(event);
 
-      const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
       const flyDuration = 1200;
+
+      console.log("[WorldMap] Calling flyTo:", {
+        center: event.coordinates,
+        targetZoom,
+        flyDuration,
+      });
 
       map.current.flyTo({
         center: event.coordinates,
@@ -343,6 +362,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         setSelectedEvent(event);
         if (map.current) {
           const point = map.current.project(event.coordinates);
+          console.log("[WorldMap] After fly, popup at:", { x: point.x, y: point.y });
           setPopupPosition({ x: point.x, y: point.y });
         }
       }, flyDuration + 100);
