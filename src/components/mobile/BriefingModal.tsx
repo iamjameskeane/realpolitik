@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GeoEvent, CATEGORY_COLORS } from "@/types/events";
 import { BriefingChat } from "../briefing";
@@ -13,8 +13,35 @@ interface MobileBriefingModalProps {
 /**
  * Full-screen Pythia modal for mobile.
  * Opens from the bottom with slide animation.
+ * Handles keyboard viewport changes.
  */
 export function MobileBriefingModal({ event, onClose }: MobileBriefingModalProps) {
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Track keyboard visibility via visualViewport API
+  useEffect(() => {
+    if (!window.visualViewport) return;
+
+    const handleViewportResize = () => {
+      if (!window.visualViewport) return;
+
+      // Calculate keyboard height
+      const viewportHeight = window.visualViewport.height;
+      const windowHeight = window.innerHeight;
+      const keyboardOpen = windowHeight - viewportHeight;
+
+      setKeyboardHeight(keyboardOpen > 0 ? keyboardOpen : 0);
+    };
+
+    window.visualViewport.addEventListener("resize", handleViewportResize);
+    window.visualViewport.addEventListener("scroll", handleViewportResize);
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", handleViewportResize);
+      window.visualViewport?.removeEventListener("scroll", handleViewportResize);
+    };
+  }, []);
+
   // Close on hardware back button (Android)
   useEffect(() => {
     const handlePopState = () => {
@@ -49,10 +76,14 @@ export function MobileBriefingModal({ event, onClose }: MobileBriefingModalProps
       <motion.div
         className="fixed inset-0 z-[200] flex flex-col bg-background"
         style={{
-          // Full viewport height including safe areas
-          height: "calc(var(--vh, 1vh) * 100)",
+          // Use visualViewport height when keyboard is open, otherwise full height
+          height:
+            keyboardHeight > 0
+              ? `${window.visualViewport?.height || window.innerHeight}px`
+              : "calc(var(--vh, 1vh) * 100)",
           paddingTop: "env(safe-area-inset-top, 0px)",
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          // Don't add bottom padding when keyboard is open
+          paddingBottom: keyboardHeight > 0 ? "0px" : "env(safe-area-inset-bottom, 0px)",
         }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
