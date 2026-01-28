@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { GeoEvent, EventCategory } from "@/types/events";
-import { EntityType, EntityEvent, EventEntity } from "@/types/entities";
+import { EventEntity } from "@/types/entities";
 import { WorldMap, WorldMapHandle } from "../WorldMap";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { MapFallback } from "../map/MapFallback";
@@ -10,6 +10,7 @@ import { IntelligenceSheet, SheetPhase } from "./IntelligenceSheet";
 import { SortOption } from "./FilterBar";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useEventSelection } from "@/hooks/useEventSelection";
+import { useNavigationStack } from "@/hooks/useNavigationStack";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
 import { useNotificationInbox } from "@/hooks/useNotificationInbox";
@@ -99,7 +100,6 @@ function MobileLayoutInner({
   const [sortBy, setSortBy] = useState<SortOption>("hot");
   const [hideSeen, setHideSeen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<EventCategory>>(ALL_CATEGORIES);
-  const [phase, setPhase] = useState<SheetPhase>("scanner");
   const [displayedTime, setDisplayedTime] = useState("");
   const [inboxOpen, setInboxOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -119,15 +119,27 @@ function MobileLayoutInner({
   // Track if we're viewing event details from within cluster view (for back navigation)
   const [fromClusterView, setFromClusterView] = useState(false);
 
-  // Entity browsing mode (viewing events related to an entity)
-  const [entityContext, setEntityContext] = useState<{
-    entityId: string;
-    entityName: string;
-    entityType: EntityType;
-    returnEventId: string; // Event to return to when pressing back
-  } | null>(null);
-  const [entityEvents, setEntityEvents] = useState<EntityEvent[]>([]);
-  const [entityIndex, setEntityIndex] = useState(0);
+  // Navigation stack - replaces fragmented phase/entity state
+  const {
+    currentFrame,
+    canGoBack: stackCanGoBack,
+    pushEvent,
+    pushEntity,
+    pushBriefing,
+    goBack: stackGoBack,
+    goToScanner,
+    navigateWithinFrame,
+  } = useNavigationStack();
+
+  // Derive phase from current frame for backward compatibility
+  const phase: SheetPhase = useMemo(() => {
+    if (currentFrame.type === "scanner") return "scanner";
+    if (currentFrame.type === "briefing") return "analyst";
+    if (currentFrame.type === "entity") return "entity";
+    return "pilot"; // event frame
+  }, [currentFrame.type]);
+
+  // Entity loading state (for async fetch)
   const [entityLoading, setEntityLoading] = useState(false);
 
   // Calculate which time ranges have data (dynamic slider) - needed before useEventStates
@@ -375,7 +387,7 @@ function MobileLayoutInner({
     initialEventId,
     allEvents: events,
     onFlyToEvent: handleFlyToEvent,
-    onInitialEventSelect: () => setPhase("pilot"), // Deep link opens event details
+    onInitialEventSelect: (event) => pushEvent(event, [event]), // Deep link opens event details
   });
 
   // Toggle category
@@ -398,9 +410,9 @@ function MobileLayoutInner({
       setPinnedEventId(event.id);
       selectEvent(event, index);
       markAsRead(event.id); // Mark as read when selected
-      setPhase("pilot"); // Switch to event details
+      pushEvent(event, [event]); // Push event frame to stack
     },
-    [selectEvent, markAsRead]
+    [selectEvent, markAsRead, pushEvent]
   );
 
   // Handle map dot click - find event index and select it
@@ -412,87 +424,73 @@ function MobileLayoutInner({
         markAsRead(event.id); // Mark as read when clicked on map
         // Pass skipFly=true since the dot is already visible on screen
         selectEvent(event, index, true);
-        setPhase("pilot"); // Switch to event details
+        pushEvent(event, [event]); // Push event frame to stack
       }
     },
-    [filteredEvents, selectEvent, markAsRead]
+    [filteredEvents, selectEvent, markAsRead, pushEvent]
   );
 
-  // Handle phase change
+  // Handle phase change / navigation
   const handlePhaseChange = useCallback(
     async (newPhase: SheetPhase) => {
-      // If going from entity to pilot, restore the return event
-      if (phase === "entity" && newPhase === "pilot" && entityContext) {
-        const returnEventId = entityContext.returnEventId;
+      // Handle back navigation
+      if (
+        newPhase === "scanner" ||
+        (phase === "analyst" && newPhase === "pilot") ||
+        (phase === "entity" && newPhase === "pilot")
+      ) {
+        // Use stack goBack for entity and analyst modes
+        if (phase === "entity" || phase === "analyst") {
+          stackGoBack();
 
-        // Clear entity context first
-        setEntityContext(null);
-        setEntityEvents([]);
-        setEntityIndex(0);
+          // Fly to the previous frame's event if it's an event frame
+          const newFrame = currentFrame; // This will be updated after goBack
+          setTimeout(() => {
+            if (newFrame.type === "event") {
+              mapRef.current?.flyToEvent(newFrame.event);
+            }
+          }, 0);
+          return;
+        }
 
-        // Find the return event
-        let returnEvent = events.find((e) => e.id === returnEventId);
+        // If going to scanner from pilot, use goToScanner
+        if (newPhase === "scanner") {
+          goToScanner();
+          clearSelection();
+          setPinnedEventId(null);
 
-        // If not found and we have fetchEventById, try fetching it
-        if (!returnEvent && fetchEventById) {
-          const fetched = await fetchEventById(returnEventId);
-          if (fetched) {
-            returnEvent = fetched;
+          // If we came from cluster view, return to cluster view (not main feed)
+          if (fromClusterView && clusterViewEvents.length > 0) {
+            setFromClusterView(false);
+            // Keep cluster view open, just exit touring modes
+            setCatchUpMode(false);
+            setCatchUpIndex(0);
+            setCatchUpEvents([]);
+            setFlyoverMode(false);
+            setFlyoverIndex(0);
+            setFlyoverEvents([]);
+            return;
           }
-        }
 
-        // Restore the event
-        if (returnEvent) {
-          const index = events.findIndex((e) => e.id === returnEventId);
-          selectEvent(returnEvent, index >= 0 ? index : 0);
-        }
-
-        setPhase(newPhase);
-        return;
-      }
-
-      setPhase(newPhase);
-      // If going to scanner, handle navigation
-      if (newPhase === "scanner") {
-        clearSelection();
-        setPinnedEventId(null); // Clear pinned event when navigating away
-
-        // If we came from cluster view, return to cluster view (not main feed)
-        if (fromClusterView && clusterViewEvents.length > 0) {
-          setFromClusterView(false);
-          // Keep cluster view open, just exit touring modes
+          // Otherwise, exit all modes including cluster view
           setCatchUpMode(false);
           setCatchUpIndex(0);
           setCatchUpEvents([]);
           setFlyoverMode(false);
           setFlyoverIndex(0);
           setFlyoverEvents([]);
-          return;
+          setClusterViewOpen(false);
+          setClusterViewEvents([]);
+          setClusterViewLabel("");
+          setFromClusterView(false);
         }
-
-        // Otherwise, exit all modes including cluster view
-        setCatchUpMode(false);
-        setCatchUpIndex(0);
-        setCatchUpEvents([]);
-        setFlyoverMode(false);
-        setFlyoverIndex(0);
-        setFlyoverEvents([]);
-        setClusterViewOpen(false);
-        setClusterViewEvents([]);
-        setClusterViewLabel("");
-        setFromClusterView(false);
-        // Clear entity context when going to scanner
-        setEntityContext(null);
-        setEntityEvents([]);
-        setEntityIndex(0);
       }
     },
     [
       phase,
-      entityContext,
-      events,
-      fetchEventById,
-      selectEvent,
+      currentFrame,
+      stackGoBack,
+      goToScanner,
       clearSelection,
       fromClusterView,
       clusterViewEvents.length,
@@ -519,8 +517,8 @@ function MobileLayoutInner({
       filteredEvents.findIndex((e) => e.id === firstEvent.id)
     );
     markAsRead(firstEvent.id);
-    setPhase("pilot");
-  }, [inboxEvents, filteredEvents, selectEvent, markAsRead]);
+    pushEvent(firstEvent, [firstEvent]);
+  }, [inboxEvents, filteredEvents, selectEvent, markAsRead, pushEvent]);
 
   // Navigate to next event in catch up mode
   const catchUpNext = useCallback(() => {
@@ -531,7 +529,7 @@ function MobileLayoutInner({
       setCatchUpMode(false);
       setCatchUpIndex(0);
       setCatchUpEvents([]);
-      setPhase("scanner");
+      goToScanner();
       clearSelection();
       setPinnedEventId(null);
       return;
@@ -545,7 +543,15 @@ function MobileLayoutInner({
       filteredEvents.findIndex((e) => e.id === nextEvent.id)
     );
     markAsRead(nextEvent.id);
-  }, [catchUpIndex, catchUpEvents, filteredEvents, selectEvent, markAsRead, clearSelection]);
+  }, [
+    catchUpIndex,
+    catchUpEvents,
+    filteredEvents,
+    selectEvent,
+    markAsRead,
+    clearSelection,
+    goToScanner,
+  ]);
 
   // Navigate to previous event in catch up mode
   const catchUpPrevious = useCallback(() => {
@@ -566,10 +572,10 @@ function MobileLayoutInner({
     setCatchUpMode(false);
     setCatchUpIndex(0);
     setCatchUpEvents([]);
-    setPhase("scanner");
+    goToScanner();
     clearSelection();
     setPinnedEventId(null);
-  }, [clearSelection]);
+  }, [clearSelection, goToScanner]);
 
   // ===== FLYOVER MODE =====
   // Fly through all filtered events in order
@@ -587,8 +593,8 @@ function MobileLayoutInner({
     // Select the event and enter pilot phase
     selectEvent(firstEvent, 0);
     markAsRead(firstEvent.id);
-    setPhase("pilot");
-  }, [filteredEvents, selectEvent, markAsRead]);
+    pushEvent(firstEvent, [firstEvent]);
+  }, [filteredEvents, selectEvent, markAsRead, pushEvent]);
 
   // Navigate to next event in flyover mode
   const flyoverNext = useCallback(() => {
@@ -599,7 +605,7 @@ function MobileLayoutInner({
       setFlyoverMode(false);
       setFlyoverIndex(0);
       setFlyoverEvents([]);
-      setPhase("scanner");
+      goToScanner();
       clearSelection();
       setPinnedEventId(null);
       return;
@@ -610,7 +616,7 @@ function MobileLayoutInner({
     setFlyoverIndex(nextIndex);
     selectEvent(nextEvent, nextIndex);
     markAsRead(nextEvent.id);
-  }, [flyoverIndex, flyoverEvents, selectEvent, markAsRead, clearSelection]);
+  }, [flyoverIndex, flyoverEvents, selectEvent, markAsRead, clearSelection, goToScanner]);
 
   // Navigate to previous event in flyover mode
   const flyoverPrevious = useCallback(() => {
@@ -628,10 +634,10 @@ function MobileLayoutInner({
     setFlyoverMode(false);
     setFlyoverIndex(0);
     setFlyoverEvents([]);
-    setPhase("scanner");
+    goToScanner();
     clearSelection();
     setPinnedEventId(null);
-  }, [clearSelection]);
+  }, [clearSelection, goToScanner]);
 
   // ===== CLUSTER VIEW MODE =====
   // Long press on a cluster opens cluster details view
@@ -651,9 +657,9 @@ function MobileLayoutInner({
       setFromClusterView(true); // Track that we came from cluster view
       selectEvent(event, index);
       markAsRead(event.id);
-      setPhase("pilot");
+      pushEvent(event, clusterViewEvents);
     },
-    [selectEvent, markAsRead]
+    [selectEvent, markAsRead, pushEvent, clusterViewEvents]
   );
 
   // Exit cluster view (back to main feed)
@@ -680,24 +686,16 @@ function MobileLayoutInner({
       filteredEvents.findIndex((e) => e.id === firstEvent.id)
     );
     markAsRead(firstEvent.id);
-    setPhase("pilot");
-  }, [clusterViewEvents, filteredEvents, selectEvent, markAsRead]);
+    pushEvent(firstEvent, clusterViewEvents);
+  }, [clusterViewEvents, filteredEvents, selectEvent, markAsRead, pushEvent]);
 
-  // Handle entity click - fetch events and enter entity browsing mode
+  // Handle entity click - fetch full events and push entity frame
   const handleEntityClick = useCallback(
     async (entity: EventEntity) => {
-      if (!selectedEvent) return;
-
       setEntityLoading(true);
-      setEntityContext({
-        entityId: entity.entity_id,
-        entityName: entity.name,
-        entityType: entity.node_type,
-        returnEventId: selectedEvent.id,
-      });
 
       try {
-        // Fetch entity events via RPC
+        // Fetch entity event IDs via RPC
         const { getSupabaseClient } = await import("@/lib/supabase");
         const client = getSupabaseClient();
         const { data, error } = await client.rpc("get_entity_events", {
@@ -707,60 +705,80 @@ function MobileLayoutInner({
 
         if (error) throw error;
 
-        setEntityEvents(data || []);
-        setEntityIndex(0);
-        setPhase("entity");
+        if (!data || data.length === 0) {
+          setEntityLoading(false);
+          // Still push frame with empty events to show empty state
+          pushEntity(entity, []);
+          return;
+        }
+
+        // Fetch full GeoEvent data for each entity event
+        const fullEvents: GeoEvent[] = [];
+        for (const entityEvent of data) {
+          // First check if we already have it in loaded events
+          const cached = events.find((e) => e.id === entityEvent.event_id);
+          if (cached) {
+            fullEvents.push(cached);
+          } else if (fetchEventById) {
+            // Fetch the full event
+            const fetched = await fetchEventById(entityEvent.event_id);
+            if (fetched) {
+              fullEvents.push(fetched);
+            }
+          }
+        }
+
+        // Push entity frame to navigation stack
+        pushEntity(entity, fullEvents);
+
+        // Fly to first event if available
+        if (fullEvents.length > 0) {
+          mapRef.current?.flyToEvent(fullEvents[0]);
+        }
       } catch (error) {
         console.error("Failed to fetch entity events:", error);
-        // Reset on error
-        setEntityContext(null);
-        setEntityEvents([]);
+        // Don't push frame on error
       } finally {
         setEntityLoading(false);
       }
     },
-    [selectedEvent]
+    [events, fetchEventById, pushEntity]
   );
 
-  // Navigate to next entity event
-  const handleEntityNext = useCallback(() => {
-    setEntityIndex((prev) => Math.min(prev + 1, entityEvents.length - 1));
-  }, [entityEvents.length]);
+  // Handle navigating within entity frame (swipe between entity events)
+  const handleNavigateWithinEntity = useCallback(
+    (index: number) => {
+      navigateWithinFrame(index);
 
-  // Navigate to previous entity event
-  const handleEntityPrevious = useCallback(() => {
-    setEntityIndex((prev) => Math.max(prev - 1, 0));
-  }, []);
-
-  // Handle selecting an entity event to view in full
-  const handleEntityEventSelect = useCallback(
-    async (entityEvent: EntityEvent) => {
-      // Try to find event in loaded events first
-      let fullEvent = events.find((e) => e.id === entityEvent.event_id);
-
-      // If not found and we have fetchEventById, fetch it
-      if (!fullEvent && fetchEventById) {
-        const fetched = await fetchEventById(entityEvent.event_id);
-        if (fetched) {
-          fullEvent = fetched;
-        }
-      }
-
-      if (fullEvent) {
-        // Select the event and switch to pilot mode
-        const index = events.findIndex((e) => e.id === fullEvent!.id);
-        selectEvent(fullEvent, index >= 0 ? index : 0);
-        markAsRead(fullEvent.id);
-        setPhase("pilot");
-        // Clear entity context
-        setEntityContext(null);
-        setEntityEvents([]);
-        setEntityIndex(0);
-      } else {
-        console.error("Failed to load full event:", entityEvent.event_id);
+      // Fly to the event at the new index
+      if (currentFrame.type === "entity" && currentFrame.events[index]) {
+        mapRef.current?.flyToEvent(currentFrame.events[index]);
       }
     },
-    [events, fetchEventById, selectEvent, markAsRead]
+    [navigateWithinFrame, currentFrame]
+  );
+
+  // Handle selecting an entity event to view in full (push new event frame)
+  const handleEventFromEntity = useCallback(
+    async (event: GeoEvent) => {
+      // Push new event frame on top of entity frame
+      pushEvent(event, [event]);
+
+      // Mark as read
+      markAsRead(event.id);
+
+      // Fly to event
+      mapRef.current?.flyToEvent(event);
+    },
+    [pushEvent, markAsRead]
+  );
+
+  // Handle request briefing from entity view
+  const handleEntityBriefing = useCallback(
+    (event: GeoEvent) => {
+      pushBriefing(event);
+    },
+    [pushBriefing]
   );
 
   // Determine active touring mode (catchUp or flyover)
@@ -924,15 +942,13 @@ function MobileLayoutInner({
         onClusterEventSelect={handleClusterEventSelect}
         onExitClusterView={exitClusterView}
         onStartClusterFlyover={startClusterFlyover}
-        // Entity browsing
-        entityContext={entityContext}
-        entityEvents={entityEvents}
-        entityIndex={entityIndex}
+        // Navigation stack
+        currentFrame={currentFrame}
         entityLoading={entityLoading}
         onEntityClick={handleEntityClick}
-        onEntityNext={handleEntityNext}
-        onEntityPrevious={handleEntityPrevious}
-        onEntityEventSelect={handleEntityEventSelect}
+        onNavigateWithinEntity={handleNavigateWithinEntity}
+        onEventFromEntity={handleEventFromEntity}
+        onEntityBriefing={handleEntityBriefing}
       />
 
       {/* About Modal */}
