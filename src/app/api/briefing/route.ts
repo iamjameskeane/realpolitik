@@ -88,8 +88,41 @@ const getEntityEventsTool: FunctionDeclaration = {
   },
 };
 
-// Entity cache for the current request (populated after initial entity fetch)
-interface EntityCache {
+const getCausalChainTool: FunctionDeclaration = {
+  name: "get_causal_chain",
+  description:
+    "Trace the chain of events and factors that LED TO this event. Use this to answer questions like 'What caused this?', 'How did we get here?', 'What's the background?'. Returns preceding events and their causal relationships.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      max_depth: {
+        type: Type.NUMBER,
+        description: "How many steps back to trace (default: 3, max: 5)",
+      },
+    },
+    required: [],
+  },
+};
+
+const getImpactChainTool: FunctionDeclaration = {
+  name: "get_impact_chain",
+  description:
+    "Trace the downstream impacts and effects of this event. Use this to answer questions like 'What will this affect?', 'What are the consequences?', 'Who/what is impacted?'. Returns affected entities and their relationships.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      max_depth: {
+        type: Type.NUMBER,
+        description: "How many steps forward to trace (default: 3, max: 5)",
+      },
+    },
+    required: [],
+  },
+};
+
+// Context cache for the current request (populated after initial setup)
+interface BriefingContext {
+  eventId: string;
   entities: Array<{ entity_id: string; name: string; node_type: string; relation_type: string }>;
   supabase: ReturnType<typeof createClient>;
 }
@@ -98,7 +131,7 @@ interface EntityCache {
 async function executeToolCall(
   toolName: string,
   args: Record<string, unknown>,
-  entityCache?: EntityCache
+  context?: BriefingContext
 ): Promise<string> {
   if (toolName === "search_news") {
     const query = args.query as string;
@@ -129,29 +162,27 @@ async function executeToolCall(
     const limit = Math.min((args.limit as number) || 5, 10);
     console.log(`[Briefing] Looking up events for entity: "${entityName}"`);
 
-    if (!entityCache) {
-      return `Entity lookup unavailable - no entity context loaded`;
+    if (!context) {
+      return `Entity lookup unavailable - no context loaded`;
     }
 
     // Find the entity in the cache (case-insensitive match)
-    const entity = entityCache.entities.find(
-      (e) => e.name.toLowerCase() === entityName.toLowerCase()
-    );
+    const entity = context.entities.find((e) => e.name.toLowerCase() === entityName.toLowerCase());
 
     if (!entity) {
       // Try partial match
-      const partialMatch = entityCache.entities.find((e) =>
+      const partialMatch = context.entities.find((e) =>
         e.name.toLowerCase().includes(entityName.toLowerCase())
       );
       if (partialMatch) {
-        return `Entity "${entityName}" not found. Did you mean "${partialMatch.name}"? Available entities: ${entityCache.entities.map((e) => e.name).join(", ")}`;
+        return `Entity "${entityName}" not found. Did you mean "${partialMatch.name}"? Available entities: ${context.entities.map((e) => e.name).join(", ")}`;
       }
-      return `Entity "${entityName}" not found in this event. Available entities: ${entityCache.entities.map((e) => e.name).join(", ")}`;
+      return `Entity "${entityName}" not found in this event. Available entities: ${context.entities.map((e) => e.name).join(", ")}`;
     }
 
     try {
       // Fetch events for this entity
-      const { data: events, error } = await entityCache.supabase.rpc("get_entity_events", {
+      const { data: events, error } = await context.supabase.rpc("get_entity_events", {
         entity_uuid: entity.entity_id,
         max_count: limit,
       });
@@ -186,6 +217,80 @@ async function executeToolCall(
     }
   }
 
+  if (toolName === "get_causal_chain") {
+    const maxDepth = Math.min((args.max_depth as number) || 3, 5);
+    console.log(`[Briefing] Tracing causal chain for event, depth: ${maxDepth}`);
+
+    if (!context) {
+      return `Causal chain unavailable - no context loaded`;
+    }
+
+    try {
+      const { data: chain, error } = await context.supabase.rpc("get_causal_chain", {
+        event_id: context.eventId,
+        max_depth: maxDepth,
+      });
+
+      if (error) {
+        console.error("Causal chain lookup error:", error);
+        return `Failed to trace causal chain`;
+      }
+
+      if (!chain || chain.length === 0) {
+        return `No causal chain data available for this event. The graph may not have causal relationships mapped yet.`;
+      }
+
+      const chainList = chain
+        .map(
+          (item: { name: string; depth: number; relation: string; confidence: number }) =>
+            `${"  ".repeat(item.depth - 1)}↳ ${item.name} (${item.relation}, confidence: ${Math.round(item.confidence * 100)}%)`
+        )
+        .join("\n");
+
+      return `Causal chain leading to this event:\n\n${chainList}`;
+    } catch (error) {
+      console.error("Causal chain lookup error:", error);
+      return `Failed to trace causal chain: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
+  if (toolName === "get_impact_chain") {
+    const maxDepth = Math.min((args.max_depth as number) || 3, 5);
+    console.log(`[Briefing] Tracing impact chain for event, depth: ${maxDepth}`);
+
+    if (!context) {
+      return `Impact chain unavailable - no context loaded`;
+    }
+
+    try {
+      const { data: chain, error } = await context.supabase.rpc("get_impact_chain", {
+        event_id: context.eventId,
+        max_depth: maxDepth,
+      });
+
+      if (error) {
+        console.error("Impact chain lookup error:", error);
+        return `Failed to trace impact chain`;
+      }
+
+      if (!chain || chain.length === 0) {
+        return `No impact chain data available for this event. The graph may not have impact relationships mapped yet.`;
+      }
+
+      const chainList = chain
+        .map(
+          (item: { name: string; node_type: string; depth: number; path: unknown[] }) =>
+            `${"  ".repeat(item.depth - 1)}→ ${item.name} (${item.node_type})`
+        )
+        .join("\n");
+
+      return `Downstream impacts of this event:\n\n${chainList}`;
+    } catch (error) {
+      console.error("Impact chain lookup error:", error);
+      return `Failed to trace impact chain: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
   return `Unknown tool: ${toolName}`;
 }
 
@@ -205,16 +310,19 @@ Your job is to answer questions clearly and help users understand why events mat
 </instructions>
 
 <tools>
-- search_news: Search the web for current news and information
-- get_entity_events: Look up other recent events involving an entity mentioned in the current event (countries, companies, leaders, etc.)
+- search_news: Search the web for current news and information (limited to 2 per question)
+- get_entity_events: Look up other recent events involving an entity (countries, companies, leaders, etc.)
+- get_causal_chain: Trace what events and factors LED TO this event (background, causes, "how did we get here?")
+- get_impact_chain: Trace what this event AFFECTS downstream (consequences, impacts, "what happens next?")
 </tools>
 
 <search_rules>
-- Search ONCE for current information, then respond with what you have
+- search_news is limited to 2 calls per question - be strategic
+- The other tools (entity events, causal/impact chains) are free - use them generously
+- Use get_causal_chain for "Why?", "What caused this?", "Background?" questions
+- Use get_impact_chain for "What happens next?", "Who's affected?", "Consequences?" questions
 - Skip searching for follow-up questions if you already have context
-- After searching, ALWAYS provide a response - never search repeatedly for "better" results
-- If results are limited, work with what you have and say so
-- The entity lookup tool is free (no limit) - use it when asked about an entity's recent activity
+- After tool calls, ALWAYS provide a response - don't call tools repeatedly for "better" results
 </search_rules>
 
 <style>
@@ -440,8 +548,9 @@ export async function POST(request: NextRequest) {
       event_uuid: eventId,
     });
 
-    // Build entity cache for tool calls
-    const entityCache: EntityCache = {
+    // Build context for tool calls
+    const briefingContext: BriefingContext = {
+      eventId,
       entities: entities || [],
       supabase,
     };
@@ -514,14 +623,18 @@ EVENT CONTEXT:
             // After max searches, don't include tools
             const shouldDisableTools = tavilySearchCount >= maxSearches;
 
-            // Build available tools (entity tool always available if we have entities)
+            // Build available tools
             const availableTools: FunctionDeclaration[] = [];
             if (!shouldDisableTools) {
               availableTools.push(searchNewsTool);
             }
-            if (entityCache.entities.length > 0) {
+            // Entity and graph tools are always available (no search limit)
+            if (briefingContext.entities.length > 0) {
               availableTools.push(getEntityEventsTool);
             }
+            // Graph traversal tools always available
+            availableTools.push(getCausalChainTool);
+            availableTools.push(getImpactChainTool);
 
             // Call Gemini API
             const response = await ai.models.generateContent({
@@ -590,9 +703,13 @@ EVENT CONTEXT:
                   sendEvent({ status: "searching", query: args.query });
                 } else if (name === "get_entity_events") {
                   sendEvent({ status: "analyzing", query: `Looking up ${args.entity_name}...` });
+                } else if (name === "get_causal_chain") {
+                  sendEvent({ status: "thinking", query: "Tracing causal chain..." });
+                } else if (name === "get_impact_chain") {
+                  sendEvent({ status: "thinking", query: "Tracing impact chain..." });
                 }
 
-                const result = await executeToolCall(name, args, entityCache);
+                const result = await executeToolCall(name, args, briefingContext);
 
                 // Only count Tavily searches against the limit
                 if (name === "search_news") {
