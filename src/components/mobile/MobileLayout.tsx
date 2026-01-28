@@ -436,57 +436,51 @@ function MobileLayoutInner({
   // Handle phase change / navigation
   const handlePhaseChange = useCallback(
     async (newPhase: SheetPhase) => {
-      // Handle back navigation
-      if (
-        newPhase === "scanner" ||
-        (phase === "analyst" && newPhase === "pilot") ||
-        (phase === "entity" && newPhase === "pilot")
-      ) {
-        // Use stack goBack for entity and analyst modes
-        if (phase === "entity" || phase === "analyst") {
-          stackGoBack();
+      // Handle back navigation from entity mode
+      if (phase === "entity" && (newPhase === "pilot" || newPhase === "scanner")) {
+        stackGoBack();
 
-          // Fly to the previous frame's event if it's an event frame
-          const newFrame = currentFrame; // This will be updated after goBack
-          setTimeout(() => {
-            if (newFrame.type === "event") {
-              mapRef.current?.flyToEvent(newFrame.event);
-            }
-          }, 0);
-          return;
-        }
-
-        // If going to scanner from pilot, use goToScanner
-        if (newPhase === "scanner") {
-          goToScanner();
-          clearSelection();
-          setPinnedEventId(null);
-
-          // If we came from cluster view, return to cluster view (not main feed)
-          if (fromClusterView && clusterViewEvents.length > 0) {
-            setFromClusterView(false);
-            // Keep cluster view open, just exit touring modes
-            setCatchUpMode(false);
-            setCatchUpIndex(0);
-            setCatchUpEvents([]);
-            setFlyoverMode(false);
-            setFlyoverIndex(0);
-            setFlyoverEvents([]);
-            return;
+        // Fly to the previous frame's event if it's an event frame
+        setTimeout(() => {
+          // Re-check current frame after stack update
+          const prevFrame = currentFrame;
+          if (prevFrame.type === "event") {
+            mapRef.current?.flyToEvent(prevFrame.event);
           }
+        }, 50);
+        return;
+      }
 
-          // Otherwise, exit all modes including cluster view
+      // Handle back to scanner from pilot
+      if (newPhase === "scanner") {
+        goToScanner();
+        clearSelection();
+        setPinnedEventId(null);
+
+        // If we came from cluster view, return to cluster view (not main feed)
+        if (fromClusterView && clusterViewEvents.length > 0) {
+          setFromClusterView(false);
+          // Keep cluster view open, just exit touring modes
           setCatchUpMode(false);
           setCatchUpIndex(0);
           setCatchUpEvents([]);
           setFlyoverMode(false);
           setFlyoverIndex(0);
           setFlyoverEvents([]);
-          setClusterViewOpen(false);
-          setClusterViewEvents([]);
-          setClusterViewLabel("");
-          setFromClusterView(false);
+          return;
         }
+
+        // Otherwise, exit all modes including cluster view
+        setCatchUpMode(false);
+        setCatchUpIndex(0);
+        setCatchUpEvents([]);
+        setFlyoverMode(false);
+        setFlyoverIndex(0);
+        setFlyoverEvents([]);
+        setClusterViewOpen(false);
+        setClusterViewEvents([]);
+        setClusterViewLabel("");
+        setFromClusterView(false);
       }
     },
     [
