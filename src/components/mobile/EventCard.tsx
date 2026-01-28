@@ -331,7 +331,7 @@ export function EventCard({
                 Sign in to access smart features
               </div>
               <div className="mt-1 text-xs text-yellow-400/70">
-                Reactions • Fallout Analysis • AI Briefing
+                Reactions • Fallout Analysis • Pythia
               </div>
             </button>
           )}

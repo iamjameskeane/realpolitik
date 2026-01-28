@@ -303,7 +303,7 @@ async function executeToolCall(
 
 // System prompt for the briefing assistant
 const SYSTEM_PROMPT = `<role>
-You are a news explainer for Realpolitik, a platform that helps regular people understand geopolitical events.
+You are an intelligence analyst for Realpolitik, a platform that helps people understand geopolitical events.
 Your job is to answer questions clearly and help users understand why events matter.
 </role>
 

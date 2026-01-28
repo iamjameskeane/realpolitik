@@ -73,14 +73,14 @@ export default function PrivacyPage() {
             </div>
 
             <p className="mb-4 leading-relaxed">
-              When you use the AI Briefing feature, we also send data to:
+              When you consult Pythia (our AI oracle), we also send data to:
             </p>
 
             {/* Google Gemini */}
             <div className="mb-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
               <h3 className="mb-2 font-mono text-sm font-semibold text-amber-400">Google Gemini</h3>
               <p className="mb-3 text-sm leading-relaxed">
-                Powers the AI Briefing chat. When you ask a question, we send:
+                Powers Pythia. When you ask a question, we send:
               </p>
               <ul className="list-inside list-disc space-y-1 pl-2 text-sm text-slate-400">
                 <li>The event title, summary, category, and location</li>
@@ -105,7 +105,7 @@ export default function PrivacyPage() {
             <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
               <h3 className="mb-2 font-mono text-sm font-semibold text-cyan-400">Tavily</h3>
               <p className="mb-3 text-sm leading-relaxed">
-                Provides real-time web search for AI Briefings. When you ask a question, we send:
+                Provides real-time web search for Pythia. When you ask a question, we send:
               </p>
               <ul className="list-inside list-disc space-y-1 pl-2 text-sm text-slate-400">
                 <li>A search query combining the event title and your question</li>
@@ -131,8 +131,8 @@ export default function PrivacyPage() {
               IP ADDRESS USAGE
             </h2>
             <p className="mb-4 leading-relaxed">
-              We use your IP address for rate limiting to prevent abuse and ensure fair usage of the
-              AI Briefing feature.
+              We use your IP address for rate limiting to prevent abuse and ensure fair usage of
+              Pythia.
             </p>
             <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
               <h3 className="mb-2 font-mono text-sm font-semibold text-emerald-400">
@@ -145,7 +145,7 @@ export default function PrivacyPage() {
                   characters) is stored.
                 </li>
                 <li>
-                  <strong className="text-slate-300">Purpose:</strong> Daily briefing limits (to
+                  <strong className="text-slate-300">Purpose:</strong> Daily Pythia limits (to
                   control API costs) and tracking your reaction votes on events.
                 </li>
                 <li>
@@ -158,8 +158,8 @@ export default function PrivacyPage() {
                   events age out.
                 </li>
                 <li>
-                  <strong className="text-slate-300">Session tokens:</strong> When using AI
-                  Briefings, a session token is generated and stored for 1 hour to reduce repeated
+                  <strong className="text-slate-300">Session tokens:</strong> When consulting
+                  Pythia, a session token is generated and stored for 1 hour to reduce repeated
                   verification. This token is tied to your hashed IP and expires automatically.
                 </li>
               </ul>

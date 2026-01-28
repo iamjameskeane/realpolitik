@@ -20,7 +20,7 @@ const STATUS_LABELS: Record<string, string> = {
   searching: "Searching the web...",
   analyzing: "Analyzing results...",
   thinking: "Reasoning...",
-  generating: "Generating briefing...",
+  generating: "Pythia is responding...",
   atlas: "Querying Atlas...",
   constellation: "Traversing Constellation...",
 };
@@ -211,7 +211,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
         } = await supabase.auth.getSession();
 
         if (!session) {
-          throw new Error("You must be signed in to use the briefing agent.");
+          throw new Error("You must be signed in to consult Pythia.");
         }
 
         // Build base request payload
@@ -252,8 +252,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
 
             if (response.status === 503) {
               throw new Error(
-                errorData.message ||
-                  "AI briefings are temporarily unavailable. Please check back later."
+                errorData.message || "Pythia is temporarily unavailable. Please check back later."
               );
             }
 
@@ -354,8 +353,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
 
         // If stream finished without any content, treat as error
         if (!hasReceivedContent || !accumulatedContent.trim()) {
-          const errorMsg =
-            "Unable to generate briefing. The AI service may be temporarily unavailable.";
+          const errorMsg = "Pythia could not respond. The service may be temporarily unavailable.";
           const errorContent = `⚠️ **Error:** ${errorMsg}`;
           setMessages((prev) =>
             prev.map((msg) =>

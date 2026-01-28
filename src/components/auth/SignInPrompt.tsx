@@ -9,7 +9,7 @@ interface SignInPromptProps {
 
 const FEATURE_LABELS = {
   reactions: "vote",
-  briefing: "use the briefing agent",
+  briefing: "consult Pythia",
   fallout: "view fallout analysis",
   notifications: "enable notifications",
 };

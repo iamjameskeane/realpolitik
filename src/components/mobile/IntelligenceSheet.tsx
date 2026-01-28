@@ -605,7 +605,7 @@ export function IntelligenceSheet({
                     {phase === "scanner" && (inboxOpen ? "Notifications" : "Event Feed")}
                     {phase === "pilot" &&
                       (isTouringMode ? (catchUpMode ? "Catching Up" : "Flyover") : "Event Details")}
-                    {phase === "analyst" && "AI Briefing"}
+                    {phase === "analyst" && "Ask Pythia"}
                   </h2>
                   {/* Event count for scanner mode - only show in feed, not inbox */}
                   {phase === "scanner" && !inboxOpen && (
