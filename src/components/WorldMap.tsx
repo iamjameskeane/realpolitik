@@ -180,7 +180,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       // Fly to the event
       const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
-      const flyDuration = 1200;
+      const flyDuration = 1000;
 
       map.current.flyTo({
         center: event.coordinates,
@@ -226,7 +226,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       // Fly to the events
       const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
-      const flyDuration = 1200;
+      const flyDuration = 1000;
 
       map.current.flyTo({
         center: firstEvent.coordinates,
@@ -313,16 +313,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         return;
       }
 
-      const currentCenter = map.current.getCenter();
       const currentZoom = map.current.getZoom();
-
-      console.log("[WorldMap] handleClusterEventClick:", {
-        eventId: event.id,
-        eventTitle: event.title,
-        targetCoords: event.coordinates,
-        currentCenter: [currentCenter.lng, currentCenter.lat],
-        currentZoom,
-      });
 
       // Clear everything and set flying state FIRST
       setSelectedEvent(null);
@@ -337,30 +328,9 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       onEventClick?.(event);
 
       const targetZoom = Math.max(currentZoom, 4);
-      const flyDuration = 1200;
+      const flyDuration = 1000;
 
-      console.log("[WorldMap] Calling flyTo:", {
-        center: event.coordinates,
-        targetZoom,
-        flyDuration,
-      });
-
-      // Track if flyTo actually completes
-      const mapInstance = map.current;
-      const flyToStart = Date.now();
-
-      const onMoveEnd = () => {
-        const endCenter = mapInstance.getCenter();
-        console.log("[WorldMap] moveend fired:", {
-          endCenter: [endCenter.lng, endCenter.lat],
-          targetWas: event.coordinates,
-          elapsed: Date.now() - flyToStart,
-        });
-        mapInstance.off("moveend", onMoveEnd);
-      };
-      mapInstance.on("moveend", onMoveEnd);
-
-      mapInstance.flyTo({
+      map.current.flyTo({
         center: event.coordinates,
         zoom: targetZoom,
         pitch: 45,
@@ -376,13 +346,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         setIsFlying(false);
         setSelectedEvent(event);
         if (map.current) {
-          const currentCenter = map.current.getCenter();
           const point = map.current.project(event.coordinates);
-          console.log("[WorldMap] After fly timeout:", {
-            currentCenter: [currentCenter.lng, currentCenter.lat],
-            targetWas: event.coordinates,
-            popupAt: { x: point.x, y: point.y },
-          });
           setPopupPosition({ x: point.x, y: point.y });
         }
       }, flyDuration + 100);
@@ -458,7 +422,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       map.current.flyTo({
         center: coordinates,
         zoom: targetZoom,
-        duration: 600,
+        duration: 1000,
         padding: MAP_PADDING,
       });
 
@@ -574,7 +538,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           center: event.coordinates,
           zoom: targetZoom,
           pitch: 45,
-          duration: 1500,
+          duration: 1000,
           padding,
         });
 
@@ -791,7 +755,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     if (map.current) {
       map.current.easeTo({
         center: newEvent.coordinates,
-        duration: 500,
+        duration: 1000,
         padding: MAP_PADDING,
       });
       map.current.once("moveend", () => {
@@ -816,7 +780,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     if (map.current) {
       map.current.easeTo({
         center: newEvent.coordinates,
-        duration: 500,
+        duration: 1000,
         padding: MAP_PADDING,
       });
       map.current.once("moveend", () => {
