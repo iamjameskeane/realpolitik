@@ -188,11 +188,28 @@ export function getCountryCode(name: string): string | null {
 }
 
 /**
+ * Valid width sizes for flagcdn.com
+ */
+const VALID_FLAG_WIDTHS = [20, 40, 80, 160, 320, 640, 1280, 2560];
+
+/**
+ * Get the closest valid flag width
+ */
+function getClosestFlagWidth(desiredWidth: number): number {
+  // Find the smallest valid width that's >= desired width
+  for (const width of VALID_FLAG_WIDTHS) {
+    if (width >= desiredWidth) return width;
+  }
+  return VALID_FLAG_WIDTHS[VALID_FLAG_WIDTHS.length - 1];
+}
+
+/**
  * Get flag CDN URL for a country code
- * Uses flagcdn.com which provides high-quality SVG flags
+ * Uses flagcdn.com which provides high-quality PNG flags
  */
 export function getFlagUrl(countryCode: string, size: number = 40): string {
-  return `https://flagcdn.com/w${size}/${countryCode.toLowerCase()}.png`;
+  const width = getClosestFlagWidth(size);
+  return `https://flagcdn.com/w${width}/${countryCode.toLowerCase()}.png`;
 }
 
 /**
