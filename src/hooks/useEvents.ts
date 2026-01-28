@@ -25,6 +25,29 @@ import {
 const DEFAULT_HOURS = 24;
 
 /**
+ * Parse coordinates from various formats
+ * Handles: [lng, lat] array, "{lng,lat}" postgres string, or object
+ */
+function parseCoordinates(coords: unknown): [number, number] {
+  // Already a valid array
+  if (Array.isArray(coords) && coords.length === 2) {
+    return [Number(coords[0]), Number(coords[1])];
+  }
+
+  // PostgreSQL array string format: "{1.23,4.56}"
+  if (typeof coords === "string") {
+    const match = coords.match(/^\{?([-\d.]+),([-\d.]+)\}?$/);
+    if (match) {
+      return [parseFloat(match[1]), parseFloat(match[2])];
+    }
+  }
+
+  // Fallback to [0, 0] if invalid
+  console.warn("[transformEvent] Invalid coordinates format:", coords);
+  return [0, 0];
+}
+
+/**
  * Transform Supabase event to GeoEvent interface
  */
 function transformEvent(event: GeoEventFromDB): GeoEvent {
@@ -32,7 +55,7 @@ function transformEvent(event: GeoEventFromDB): GeoEvent {
     id: event.id,
     title: event.title,
     category: event.category,
-    coordinates: event.coordinates,
+    coordinates: parseCoordinates(event.coordinates),
     location_name: event.location_name,
     region: event.region as GeoEvent["region"],
     severity: event.severity,

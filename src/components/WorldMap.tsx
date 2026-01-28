@@ -369,6 +369,18 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         return;
       }
 
+      // Validate coordinates
+      if (
+        !event.coordinates ||
+        !Array.isArray(event.coordinates) ||
+        event.coordinates.length !== 2 ||
+        typeof event.coordinates[0] !== "number" ||
+        typeof event.coordinates[1] !== "number"
+      ) {
+        console.error("[WorldMap] Invalid coordinates for event:", event.id, event.coordinates);
+        return;
+      }
+
       handleClusterEventClick(event);
     },
     [events, handleClusterEventClick, fetchEventById]
