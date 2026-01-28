@@ -67,8 +67,39 @@ const searchNewsTool: FunctionDeclaration = {
   },
 };
 
+const getEntityEventsTool: FunctionDeclaration = {
+  name: "get_entity_events",
+  description:
+    "Get recent events involving a specific entity (country, company, leader, organization, etc.). Use this to provide context about what else an entity has been involved in, or to answer questions like 'What else has [entity] been doing lately?'",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      entity_name: {
+        type: Type.STRING,
+        description:
+          "The name of the entity to look up (e.g., 'China', 'TSMC', 'Vladimir Putin', 'NATO'). Use the exact name as shown in the ENTITIES INVOLVED section.",
+      },
+      limit: {
+        type: Type.NUMBER,
+        description: "Maximum number of events to return (default: 5, max: 10)",
+      },
+    },
+    required: ["entity_name"],
+  },
+};
+
+// Entity cache for the current request (populated after initial entity fetch)
+interface EntityCache {
+  entities: Array<{ entity_id: string; name: string; node_type: string; relation_type: string }>;
+  supabase: ReturnType<typeof createClient>;
+}
+
 // Execute tool calls
-async function executeToolCall(toolName: string, args: Record<string, unknown>): Promise<string> {
+async function executeToolCall(
+  toolName: string,
+  args: Record<string, unknown>,
+  entityCache?: EntityCache
+): Promise<string> {
   if (toolName === "search_news") {
     const query = args.query as string;
     console.log(`[Briefing] Executing search: "${query}"`);
@@ -93,6 +124,68 @@ async function executeToolCall(toolName: string, args: Record<string, unknown>):
     }
   }
 
+  if (toolName === "get_entity_events") {
+    const entityName = args.entity_name as string;
+    const limit = Math.min((args.limit as number) || 5, 10);
+    console.log(`[Briefing] Looking up events for entity: "${entityName}"`);
+
+    if (!entityCache) {
+      return `Entity lookup unavailable - no entity context loaded`;
+    }
+
+    // Find the entity in the cache (case-insensitive match)
+    const entity = entityCache.entities.find(
+      (e) => e.name.toLowerCase() === entityName.toLowerCase()
+    );
+
+    if (!entity) {
+      // Try partial match
+      const partialMatch = entityCache.entities.find((e) =>
+        e.name.toLowerCase().includes(entityName.toLowerCase())
+      );
+      if (partialMatch) {
+        return `Entity "${entityName}" not found. Did you mean "${partialMatch.name}"? Available entities: ${entityCache.entities.map((e) => e.name).join(", ")}`;
+      }
+      return `Entity "${entityName}" not found in this event. Available entities: ${entityCache.entities.map((e) => e.name).join(", ")}`;
+    }
+
+    try {
+      // Fetch events for this entity
+      const { data: events, error } = await entityCache.supabase.rpc("get_entity_events", {
+        entity_uuid: entity.entity_id,
+        max_count: limit,
+      });
+
+      if (error) {
+        console.error("Entity events lookup error:", error);
+        return `Failed to lookup events for "${entityName}"`;
+      }
+
+      if (!events || events.length === 0) {
+        return `No other events found for "${entityName}"`;
+      }
+
+      const eventList = events
+        .map(
+          (e: {
+            title: string;
+            category: string;
+            event_timestamp: string;
+            relation_type: string;
+          }) => {
+            const date = new Date(e.event_timestamp).toLocaleDateString();
+            return `- [${e.category}] ${e.title} (${date}) - ${e.relation_type}`;
+          }
+        )
+        .join("\n");
+
+      return `Recent events involving "${entityName}" (${entity.node_type}):\n\n${eventList}`;
+    } catch (error) {
+      console.error("Entity events lookup error:", error);
+      return `Failed to lookup events: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
   return `Unknown tool: ${toolName}`;
 }
 
@@ -105,16 +198,23 @@ Your job is to answer questions clearly and help users understand why events mat
 <instructions>
 1. Answer questions about the event the user is viewing
 2. Use the search_news tool when you need current information (max 1-2 searches per question)
-3. Connect events to real-world impacts when relevant (prices, products, travel, investments)
-4. Be direct - give your actual read on the situation, don't over-hedge
-5. Cite your sources at the end
+3. Use the get_entity_events tool to look up what else a specific entity has been involved in
+4. Connect events to real-world impacts when relevant (prices, products, travel, investments)
+5. Be direct - give your actual read on the situation, don't over-hedge
+6. Cite your sources at the end
 </instructions>
+
+<tools>
+- search_news: Search the web for current news and information
+- get_entity_events: Look up other recent events involving an entity mentioned in the current event (countries, companies, leaders, etc.)
+</tools>
 
 <search_rules>
 - Search ONCE for current information, then respond with what you have
 - Skip searching for follow-up questions if you already have context
 - After searching, ALWAYS provide a response - never search repeatedly for "better" results
 - If results are limited, work with what you have and say so
+- The entity lookup tool is free (no limit) - use it when asked about an entity's recent activity
 </search_rules>
 
 <style>
@@ -340,6 +440,12 @@ export async function POST(request: NextRequest) {
       event_uuid: eventId,
     });
 
+    // Build entity cache for tool calls
+    const entityCache: EntityCache = {
+      entities: entities || [],
+      supabase,
+    };
+
     // Build entity context string
     const entityContext =
       entities && entities.length > 0
@@ -408,15 +514,25 @@ EVENT CONTEXT:
             // After max searches, don't include tools
             const shouldDisableTools = tavilySearchCount >= maxSearches;
 
+            // Build available tools (entity tool always available if we have entities)
+            const availableTools: FunctionDeclaration[] = [];
+            if (!shouldDisableTools) {
+              availableTools.push(searchNewsTool);
+            }
+            if (entityCache.entities.length > 0) {
+              availableTools.push(getEntityEventsTool);
+            }
+
             // Call Gemini API
             const response = await ai.models.generateContent({
               model: "gemini-2.5-flash",
               contents,
               config: {
                 systemInstruction: SYSTEM_PROMPT,
-                tools: shouldDisableTools
-                  ? undefined
-                  : [{ functionDeclarations: [searchNewsTool] }],
+                tools:
+                  availableTools.length > 0
+                    ? [{ functionDeclarations: availableTools }]
+                    : undefined,
                 maxOutputTokens: 8000,
               },
             });
@@ -441,7 +557,7 @@ EVENT CONTEXT:
                 !!part.functionCall
             );
 
-            if (functionCalls && functionCalls.length > 0 && !shouldDisableTools) {
+            if (functionCalls && functionCalls.length > 0) {
               // Add model response to conversation
               contents.push({
                 role: "model",
@@ -452,18 +568,36 @@ EVENT CONTEXT:
               const functionResponses: Part[] = [];
 
               for (const funcCall of functionCalls) {
-                if (tavilySearchCount >= maxSearches) {
-                  console.log(`[Briefing] Skipping search - limit reached (${maxSearches})`);
-                  break;
-                }
-
                 const { name, args } = funcCall.functionCall;
 
-                // Send status update to client
-                sendEvent({ status: "searching", query: args.query });
+                // Check search limit for news searches only
+                if (name === "search_news" && tavilySearchCount >= maxSearches) {
+                  console.log(`[Briefing] Skipping search - limit reached (${maxSearches})`);
+                  functionResponses.push({
+                    functionResponse: {
+                      name,
+                      response: {
+                        result:
+                          "Search limit reached. Please respond with information you already have.",
+                      },
+                    },
+                  });
+                  continue;
+                }
 
-                const result = await executeToolCall(name, args);
-                tavilySearchCount++;
+                // Send status update to client
+                if (name === "search_news") {
+                  sendEvent({ status: "searching", query: args.query });
+                } else if (name === "get_entity_events") {
+                  sendEvent({ status: "analyzing", query: `Looking up ${args.entity_name}...` });
+                }
+
+                const result = await executeToolCall(name, args, entityCache);
+
+                // Only count Tavily searches against the limit
+                if (name === "search_news") {
+                  tavilySearchCount++;
+                }
 
                 functionResponses.push({
                   functionResponse: {
