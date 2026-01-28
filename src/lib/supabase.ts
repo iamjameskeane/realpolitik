@@ -237,12 +237,22 @@ export async function fetchCausalChain(eventId: string, maxDepth = 5) {
 
 /**
  * Fetch impact chain from an event
+ * Uses the updated constellation function signature
  */
-export async function fetchImpactChain(eventId: string, maxDepth = 3) {
+export async function fetchImpactChain(
+  eventId: string,
+  maxDepth = 3,
+  minWeight = 0.1,
+  minCumulative = 0.05,
+  edgesPerNode = 10
+) {
   const client = getSupabaseClient();
   const { data, error } = await client.rpc("get_impact_chain", {
-    event_id: eventId,
+    start_node_id: eventId,
     max_depth: maxDepth,
+    min_weight: minWeight,
+    min_cumulative: minCumulative,
+    edges_per_node: edgesPerNode,
   });
 
   if (error) {

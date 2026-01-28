@@ -264,14 +264,18 @@ async function executeToolCall(
     }
 
     try {
+      // Note: The constellation migration changed parameter name from event_id to start_node_id
       const { data: chain, error } = await context.supabase.rpc("get_impact_chain", {
-        event_id: context.eventId,
+        start_node_id: context.eventId,
         max_depth: maxDepth,
+        min_weight: 0.1, // Lower threshold to catch more relationships
+        min_cumulative: 0.05,
+        edges_per_node: 10,
       });
 
       if (error) {
         console.error("Impact chain lookup error:", error);
-        return `Failed to trace impact chain`;
+        return `Failed to trace impact chain: ${error.message}`;
       }
 
       if (!chain || chain.length === 0) {
@@ -280,8 +284,10 @@ async function executeToolCall(
 
       const chainList = chain
         .map(
-          (item: { name: string; node_type: string; depth: number; path: unknown[] }) =>
-            `${"  ".repeat(item.depth - 1)}→ ${item.name} (${item.node_type})`
+          (item: { name: string; node_type: string; depth: number; cumulative_weight: number }) => {
+            const weight = Math.round(item.cumulative_weight * 100);
+            return `${"  ".repeat(item.depth - 1)}→ ${item.name} (${item.node_type}) [${weight}% impact]`;
+          }
         )
         .join("\n");
 
