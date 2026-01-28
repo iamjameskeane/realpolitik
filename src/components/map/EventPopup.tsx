@@ -6,6 +6,8 @@ import { SourceTimeline } from "../SourceTimeline";
 import { ReactionPucks, ReactionResults } from "../reactions";
 import { ConsensusBadge } from "../ConsensusBadge";
 import { useAuth } from "@/contexts/AuthContext";
+import { EntityList } from "../entities";
+import { useEventEntities } from "@/hooks/useEventEntities";
 
 // Helper to share an event
 async function shareEvent(event: GeoEvent): Promise<"shared" | "copied" | "error"> {
@@ -63,9 +65,10 @@ export function EventPopup({
   onRequestBriefing,
   stackLabel = "events here",
 }: EventPopupProps) {
-  const { user } = useAuth();
+  const { user, openAuthModal } = useAuth();
   const hasStack = stackedEvents.length > 1;
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "shared">("idle");
+  const { entities } = useEventEntities(selectedEvent.id);
 
   const handleShare = useCallback(async () => {
     const result = await shareEvent(selectedEvent);
@@ -238,13 +241,20 @@ export function EventPopup({
           {/* Summary */}
           <p className="text-sm leading-relaxed text-foreground/70">{selectedEvent.summary}</p>
 
+          {/* Entity badges */}
+          {entities.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-foreground/10">
+              <p className="text-[10px] font-medium text-foreground/40 uppercase tracking-wide mb-2">
+                Entities
+              </p>
+              <EntityList entities={entities} maxVisible={5} />
+            </div>
+          )}
+
           {/* Auth Banner */}
           {!user && (
             <button
-              onClick={() => {
-                const { openAuthModal } = require("@/contexts/AuthContext");
-                openAuthModal();
-              }}
+              onClick={() => openAuthModal()}
               className="mt-4 w-full rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-center transition-all hover:border-yellow-500/50 hover:bg-yellow-500/15"
             >
               <div className="font-mono text-xs uppercase tracking-wide text-yellow-400">

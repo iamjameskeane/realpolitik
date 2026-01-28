@@ -335,13 +335,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch entities for this event
+    const { data: entities } = await supabase.rpc("get_event_entities", {
+      event_uuid: eventId,
+    });
+
+    // Build entity context string
+    const entityContext =
+      entities && entities.length > 0
+        ? `\nENTITIES INVOLVED:\n${entities.map((e: { name: string; node_type: string; relation_type: string }) => `- ${e.name} (${e.node_type}) [${e.relation_type}]`).join("\n")}`
+        : "";
+
     // Build event context
     const eventContext = `
 EVENT CONTEXT:
 - Title: ${eventTitle}
 - Category: ${eventCategory}
 - Location: ${eventLocation}
-- Summary: ${eventSummary}
+- Summary: ${eventSummary}${entityContext}
 `.trim();
 
     // Build conversation history for Gemini

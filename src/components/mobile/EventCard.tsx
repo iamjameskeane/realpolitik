@@ -7,6 +7,8 @@ import { SourceTimeline } from "../SourceTimeline";
 import { ReactionPucks, ReactionResults } from "../reactions";
 import { ConsensusBadge } from "../ConsensusBadge";
 import { useAuth } from "@/contexts/AuthContext";
+import { EntityList } from "../entities";
+import { useEventEntities } from "@/hooks/useEventEntities";
 
 // Helper to share an event
 async function shareEvent(event: GeoEvent): Promise<"shared" | "copied" | "error"> {
@@ -72,7 +74,7 @@ export function EventCard({
   flyoverMode,
   onExitTouring,
 }: EventCardProps) {
-  const { user } = useAuth();
+  const { user, openAuthModal } = useAuth();
   // currentIndex and totalCount kept for API compatibility but not displayed for single events
   void _currentIndex;
   void _totalCount;
@@ -81,6 +83,7 @@ export function EventCard({
   const controls = useAnimation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "shared">("idle");
+  const { entities } = useEventEntities(event.id);
 
   const handleShare = useCallback(async () => {
     const result = await shareEvent(event);
@@ -311,13 +314,17 @@ export function EventCard({
           {/* Summary */}
           <p className="mt-3 text-sm leading-relaxed text-foreground/70">{event.summary}</p>
 
+          {/* Entity badges */}
+          {entities.length > 0 && (
+            <div className="mt-3">
+              <EntityList entities={entities} maxVisible={4} />
+            </div>
+          )}
+
           {/* Auth Banner */}
           {!user && (
             <button
-              onClick={() => {
-                const { openAuthModal } = require("@/contexts/AuthContext");
-                openAuthModal();
-              }}
+              onClick={() => openAuthModal()}
               className="mt-4 w-full rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-center transition-all active:scale-[0.98]"
             >
               <div className="font-mono text-xs uppercase tracking-wide text-yellow-400">
