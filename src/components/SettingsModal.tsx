@@ -250,46 +250,112 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
 
                   {/* Upgrade / Manage Subscription */}
                   {profile?.tier === "free" ? (
-                    <button
-                      onClick={handleUpgrade}
-                      disabled={upgradeLoading}
-                      className="flex w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
-                    >
-                      {upgradeLoading ? (
-                        <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          />
-                        </svg>
-                      ) : (
-                        <>
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
+                    <div className="space-y-2">
+                      {/* Pro Features List */}
+                      <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-2.5">
+                        <div className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-wider text-amber-400/80">
+                          Pro Features
+                        </div>
+                        <ul className="space-y-1 text-xs text-amber-200/80">
+                          <li className="flex items-center gap-1.5">
+                            <svg
+                              className="h-3 w-3 text-amber-400"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            50 Pythia consultations/day
+                          </li>
+                          <li className="flex items-center gap-1.5">
+                            <svg
+                              className="h-3 w-3 text-amber-400"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            Full fallout analysis
+                          </li>
+                          <li className="flex items-center gap-1.5">
+                            <svg
+                              className="h-3 w-3 text-amber-400"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            Custom alert rules
+                          </li>
+                          <li className="flex items-center gap-1.5">
+                            <svg
+                              className="h-3 w-3 text-amber-400"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            Smarter AI model
+                          </li>
+                        </ul>
+                      </div>
+                      <button
+                        onClick={handleUpgrade}
+                        disabled={upgradeLoading}
+                        className="flex w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
+                      >
+                        {upgradeLoading ? (
+                          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
                             <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M13 10V3L4 14h7v7l9-11h-7z"
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                             />
                           </svg>
-                          Upgrade to Pro - $5/month
-                        </>
-                      )}
-                    </button>
+                        ) : (
+                          <>
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M13 10V3L4 14h7v7l9-11h-7z"
+                              />
+                            </svg>
+                            Upgrade to Pro - $5/month
+                          </>
+                        )}
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={handleManageSubscription}
