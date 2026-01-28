@@ -13,9 +13,16 @@ interface EntityListProps {
   entities: EventEntity[];
   maxVisible?: number;
   className?: string;
+  /** Callback when clicking an event in the entity modal */
+  onEventClick?: (eventId: string) => void;
 }
 
-export function EntityList({ entities, maxVisible = 5, className = "" }: EntityListProps) {
+export function EntityList({
+  entities,
+  maxVisible = 5,
+  className = "",
+  onEventClick,
+}: EntityListProps) {
   const [selectedEntity, setSelectedEntity] = useState<EventEntity | null>(null);
 
   if (entities.length === 0) return null;
@@ -46,6 +53,7 @@ export function EntityList({ entities, maxVisible = 5, className = "" }: EntityL
           entityName={selectedEntity.name}
           entityType={selectedEntity.node_type}
           onClose={() => setSelectedEntity(null)}
+          onEventClick={onEventClick}
         />
       )}
     </div>

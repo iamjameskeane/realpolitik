@@ -347,6 +347,16 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     [onEventClick, sidebarOpen]
   );
 
+  // Handle event click from entity modal - fly to event by ID
+  const handleEntityEventClick = useCallback(
+    (eventId: string) => {
+      const event = events.find((e) => e.id === eventId);
+      if (!event) return;
+      handleClusterEventClick(event);
+    },
+    [events, handleClusterEventClick]
+  );
+
   // Start flyover from cluster popup
   const handleClusterFlyover = useCallback(() => {
     if (!clusterPopup) return;
@@ -766,6 +776,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           onNext={handleNextEvent}
           onRequestBriefing={onRequestBriefing}
           stackLabel="events here"
+          onEntityEventClick={handleEntityEventClick}
         />
       )}
       {/* External stack popup (catch up mode) - tracks event on map, hidden during fly */}
@@ -784,6 +795,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
             onNext={externalStack.onNext}
             onRequestBriefing={onRequestBriefing}
             stackLabel={externalStack.label || "catching up"}
+            onEntityEventClick={handleEntityEventClick}
           />
         )}
 

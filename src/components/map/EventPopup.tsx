@@ -49,6 +49,8 @@ interface EventPopupProps {
   onRequestBriefing?: (event: GeoEvent) => void;
   /** Label for the stack (e.g., "events here" or "catching up") */
   stackLabel?: string;
+  /** Callback when clicking an event from entity modal */
+  onEntityEventClick?: (eventId: string) => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export function EventPopup({
   onNext,
   onRequestBriefing,
   stackLabel = "events here",
+  onEntityEventClick,
 }: EventPopupProps) {
   const { user, openAuthModal } = useAuth();
   const hasStack = stackedEvents.length > 1;
@@ -247,7 +250,7 @@ export function EventPopup({
               <p className="text-[10px] font-medium text-foreground/40 uppercase tracking-wide mb-2">
                 Entities
               </p>
-              <EntityList entities={entities} maxVisible={5} />
+              <EntityList entities={entities} maxVisible={5} onEventClick={onEntityEventClick} />
             </div>
           )}
 

@@ -24,9 +24,17 @@ interface EntityModalProps {
   entityName: string;
   entityType: EntityType;
   onClose: () => void;
+  /** Callback when clicking an event to navigate to it */
+  onEventClick?: (eventId: string) => void;
 }
 
-export function EntityModal({ entityId, entityName, entityType, onClose }: EntityModalProps) {
+export function EntityModal({
+  entityId,
+  entityName,
+  entityType,
+  onClose,
+  onEventClick,
+}: EntityModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const { events, loading } = useEntityEvents({ entityId, limit: 20 });
@@ -122,8 +130,18 @@ export function EntityModal({ entityId, entityName, entityType, onClose }: Entit
 
               return (
                 <div key={event.event_id} className="border-b border-foreground/5">
-                  {/* Event item - exact sidebar styling */}
-                  <div className="w-full px-4 py-3 text-left transition-colors hover:bg-foreground/5">
+                  {/* Event item - exact sidebar styling, clickable */}
+                  <button
+                    onClick={() => {
+                      if (onEventClick) {
+                        onEventClick(event.event_id);
+                        onClose();
+                      }
+                    }}
+                    className={`w-full px-4 py-3 text-left transition-colors hover:bg-foreground/5 ${
+                      onEventClick ? "cursor-pointer" : "cursor-default"
+                    }`}
+                  >
                     {/* Category + Severity row */}
                     <div className="flex items-center gap-2">
                       <span className="relative h-2 w-2">
@@ -162,7 +180,7 @@ export function EntityModal({ entityId, entityName, entityType, onClose }: Entit
                         })}
                       </span>
                     </div>
-                  </div>
+                  </button>
                 </div>
               );
             })
