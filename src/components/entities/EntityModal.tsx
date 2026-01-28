@@ -1,13 +1,12 @@
 /**
  * Entity modal - shows entity details and recent events
- * Styled to match the EventsSidebar event list pattern
+ * Matches BriefingModal container style and EventsSidebar event list style
  */
 
 "use client";
 
-import { useRef, useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "framer-motion";
 import { EntityType } from "@/types/entities";
 import { useEntityEvents } from "@/hooks/useEntityEvents";
 import { getEntityIcon, getCountryFlag } from "@/lib/entities";
@@ -62,132 +61,77 @@ export function EntityModal({ entityId, entityName, entityType, onClose }: Entit
     };
   }, [handleKeyDown]);
 
-  // Format relative time
-  const formatTimeAgo = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  };
-
   // Don't render on server (SSR safety)
   if (typeof document === "undefined") return null;
 
   const modalContent = (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-8"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="entity-modal-title"
-    >
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* Backdrop */}
-      <motion.div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-      />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal Card - responsive sizing */}
-      <motion.div
+      {/* Modal - matches BriefingModal style */}
+      <div
         ref={modalRef}
         tabIndex={-1}
-        className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-foreground/10 bg-slate-900/95 shadow-2xl outline-none backdrop-blur-md"
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        transition={{ duration: 0.2 }}
+        className="relative mx-4 flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-background/95 shadow-2xl outline-none backdrop-blur-xl"
       >
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-foreground/10 p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <span className="text-5xl">{icon}</span>
-              <div>
-                <h2
-                  id="entity-modal-title"
-                  className="text-2xl font-semibold tracking-tight text-foreground"
-                >
-                  {entityName}
-                </h2>
-                <p className="mt-0.5 font-mono text-xs uppercase tracking-wider text-foreground/50">
-                  {entityType.replace("_", " ")}
-                </p>
+        {/* Header - matches BriefingModal pattern */}
+        <div className="flex shrink-0 items-start justify-between border-b border-foreground/10 p-5">
+          <div className="flex items-center gap-4">
+            <span className="text-4xl">{icon}</span>
+            <div>
+              <h2 className="text-lg font-semibold leading-snug text-foreground">{entityName}</h2>
+              <div className="mt-1 flex items-center gap-2 text-xs text-foreground/50">
+                <span className="capitalize">{entityType.replace("_", " ")}</span>
+                <span>•</span>
+                <span>{events.length} events</span>
               </div>
             </div>
-            {/* Close Button */}
-            <button
-              onClick={onClose}
-              className="rounded-full p-2 text-foreground/40 transition-colors hover:bg-foreground/10 hover:text-foreground"
-              aria-label="Close modal"
-            >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
           </div>
-
-          {/* Stats row */}
-          <div className="mt-4 flex items-center gap-4">
-            <div className="rounded-lg bg-foreground/5 px-3 py-2">
-              <p className="font-mono text-2xl font-bold text-foreground">{events.length}</p>
-              <p className="font-mono text-[10px] uppercase tracking-wider text-foreground/40">
-                Recent Events
-              </p>
-            </div>
-          </div>
+          <button
+            onClick={onClose}
+            className="ml-4 shrink-0 rounded-full p-2 text-foreground/40 transition-colors hover:bg-foreground/10 hover:text-foreground"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
 
-        {/* Events list - scrollable, matching sidebar style */}
+        {/* Events list - matches EventsSidebar exactly */}
         <div className="custom-scrollbar flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <div className="text-center">
-                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" />
+                <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" />
                 <p className="font-mono text-xs text-foreground/40">Loading events...</p>
               </div>
             </div>
           ) : events.length === 0 ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="text-center">
-                <p className="text-4xl">📭</p>
-                <p className="mt-2 font-mono text-sm text-foreground/50">No events found</p>
-                <p className="mt-1 font-mono text-xs text-foreground/30">
-                  This entity hasn&apos;t appeared in recent news
-                </p>
-              </div>
+            <div className="px-4 py-8 text-center font-mono text-xs text-foreground/30">
+              No events found for this entity
             </div>
           ) : (
-            <div>
-              {events.map((event) => {
-                const categoryColor = CATEGORY_COLORS[event.category] || "#888";
+            events.map((event) => {
+              const categoryColor = CATEGORY_COLORS[event.category] || "#888";
 
-                return (
-                  <div
-                    key={event.event_id}
-                    className="border-b border-foreground/5 px-5 py-4 transition-colors hover:bg-foreground/5"
-                  >
+              return (
+                <div key={event.event_id} className="border-b border-foreground/5">
+                  {/* Event item - exact sidebar styling */}
+                  <div className="w-full px-4 py-3 text-left transition-colors hover:bg-foreground/5">
                     {/* Category + Severity row */}
                     <div className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: categoryColor }}
-                      />
+                      <span className="relative h-2 w-2">
+                        <span
+                          className="absolute inset-0 rounded-full"
+                          style={{ backgroundColor: categoryColor }}
+                        />
+                      </span>
                       <span
                         className="font-mono text-[10px] font-medium uppercase"
                         style={{ color: categoryColor }}
@@ -203,28 +147,28 @@ export function EntityModal({ entityId, entityName, entityType, onClose }: Entit
                     </div>
 
                     {/* Title */}
-                    <h3 className="mt-2 text-sm font-medium leading-snug text-foreground/90">
+                    <h3 className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-foreground/90">
                       {event.title}
                     </h3>
 
                     {/* Time */}
-                    <div className="mt-2 font-mono text-[10px] text-foreground/40">
-                      {formatTimeAgo(event.event_timestamp)}
+                    <div className="mt-1.5 flex items-center gap-2 text-[10px] text-foreground/40">
+                      <span>
+                        {new Date(event.event_timestamp).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })
           )}
         </div>
-
-        {/* Footer */}
-        <div className="flex-shrink-0 border-t border-foreground/10 px-5 py-3">
-          <p className="text-center font-mono text-[10px] text-foreground/30">
-            Showing events involving {entityName}
-          </p>
-        </div>
-      </motion.div>
+      </div>
     </div>
   );
 
