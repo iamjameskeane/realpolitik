@@ -100,6 +100,7 @@ function MobileLayoutInner({
   );
   const [sortBy, setSortBy] = useState<SortOption>("hot");
   const [hideSeen, setHideSeen] = useState(false);
+  const [minSeverity, setMinSeverity] = useState(1); // Filter events >= this severity
   const [activeCategories, setActiveCategories] = useState<Set<EventCategory>>(ALL_CATEGORIES);
   const [displayedTime, setDisplayedTime] = useState("");
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -239,10 +240,15 @@ function MobileLayoutInner({
     }
   }, [initialEventId]);
 
-  // Filter by category, hide seen, and sort
+  // Filter by category, severity, hide seen, and sort
   // Also include the pinned event even if it's outside the time/category filters
   const filteredEvents = useMemo(() => {
     let filtered = timeFilteredEvents.filter((e) => activeCategories.has(e.category));
+
+    // Filter by minimum severity
+    if (minSeverity > 1) {
+      filtered = filtered.filter((e) => e.severity >= minSeverity);
+    }
 
     // Hide seen/read events if toggle is on
     if (hideSeen) {
@@ -352,6 +358,7 @@ function MobileLayoutInner({
     reactions,
     eventStateMap,
     hideSeen,
+    minSeverity,
     pinnedEventId,
     events,
   ]);
@@ -949,6 +956,9 @@ function MobileLayoutInner({
         // Hide seen toggle
         hideSeen={hideSeen}
         onHideSeenChange={setHideSeen}
+        // Severity filter
+        minSeverity={minSeverity}
+        onMinSeverityChange={setMinSeverity}
         // Cluster view
         clusterViewOpen={clusterViewOpen}
         clusterViewEvents={clusterViewEvents}

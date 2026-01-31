@@ -84,6 +84,9 @@ interface IntelligenceSheetProps {
   // Hide seen toggle
   hideSeen?: boolean;
   onHideSeenChange?: (value: boolean) => void;
+  // Severity filter
+  minSeverity?: number;
+  onMinSeverityChange?: (value: number) => void;
   // Cluster view (long press on cluster shows events in that cluster)
   clusterViewOpen?: boolean;
   clusterViewEvents?: GeoEvent[];
@@ -147,6 +150,8 @@ export function IntelligenceSheet({
   onExitTouring,
   hideSeen,
   onHideSeenChange,
+  minSeverity,
+  onMinSeverityChange,
   // Cluster view
   clusterViewOpen,
   clusterViewEvents = [],
@@ -884,6 +889,8 @@ export function IntelligenceSheet({
               incomingCount={incomingCount}
               hideSeen={hideSeen}
               onHideSeenChange={onHideSeenChange}
+              minSeverity={minSeverity}
+              onMinSeverityChange={onMinSeverityChange}
             />
           </div>
         )}

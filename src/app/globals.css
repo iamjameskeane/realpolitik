@@ -4,7 +4,7 @@
 :root {
   /* Force dark color scheme - tells Android to use light nav buttons */
   color-scheme: dark;
-  
+
   /* Viewport height unit - JS will override for older iOS Safari */
   --vh: 1vh;
 
@@ -272,6 +272,60 @@ textarea:focus-visible,
 .time-slider::-moz-range-track {
   height: 4px;
   background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* Severity Range Slider */
+.severity-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.1), rgba(249, 115, 22, 0.4));
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.severity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #f97316;
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.severity-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.6);
+}
+
+.severity-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #f97316;
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.severity-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.6);
+}
+
+.severity-slider::-moz-range-track {
+  height: 4px;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.1), rgba(249, 115, 22, 0.4));
   border-radius: 2px;
 }
 

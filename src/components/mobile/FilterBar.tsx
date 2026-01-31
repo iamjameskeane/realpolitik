@@ -23,6 +23,9 @@ interface FilterBarProps {
   // Hide seen toggle
   hideSeen?: boolean;
   onHideSeenChange?: (value: boolean) => void;
+  // Severity filter
+  minSeverity?: number;
+  onMinSeverityChange?: (value: number) => void;
 }
 
 /**
@@ -43,10 +46,13 @@ export function FilterBar({
   incomingCount = 0,
   hideSeen = false,
   onHideSeenChange,
+  minSeverity = 1,
+  onMinSeverityChange,
 }: FilterBarProps) {
   const [showTimePopover, setShowTimePopover] = useState(false);
   const [showCategoryPopover, setShowCategoryPopover] = useState(false);
   const [showSortHelp, setShowSortHelp] = useState(false);
+  const [showSeverityPopover, setShowSeverityPopover] = useState(false);
 
   const activeCount = activeCategories.size;
   const currentTimeLabel = availableTimeRanges[timeRangeIndex]?.label || "1W";
@@ -165,6 +171,35 @@ export function FilterBar({
             </svg>
             {activeCount < 4 ? `${activeCount}/4` : "All"}
           </button>
+
+          {/* Severity filter button */}
+          {onMinSeverityChange && (
+            <button
+              onClick={() => {
+                setShowSeverityPopover(!showSeverityPopover);
+                setShowTimePopover(false);
+                setShowCategoryPopover(false);
+                setShowSortHelp(false);
+              }}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-colors ${
+                showSeverityPopover
+                  ? "border-accent bg-accent/10 text-accent"
+                  : minSeverity > 1
+                    ? "border-orange-500/50 bg-orange-500/10 text-orange-400"
+                    : "border-foreground/20 bg-foreground/5 text-foreground/60"
+              }`}
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+              {minSeverity > 1 ? `${minSeverity}+` : "Sev"}
+            </button>
+          )}
 
           {/* Hide Seen toggle - closed eye (purple) = hiding seen, open eye (grey) = showing all */}
           {onHideSeenChange && (
@@ -345,6 +380,44 @@ export function FilterBar({
                 );
               })}
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Severity Popover */}
+      {showSeverityPopover && onMinSeverityChange && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowSeverityPopover(false)} />
+          <div className="absolute right-4 top-full z-50 mt-2 w-56 rounded-xl border border-foreground/10 bg-background/95 p-4 shadow-xl backdrop-blur-xl">
+            <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
+              Minimum Severity
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-lg font-bold text-orange-400">{minSeverity}+</span>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                value={minSeverity}
+                onChange={(e) => onMinSeverityChange(Number(e.target.value))}
+                className="severity-slider flex-1"
+              />
+            </div>
+            <div className="mt-2 flex justify-between text-[9px] text-foreground/30">
+              <span>All</span>
+              <span>Critical only</span>
+            </div>
+            {minSeverity > 1 && (
+              <button
+                onClick={() => {
+                  onMinSeverityChange(1);
+                  setShowSeverityPopover(false);
+                }}
+                className="mt-3 w-full rounded-lg border border-foreground/10 py-1.5 text-xs text-foreground/50 transition-colors hover:bg-foreground/5"
+              >
+                Reset to All
+              </button>
+            )}
           </div>
         </>
       )}
