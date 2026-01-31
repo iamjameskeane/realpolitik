@@ -203,7 +203,7 @@ export const SORT_OPTIONS = [
   {
     value: "unread",
     label: "What's New",
-    shortLabel: "Whats New",
+    shortLabel: "New",
     mobileLabel: "",
     isPulsing: true,
     tooltip: "Events added since your last visit",
@@ -225,7 +225,7 @@ export const SORT_OPTIONS = [
   {
     value: "reactions",
     label: "Reactions",
-    shortLabel: "💬 Reax",
+    shortLabel: "💬 Rea",
     mobileLabel: "💬",
     tooltip: "Most reactions from analysts",
   },
@@ -239,8 +239,8 @@ export const SORT_OPTIONS = [
   {
     value: "recent",
     label: "Recent",
-    shortLabel: "New",
-    mobileLabel: "New",
+    shortLabel: "Rec",
+    mobileLabel: "Rec",
     tooltip: "Most recent events first",
   },
 ] as const;
