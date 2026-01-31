@@ -49,10 +49,13 @@ export async function POST(request: NextRequest) {
 
     // Validate returnUrl is on our domain to prevent open redirects
     const allowedOrigin = process.env.NEXT_PUBLIC_BASE_URL || "https://realpolitik.world";
-    if (
-      !returnUrl.startsWith(allowedOrigin) &&
-      !returnUrl.startsWith(new URL(allowedOrigin).origin)
-    ) {
+    try {
+      const returnUrlParsed = new URL(returnUrl);
+      const allowedOriginParsed = new URL(allowedOrigin);
+      if (returnUrlParsed.origin !== allowedOriginParsed.origin) {
+        return NextResponse.json({ error: "Invalid return URL" }, { status: 400 });
+      }
+    } catch {
       return NextResponse.json({ error: "Invalid return URL" }, { status: 400 });
     }
 
