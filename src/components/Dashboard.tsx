@@ -77,7 +77,6 @@ export function Dashboard({
   const [hoveredCategory, setHoveredCategory] = useState<EventCategory | null>(null);
   const [activeCategories, setActiveCategories] = useState<Set<EventCategory>>(ALL_CATEGORIES);
   const [minSeverity, setMinSeverity] = useState(1); // Filter events >= this severity
-  const [showSeverityPopover, setShowSeverityPopover] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [displayedTime, setDisplayedTime] = useState<string>("");
@@ -552,78 +551,6 @@ export function Dashboard({
             )}
           </div>
 
-          {/* Severity Filter Button */}
-          <div className="relative">
-            <button
-              onClick={() => setShowSeverityPopover(!showSeverityPopover)}
-              className={`glass-panel flex items-center gap-2 px-3 py-2 transition-all hover:scale-105 ${
-                minSeverity > 1 ? "ring-1 ring-orange-500/50" : ""
-              }`}
-              aria-label={`Filter by severity ${minSeverity}+`}
-            >
-              <svg
-                className={`h-4 w-4 ${minSeverity > 1 ? "text-orange-400" : "text-foreground/50"}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-              <span
-                className={`font-mono text-xs uppercase ${minSeverity > 1 ? "text-orange-400" : "text-foreground/70"}`}
-              >
-                {minSeverity > 1 ? `SEV ${minSeverity}+` : "SEVERITY"}
-              </span>
-            </button>
-
-            {/* Severity Popover */}
-            {showSeverityPopover && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setShowSeverityPopover(false)} />
-                <div className="absolute left-0 top-12 z-40 w-56 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="glass-panel p-4">
-                    <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
-                      Minimum Severity
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-lg font-bold text-orange-400">
-                        {minSeverity}+
-                      </span>
-                      <input
-                        type="range"
-                        min={1}
-                        max={10}
-                        value={minSeverity}
-                        onChange={(e) => setMinSeverity(Number(e.target.value))}
-                        className="severity-slider flex-1"
-                      />
-                    </div>
-                    <div className="mt-2 flex justify-between text-[9px] text-foreground/30">
-                      <span>All</span>
-                      <span>Critical only</span>
-                    </div>
-                    {minSeverity > 1 && (
-                      <button
-                        onClick={() => {
-                          setMinSeverity(1);
-                          setShowSeverityPopover(false);
-                        }}
-                        className="mt-3 w-full rounded-lg border border-foreground/10 py-1.5 text-xs text-foreground/50 transition-colors hover:bg-foreground/5"
-                      >
-                        Reset to All
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
           {/* Floating Toast Notifications - appear under inbox */}
         </div>
 
@@ -675,6 +602,8 @@ export function Dashboard({
           eventStateMap={eventStateMap}
           incomingEvents={incomingEvents}
           onStartFlyover={(events) => flyover.start(events)}
+          minSeverity={minSeverity}
+          onMinSeverityChange={setMinSeverity}
         />
 
         {/* Header - responsive sizing */}
