@@ -886,9 +886,8 @@ EVENT CONTEXT:
       },
     ];
 
-    // Add conversation history
-    const recentHistory = history.slice(-10);
-    for (const msg of recentHistory) {
+    // Add full conversation history (Gemini has 1M token context)
+    for (const msg of history) {
       contents.push({
         role: msg.role === "assistant" ? "model" : "user",
         parts: [{ text: msg.content }],
@@ -1125,6 +1124,16 @@ EVENT CONTEXT:
               error:
                 "AI briefings are temporarily unavailable due to high demand. Please try again later.",
             });
+          } else if (
+            errorMessage.includes("too long") ||
+            errorMessage.includes("context length") ||
+            errorMessage.includes("token") ||
+            errorMessage.includes("exceeds maximum") ||
+            errorMessage.includes("INVALID_ARGUMENT")
+          ) {
+            sendEvent({
+              error: "Conversation is too long. Please start a new conversation to continue.",
+            });
           } else {
             sendEvent({ error: "Unable to generate briefing. Please try again." });
           }
@@ -1160,6 +1169,26 @@ EVENT CONTEXT:
         }),
         {
           status: 503,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (
+      errorMessage.includes("too long") ||
+      errorMessage.includes("context length") ||
+      errorMessage.includes("token") ||
+      errorMessage.includes("exceeds maximum") ||
+      errorMessage.includes("INVALID_ARGUMENT")
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "Conversation too long",
+          message: "Please start a new conversation to continue.",
+          code: "CONTEXT_TOO_LONG",
+        }),
+        {
+          status: 400,
           headers: { "Content-Type": "application/json" },
         }
       );
