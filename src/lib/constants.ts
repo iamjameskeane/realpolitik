@@ -126,11 +126,20 @@ export const BRIEFING_MAX_ITERATIONS = 3;
 /** Maximum web searches per briefing request */
 export const BRIEFING_MAX_SEARCHES = 2;
 
-/** Default Gemini model for Pro tier users */
-export const BRIEFING_MODEL_PRO = "gemini-2.5-flash";
+/** Gemini model for Pythia briefings (same model, different thinking levels) */
+export const BRIEFING_MODEL = "gemini-3-flash-preview";
 
-/** Default Gemini model for Free tier users */
-export const BRIEFING_MODEL_FREE = "gemini-2.0-flash-lite";
+/**
+ * Thinking level for Pro tier users
+ * HIGH = More thorough reasoning, better for complex analysis
+ */
+export const BRIEFING_THINKING_LEVEL_PRO = "HIGH";
+
+/**
+ * Thinking level for Free tier users
+ * MINIMAL = Fastest responses, lowest cost
+ */
+export const BRIEFING_THINKING_LEVEL_FREE = "MINIMAL";
 
 // =============================================================================
 // UI CONSTANTS

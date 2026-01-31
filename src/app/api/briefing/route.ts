@@ -1,4 +1,11 @@
-import { GoogleGenAI, Content, Part, FunctionDeclaration, Type } from "@google/genai";
+import {
+  GoogleGenAI,
+  Content,
+  Part,
+  FunctionDeclaration,
+  Type,
+  ThinkingLevel,
+} from "@google/genai";
 import { tavily } from "@tavily/core";
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -7,8 +14,9 @@ import {
   MAX_QUESTION_LENGTH,
   BRIEFING_MAX_ITERATIONS,
   BRIEFING_MAX_SEARCHES,
-  BRIEFING_MODEL_PRO,
-  BRIEFING_MODEL_FREE,
+  BRIEFING_MODEL,
+  BRIEFING_THINKING_LEVEL_PRO,
+  BRIEFING_THINKING_LEVEL_FREE,
 } from "@/lib/constants";
 
 // Vercel function configuration - increase timeout for AI streaming
@@ -856,9 +864,12 @@ export async function POST(request: NextRequest) {
       userTier = "free";
       console.log(`[Briefing] User ${user.id} subscription expired, treating as free tier`);
     }
-    // Pro users get the full Flash model, free users get Flash-Lite
-    const modelToUse = userTier === "pro" ? BRIEFING_MODEL_PRO : BRIEFING_MODEL_FREE;
-    console.log(`[Briefing] User tier: ${userTier}, using model: ${modelToUse}`);
+    // Pro users get HIGH thinking level, free users get LOW (minimal) thinking
+    const thinkingLevel =
+      userTier === "pro" ? BRIEFING_THINKING_LEVEL_PRO : BRIEFING_THINKING_LEVEL_FREE;
+    console.log(
+      `[Briefing] User tier: ${userTier}, model: ${BRIEFING_MODEL}, thinking: ${thinkingLevel}`
+    );
 
     // Fetch entities for this event
     const { data: entities } = await supabase.rpc("get_event_entities", {
@@ -957,7 +968,7 @@ EVENT CONTEXT:
 
             // Call Gemini API
             const response = await ai.models.generateContent({
-              model: modelToUse,
+              model: BRIEFING_MODEL,
               contents,
               config: {
                 systemInstruction: SYSTEM_PROMPT,
@@ -966,6 +977,10 @@ EVENT CONTEXT:
                     ? [{ functionDeclarations: availableTools }]
                     : undefined,
                 maxOutputTokens: 8000,
+                // Thinking level: HIGH for Pro (thorough analysis), MINIMAL for Free (faster)
+                thinkingConfig: {
+                  thinkingLevel: ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel],
+                },
               },
             });
 
