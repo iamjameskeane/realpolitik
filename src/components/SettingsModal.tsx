@@ -165,12 +165,17 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
 
         {/* Header Section */}
         <div className="border-b border-slate-700/50 px-6 py-5">
-          <h2
-            id="settings-title"
-            className="font-mono text-xl font-bold tracking-wider text-slate-100"
-          >
-            SETTINGS
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2
+              id="settings-title"
+              className="font-mono text-xl font-bold tracking-wider text-slate-100"
+            >
+              SETTINGS
+            </h2>
+            <span className="rounded bg-accent/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-accent">
+              v2.0
+            </span>
+          </div>
           <p className="mt-1 font-mono text-sm tracking-wide text-slate-400">
             Configure your experience
           </p>
@@ -311,7 +316,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
                                 clipRule="evenodd"
                               />
                             </svg>
-                            Smarter AI model
+                            Deep reasoning mode
                           </li>
                         </ul>
                       </div>

@@ -97,8 +97,8 @@ export function AboutModal({ onClose }: AboutModalProps) {
             >
               REALPOLITIK
             </h2>
-            <span className="rounded bg-red-900/60 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-red-400">
-              v1.0
+            <span className="rounded bg-accent/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-accent">
+              v2.0
             </span>
           </div>
           <p className="mt-1 font-mono text-sm tracking-wide text-slate-400">
@@ -111,8 +111,9 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <div className="space-y-5 px-6 py-5">
             {/* Description */}
             <p className="text-sm leading-relaxed text-slate-300">
-              Realpolitik aggregates open-source intelligence (OSINT) from global news feeds and
-              uses AI to synthesize situation reports.
+              Realpolitik aggregates open-source intelligence (OSINT) from global news feeds, builds
+              a knowledge graph of geopolitical entities, and uses AI to synthesize situation
+              reports with Pythia, your personal intelligence analyst.
             </p>
 
             {/* Disclaimer */}
