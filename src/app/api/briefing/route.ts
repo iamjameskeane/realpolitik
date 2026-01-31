@@ -3,7 +3,7 @@ import { tavily } from "@tavily/core";
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getClientIP } from "@/lib/request";
-import { MAX_QUESTION_LENGTH, MAX_HISTORY_LENGTH } from "@/lib/constants";
+import { MAX_QUESTION_LENGTH } from "@/lib/constants";
 
 // Vercel function configuration - increase timeout for AI streaming
 export const maxDuration = 60; // seconds (requires Pro plan for > 10s)
@@ -755,21 +755,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate history
+    // Validate history format (we'll slice to last N messages for context)
     if (history && Array.isArray(history)) {
-      if (history.length > MAX_HISTORY_LENGTH) {
-        return new Response(
-          JSON.stringify({
-            error: "History too long",
-            message: "Too many messages in conversation history.",
-          }),
-          {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-
       // Validate each history message
       for (const msg of history) {
         if (!msg.role || !msg.content || (msg.role !== "user" && msg.role !== "assistant")) {
