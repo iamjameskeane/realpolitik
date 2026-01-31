@@ -19,7 +19,7 @@ export function SettingsModal({ onClose, is2DMode, onToggle2DMode }: SettingsMod
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const [briefingLimit, setBriefingLimit] = useState(5);
+  const [briefingLimit, setBriefingLimit] = useState(10); // Default to free tier limit
 
   // Fetch briefing limit based on tier
   useEffect(() => {

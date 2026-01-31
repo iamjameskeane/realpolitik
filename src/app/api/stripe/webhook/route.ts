@@ -194,6 +194,56 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "invoice.paid": {
+        // Payment succeeded (possibly after a failed payment)
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+
+        // Only handle subscription invoices (billing_reason indicates subscription-related)
+        const billingReason = invoice.billing_reason;
+        if (
+          !billingReason ||
+          !["subscription_create", "subscription_cycle", "subscription_update"].includes(
+            billingReason
+          )
+        ) {
+          console.log(
+            `[Stripe Webhook] Non-subscription invoice paid (reason: ${billingReason}), skipping`
+          );
+          break;
+        }
+
+        // Find user by Stripe customer ID
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, subscription_status")
+          .eq("stripe_customer_id", customerId)
+          .single();
+
+        if (!profile) {
+          console.error(`[Stripe Webhook] No profile for customer ${customerId}`);
+          break;
+        }
+
+        // If they were past_due, reactivate their subscription
+        if (profile.subscription_status === "past_due") {
+          await supabase
+            .from("profiles")
+            .update({
+              tier: "pro",
+              subscription_status: "active",
+            })
+            .eq("id", profile.id);
+
+          console.log(`[Stripe Webhook] User ${profile.id} subscription reactivated after payment`);
+        } else {
+          console.log(
+            `[Stripe Webhook] User ${profile.id} invoice paid (status: ${profile.subscription_status})`
+          );
+        }
+        break;
+      }
+
       default:
         console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
     }

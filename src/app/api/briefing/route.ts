@@ -789,7 +789,7 @@ export async function POST(request: NextRequest) {
         });
 
         const usageData = usage?.[0];
-        const limit = usageData?.limit_value || 5;
+        const limit = usageData?.limit_value || 10; // Default to free tier limit
 
         return new Response(
           JSON.stringify({
@@ -831,14 +831,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch user's tier for model selection
+    // Fetch user's tier for model selection (also check subscription expiration)
     const { data: userProfile } = await supabase
       .from("profiles")
-      .select("tier")
+      .select("tier, subscription_status, subscription_ends_at")
       .eq("id", user.id)
       .single();
 
-    const userTier = userProfile?.tier || "free";
+    // Check if subscription has expired (cancelled with end date passed)
+    let userTier = userProfile?.tier || "free";
+    if (
+      userTier === "pro" &&
+      userProfile?.subscription_status === "canceled" &&
+      userProfile?.subscription_ends_at &&
+      new Date(userProfile.subscription_ends_at) < new Date()
+    ) {
+      // Subscription has expired - treat as free tier
+      userTier = "free";
+      console.log(`[Briefing] User ${user.id} subscription expired, treating as free tier`);
+    }
     // Pro users get the full Flash model, free users get Flash-Lite
     const modelToUse = userTier === "pro" ? "gemini-2.5-flash" : "gemini-2.0-flash-lite";
     console.log(`[Briefing] User tier: ${userTier}, using model: ${modelToUse}`);

@@ -42,10 +42,35 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Missing endpoint" }, { status: 400 });
     }
 
+    // ========== VERIFY OWNERSHIP ==========
+    // Check that this subscription belongs to the authenticated user
+    const { data: subscription } = await supabase
+      .from("user_push_subscriptions")
+      .select("user_id")
+      .eq("endpoint", endpoint)
+      .single();
+
+    if (!subscription) {
+      return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
+    }
+
+    if (subscription.user_id !== user.id) {
+      // Log potential abuse attempt
+      console.warn(
+        `[Unsubscribe] User ${user.id} attempted to delete subscription owned by ${subscription.user_id}`
+      );
+      return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
+    }
+
     // ========== REMOVE SUBSCRIPTION ==========
-    await supabase.rpc("remove_push_subscription", {
+    const { error: deleteError } = await supabase.rpc("remove_push_subscription", {
       sub_endpoint: endpoint,
     });
+
+    if (deleteError) {
+      console.error("[Unsubscribe] Database error:", deleteError);
+      return NextResponse.json({ error: "Failed to remove subscription" }, { status: 500 });
+    }
 
     console.log(`[Unsubscribe] Removed: ${endpoint.substring(0, 50)}...`);
 

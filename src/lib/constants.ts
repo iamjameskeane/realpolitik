@@ -112,8 +112,9 @@ export const SESSION_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 /** Maximum question length (characters) */
 export const MAX_QUESTION_LENGTH = 2000;
 
-/** Maximum chat history messages to accept */
-export const MAX_HISTORY_LENGTH = 10;
+// Note: Chat history length is not enforced server-side.
+// Gemini models have 1M+ token limits, and we handle context length
+// errors gracefully in the briefing API if limits are exceeded.
 
 // =============================================================================
 // UI CONSTANTS

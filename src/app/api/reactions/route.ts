@@ -76,6 +76,10 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST - Cast or change a vote
+ *
+ * Rate limiting note: This endpoint requires authentication and only allows
+ * 1 vote per event per user (enforced by database). Spam is limited to
+ * vote/unvote toggles on the same event, which has minimal impact.
  */
 export async function POST(request: NextRequest) {
   try {

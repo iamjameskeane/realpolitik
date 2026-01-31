@@ -26,6 +26,7 @@ import { EnrichedReactionData } from "@/hooks/useBatchReactions";
 import { EventVisualState } from "@/hooks/useEventStates";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+const MAPBOX_TOKEN_MISSING = !MAPBOX_TOKEN;
 
 // Center on Europe for initial view
 const INITIAL_CENTER: [number, number] = [15, 50];
@@ -108,6 +109,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     y: number;
   } | null>(null);
   const [isFlying, setIsFlying] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
   // Cluster interaction state (desktop)
   const [clusterPopup, setClusterPopup] = useState<{
@@ -563,6 +565,16 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Initialize Mapbox (only once)
   useEffect(() => {
     if (!mapContainer.current || mapInitialized.current) return;
+
+    // Validate Mapbox token before initialization
+    if (MAPBOX_TOKEN_MISSING) {
+      console.error(
+        "[WorldMap] Mapbox token is missing. Set NEXT_PUBLIC_MAPBOX_TOKEN environment variable."
+      );
+      setMapError(true);
+      return;
+    }
+
     mapInitialized.current = true;
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -792,6 +804,23 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       recordInteraction();
     }
   }, [stackIndex, stackedEvents, recordInteraction, onEventClick]);
+
+  // Show fallback if map failed to initialize
+  if (mapError) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+        <div className="text-center">
+          <div className="mb-4 text-6xl">🌍</div>
+          <h2 className="mb-2 font-mono text-xl font-bold text-slate-200">Map Unavailable</h2>
+          <p className="text-sm text-slate-400">
+            The interactive map could not be loaded.
+            <br />
+            Please try refreshing the page.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0">

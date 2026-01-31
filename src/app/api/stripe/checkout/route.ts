@@ -47,6 +47,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "returnUrl is required" }, { status: 400 });
     }
 
+    // Validate returnUrl is on our domain to prevent open redirects
+    const allowedOrigin = process.env.NEXT_PUBLIC_BASE_URL || "https://realpolitik.world";
+    if (
+      !returnUrl.startsWith(allowedOrigin) &&
+      !returnUrl.startsWith(new URL(allowedOrigin).origin)
+    ) {
+      return NextResponse.json({ error: "Invalid return URL" }, { status: 400 });
+    }
+
     // Get user's profile to check for existing Stripe customer
     const { data: profile } = await supabase
       .from("profiles")
