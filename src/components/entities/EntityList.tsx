@@ -27,11 +27,12 @@ export function EntityList({
   onEntityClick,
 }: EntityListProps) {
   const [selectedEntity, setSelectedEntity] = useState<EventEntity | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   if (entities.length === 0) return null;
 
-  const visibleEntities = entities.slice(0, maxVisible);
   const hiddenCount = entities.length - maxVisible;
+  const visibleEntities = isExpanded ? entities : entities.slice(0, maxVisible);
 
   return (
     <div className={`flex flex-wrap gap-1.5 ${className}`}>
@@ -51,10 +52,22 @@ export function EntityList({
         />
       ))}
 
-      {hiddenCount > 0 && (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs text-foreground/50">
+      {hiddenCount > 0 && !isExpanded && (
+        <button
+          onClick={() => setIsExpanded(true)}
+          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs text-foreground/50 hover:text-foreground/80 hover:bg-slate-800/50 transition-colors cursor-pointer"
+        >
           +{hiddenCount} more
-        </span>
+        </button>
+      )}
+
+      {isExpanded && hiddenCount > 0 && (
+        <button
+          onClick={() => setIsExpanded(false)}
+          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs text-foreground/50 hover:text-foreground/80 hover:bg-slate-800/50 transition-colors cursor-pointer"
+        >
+          show less
+        </button>
       )}
 
       {/* Only render modal if not using mobile callback */}
