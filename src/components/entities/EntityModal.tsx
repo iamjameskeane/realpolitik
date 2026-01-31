@@ -8,7 +8,7 @@
 import { useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { EntityType } from "@/types/entities";
-import { CATEGORY_COLORS } from "@/types/events";
+import { CATEGORY_COLORS, EventCategory } from "@/types/events";
 import { useEntityEvents } from "@/hooks/useEntityEvents";
 import { getEntityIcon } from "@/lib/entities";
 import { CountryFlag } from "./CountryFlag";
@@ -129,7 +129,7 @@ export function EntityModal({
             </div>
           ) : (
             events.map((event) => {
-              const categoryColor = CATEGORY_COLORS[event.category] || "#888";
+              const categoryColor = CATEGORY_COLORS[event.category as EventCategory] || "#888";
 
               return (
                 <div key={event.event_id} className="border-b border-foreground/5">
