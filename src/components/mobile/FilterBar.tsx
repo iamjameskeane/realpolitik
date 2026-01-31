@@ -107,7 +107,10 @@ export function FilterBar({
               )}
             </span>
           )}
-          <span key={sortBy} className="inline-block animate-[fadeSlideIn_0.2s_ease-out]">
+          <span
+            key={sortBy}
+            className="inline-block whitespace-nowrap animate-[fadeSlideIn_0.2s_ease-out]"
+          >
             {currentSortOption.shortLabel}
           </span>
           <svg
