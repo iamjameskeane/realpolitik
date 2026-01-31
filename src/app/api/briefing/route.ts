@@ -120,6 +120,44 @@ const getImpactChainTool: FunctionDeclaration = {
   },
 };
 
+const getEventGraphTool: FunctionDeclaration = {
+  name: "get_event_graph",
+  description:
+    "Get the knowledge graph structure around THIS specific event. Shows all entities involved and their relationships (supply chains, dependencies, alliances). This is the PRIORITY tool - call it FIRST to understand the network topology, then use other tools to explore further. Returns entity network with relationship percentages and confidence scores.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      include_indirect: {
+        type: Type.BOOLEAN,
+        description:
+          "Whether to include indirect relationships (1 hop away from event entities). Default: false",
+      },
+    },
+    required: [],
+  },
+};
+
+const getEntityRelationshipsTool: FunctionDeclaration = {
+  name: "get_entity_relationships",
+  description:
+    "Get known relationships for an entity from our knowledge graph. Use to understand existing connections between countries, organizations, leaders, companies, etc. Returns edges with relation type, target entity, percentages, and confidence. Use entity names exactly as shown in ENTITIES INVOLVED.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      entity_name: {
+        type: Type.STRING,
+        description:
+          "The entity name exactly as it appears (e.g., 'Russia', 'NATO', 'TSMC', 'Vladimir Putin')",
+      },
+      limit: {
+        type: Type.NUMBER,
+        description: "Maximum number of relationships to return (default: 10, max: 20)",
+      },
+    },
+    required: ["entity_name"],
+  },
+};
+
 // Context cache for the current request (populated after initial setup)
 interface BriefingContext {
   eventId: string;
@@ -299,6 +337,182 @@ async function executeToolCall(
     }
   }
 
+  if (toolName === "get_event_graph") {
+    const includeIndirect = (args.include_indirect as boolean) || false;
+    console.log(`[Briefing] Getting event graph, include_indirect: ${includeIndirect}`);
+
+    if (!context) {
+      return `Event graph unavailable - no context loaded`;
+    }
+
+    if (!context.entities || context.entities.length === 0) {
+      return `No entities found for this event. The event may not have been processed for graph integration yet.`;
+    }
+
+    try {
+      const entityUuids = context.entities.map((e) => e.entity_id);
+      const entityNames = context.entities.map((e) => e.name);
+
+      // Build graph description with entities
+      let graphDescription = `Event Graph for this event (${context.entities.length} entities):\n\nEntities in this event:\n`;
+      for (const ent of context.entities) {
+        graphDescription += `- ${ent.name} (${ent.node_type}) [${ent.relation_type}]\n`;
+      }
+
+      // Query edges between these entities (direct relationships within the event)
+      const { data: edges, error } = await context.supabase
+        .from("edges")
+        .select(
+          "source:source_id(name, node_type), target:target_id(name, node_type), relation_type, percentage, confidence, polarity"
+        )
+        .in("source_id", entityUuids)
+        .in("target_id", entityUuids);
+
+      if (error) {
+        console.error("Event graph edges lookup error:", error);
+        graphDescription += "\nNo relationship data available between entities.";
+      } else if (edges && edges.length > 0) {
+        graphDescription += `\nRelationships within event (${edges.length}):\n`;
+        for (const edge of edges) {
+          const source = edge.source as { name: string; node_type: string } | null;
+          const target = edge.target as { name: string; node_type: string } | null;
+          const rel = edge.relation_type || "unknown";
+          const pct = edge.percentage ? ` [${edge.percentage}%]` : "";
+          const pol = edge.polarity || 0;
+          const conf = edge.confidence || 0;
+
+          graphDescription += `- ${source?.name || "Unknown"} --[${rel}]${pct}--> ${target?.name || "Unknown"} `;
+          graphDescription += `(confidence: ${Math.round(conf * 100)}%, polarity: ${pol > 0 ? "+" : ""}${pol.toFixed(1)})\n`;
+        }
+      } else {
+        graphDescription += "\nNo direct relationships found between entities in this event.\n";
+      }
+
+      // Optional: Include indirect relationships (1 hop away)
+      if (includeIndirect && entityUuids.length > 0) {
+        const { data: indirectEdges } = await context.supabase
+          .from("edges")
+          .select(
+            "source:source_id(name), target:target_id(name, node_type), relation_type, percentage, polarity"
+          )
+          .in("source_id", entityUuids)
+          .limit(20);
+
+        if (indirectEdges && indirectEdges.length > 0) {
+          // Filter to edges pointing outside the event
+          type IndirectEdge = {
+            source: { name: string } | null;
+            target: { name: string; node_type: string } | null;
+            relation_type: string | null;
+            percentage: number | null;
+            polarity: number | null;
+          };
+          const externalEdges = (indirectEdges as IndirectEdge[]).filter((e) => {
+            const targetName = e.target?.name;
+            return targetName && !entityNames.includes(targetName);
+          });
+
+          if (externalEdges.length > 0) {
+            graphDescription += `\nIndirect relationships (1 hop, ${Math.min(externalEdges.length, 10)} shown):\n`;
+            for (const edge of externalEdges.slice(0, 10)) {
+              const rel = edge.relation_type || "unknown";
+              const pct = edge.percentage ? ` [${edge.percentage}%]` : "";
+              graphDescription += `- ${edge.source?.name || "Unknown"} --[${rel}]${pct}--> ${edge.target?.name || "Unknown"} (${edge.target?.node_type || "entity"})\n`;
+            }
+          }
+        }
+      }
+
+      return graphDescription;
+    } catch (error) {
+      console.error("Event graph lookup error:", error);
+      return `Failed to get event graph: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
+  if (toolName === "get_entity_relationships") {
+    const entityName = args.entity_name as string;
+    const limit = Math.min((args.limit as number) || 10, 20);
+    console.log(`[Briefing] Getting relationships for entity: "${entityName}"`);
+
+    if (!context) {
+      return `Entity relationships unavailable - no context loaded`;
+    }
+
+    // Find the entity in the cache (case-insensitive match)
+    let entityUuid: string | null = null;
+
+    // First try to find in event entities
+    const entity = context.entities.find((e) => e.name.toLowerCase() === entityName.toLowerCase());
+    if (entity) {
+      entityUuid = entity.entity_id;
+    }
+
+    // If not found in event entities, search the nodes table
+    if (!entityUuid) {
+      try {
+        const { data: nodeResult } = await context.supabase
+          .from("nodes")
+          .select("id, name, node_type")
+          .ilike("name", `%${entityName}%`)
+          .limit(1);
+
+        if (nodeResult && nodeResult.length > 0) {
+          entityUuid = nodeResult[0].id;
+        }
+      } catch {
+        // Ignore search errors
+      }
+    }
+
+    if (!entityUuid) {
+      const availableEntities = context.entities.map((e) => e.name).join(", ");
+      return `Entity "${entityName}" not found in knowledge graph. Available entities in this event: ${availableEntities || "none"}`;
+    }
+
+    try {
+      // Query edges for this entity
+      const { data: edges, error } = await context.supabase
+        .from("edges")
+        .select(
+          "relation_type, target:target_id(name, node_type), confidence, polarity, percentage"
+        )
+        .eq("source_id", entityUuid)
+        .limit(limit);
+
+      if (error) {
+        console.error("Entity relationships lookup error:", error);
+        return `Failed to lookup relationships for "${entityName}"`;
+      }
+
+      if (!edges || edges.length === 0) {
+        return `No relationships found for "${entityName}" in the knowledge graph.`;
+      }
+
+      // Format relationships
+      const relationships: string[] = [];
+      for (const edge of edges) {
+        const target = edge.target as { name: string; node_type: string } | null;
+        const relType = edge.relation_type || "unknown";
+        const confidence = edge.confidence || 0;
+        const polarity = edge.polarity || 0;
+        const percentage = edge.percentage;
+
+        let relStr = `- ${relType} ${target?.name || "Unknown"} (${target?.node_type || "entity"})`;
+        if (percentage) {
+          relStr += ` [${percentage}%]`;
+        }
+        relStr += ` [confidence: ${Math.round(confidence * 100)}%, polarity: ${polarity > 0 ? "+" : ""}${polarity.toFixed(1)}]`;
+        relationships.push(relStr);
+      }
+
+      return `Relationships for "${entityName}":\n${relationships.join("\n")}`;
+    } catch (error) {
+      console.error("Entity relationships lookup error:", error);
+      return `Failed to lookup relationships: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
   return `Unknown tool: ${toolName}`;
 }
 
@@ -318,25 +532,38 @@ Your job is to answer questions clearly and help users understand why events mat
 </instructions>
 
 <tools>
-You have 4 tools available. The database tools (2-4) query OUR tracked events and knowledge graph - prefer these over web search when possible.
+You have 6 tools available. The database tools (2-6) query OUR tracked events and knowledge graph - prefer these over web search when possible.
 
 1. search_news (LIMITED - max 2/question)
    - Searches the web for current news
    - Use for: Breaking developments, analyst opinions, latest updates not yet in our database
    - Costs: Uses external API, limited to 2 calls
 
-2. get_entity_events (UNLIMITED - use freely)
+2. get_event_graph (PRIORITY TOOL - call FIRST)
+   - Shows the relationship network around THIS specific event
+   - Returns: All entities involved, their relationships, supply chains, dependencies, percentages
+   - Use for: Understanding the network topology before answering ANY question about impacts or relationships
+   - Example: "TSMC --[supplies][90%]--> Apple", "Germany --[depends_on][60%]--> Russia"
+   - ALWAYS call this first when the question involves relationships, dependencies, or impacts
+
+3. get_entity_relationships (UNLIMITED - use freely)
+   - Gets known relationships for any specific entity from the knowledge graph
+   - Returns: Edges with relation type, target entity, percentages, confidence, polarity
+   - Use for: "What is [entity] connected to?", "Who does [entity] supply?", deeper relationship analysis
+   - Example: User asks about supply chains → call this for key entities
+
+4. get_entity_events (UNLIMITED - use freely)
    - Looks up recent events involving a specific entity from OUR database
    - Use for: "What else has [entity] done?", "Is [entity] involved in other events?", context about an actor
    - Example: User asks "What's China been up to?" → call get_entity_events("China")
 
-3. get_causal_chain (UNLIMITED - use freely)
+5. get_causal_chain (UNLIMITED - use freely)
    - Traces what events/factors LED TO this event (backwards in time)
    - Use for: "Why did this happen?", "What caused this?", "Background?", "How did we get here?"
    - Returns: Chain of preceding events with causal relationships and confidence scores
    - Example: User asks "Why is this happening?" → call get_causal_chain first
 
-4. get_impact_chain (UNLIMITED - use freely)
+6. get_impact_chain (UNLIMITED - use freely)
    - Traces what this event AFFECTS downstream (forwards in time)
    - Use for: "What happens next?", "Who's affected?", "Consequences?", "Should I be worried?"
    - Returns: Affected entities (companies, sectors, countries) and relationship paths
@@ -346,20 +573,28 @@ You have 4 tools available. The database tools (2-4) query OUR tracked events an
 <tool_selection>
 CHOOSE THE RIGHT TOOL FOR THE QUESTION:
 
+"Who/what is involved?" / "What are the relationships?" / "Dependencies?"
+→ START with get_event_graph to see the network, then get_entity_relationships for deeper dives
+
 "Why did this happen?" / "Background?" / "What led to this?"
 → START with get_causal_chain, then optionally search_news for color
 
 "What happens next?" / "Who's affected?" / "Consequences?"
-→ START with get_impact_chain, then optionally search_news for analyst takes
+→ START with get_event_graph to understand the network, THEN get_impact_chain to trace effects
 
 "What else has [entity] done?" / "Is [country] involved elsewhere?"
 → Use get_entity_events with the entity name
+
+"What does [entity] supply/depend on?" / "Who are their partners/enemies?"
+→ Use get_entity_relationships for relationship details with percentages
 
 "Latest updates?" / "What are experts saying?" / "Current status?"
 → Use search_news (this is where web search shines)
 
 IMPORTANT: The database tools give you structured, verified information from our knowledge graph.
-Web search gives you raw news that may be unverified. Prefer database tools when the question fits.
+- get_event_graph shows relationships with actual percentages (e.g., "supplies 90% of chips")
+- Use these specific numbers in your answers - they make your analysis concrete
+- Web search gives you raw news that may be unverified. Prefer database tools when the question fits.
 </tool_selection>
 
 <tool_examples>
@@ -367,7 +602,13 @@ USER: "Why is this happening?"
 TOOL CALLS: get_causal_chain() → then synthesize the chain into a narrative
 
 USER: "How does this affect regular people?"
-TOOL CALLS: get_impact_chain() → trace through to consumer-facing companies/products
+TOOL CALLS: get_event_graph() → understand the network, then get_impact_chain() → trace through to consumer-facing companies/products
+
+USER: "What are the relationships here?" / "Who depends on whom?"
+TOOL CALLS: get_event_graph() → shows all entities and their connections with percentages
+
+USER: "What does TSMC supply?" / "Who are Russia's allies?"
+TOOL CALLS: get_entity_relationships("TSMC") or get_entity_relationships("Russia") → detailed relationship data
 
 USER: "What else has Russia been involved in recently?"
 TOOL CALLS: get_entity_events("Russia") → list their recent activity
@@ -399,8 +640,9 @@ Use the event ID from the tool result to create clickable deep links to those ev
 Rules:
 - Links must be [Text](URL) with NO space between ] and (
 - Do NOT cite "Atlas", "Constellation", or tool names as sources
-- get_causal_chain and get_impact_chain provide analysis context, not citable sources - don't cite them
-- If you only used causal/impact chain, you can skip Sources
+- Graph tools (get_event_graph, get_entity_relationships, get_causal_chain, get_impact_chain) provide analysis context, not citable sources - don't cite them
+- If you only used graph tools, you can skip Sources
+- DO use the specific percentages and data from graph tools in your answer (e.g., "supplies 90% of chips")
 </source_citation>
 
 <guardrails>
@@ -701,7 +943,10 @@ EVENT CONTEXT:
             }
             // Entity and graph tools are always available (no search limit)
             if (briefingContext.entities.length > 0) {
+              // Priority tool - shows the event's relationship network
+              availableTools.push(getEventGraphTool);
               availableTools.push(getEntityEventsTool);
+              availableTools.push(getEntityRelationshipsTool);
             }
             // Graph traversal tools always available
             availableTools.push(getCausalChainTool);
@@ -789,6 +1034,16 @@ EVENT CONTEXT:
                   sendEvent({
                     status: "constellation",
                     query: "Mapping impact chain in Constellation",
+                  });
+                } else if (name === "get_event_graph") {
+                  sendEvent({
+                    status: "constellation",
+                    query: "Loading event relationship network from Constellation",
+                  });
+                } else if (name === "get_entity_relationships") {
+                  sendEvent({
+                    status: "constellation",
+                    query: `Querying Constellation for ${args.entity_name} relationships`,
                   });
                 }
 
