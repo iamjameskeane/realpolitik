@@ -136,6 +136,18 @@ export function NotificationSettings() {
     await updatePushPreferences({ quietHours });
   };
 
+  // Handle rule changes - update both inbox AND push preferences
+  const handleRulesChange = async (rules: NotificationRule[]) => {
+    // Update inbox preferences (source of truth)
+    await updateInboxRules(rules);
+
+    // If push is subscribed, also sync rules to push subscription
+    // This ensures the push API can read the rules when sending notifications
+    if (pushSubscribed) {
+      await updatePushPreferences({ rules });
+    }
+  };
+
   // Count rules
   const pushEnabledRules = inboxPrefs.rules?.filter((r) => r.enabled && r.sendPush).length || 0;
   const activeRules = inboxPrefs.rules?.filter((r) => r.enabled).length || 0;
@@ -351,7 +363,7 @@ export function NotificationSettings() {
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
           <NotificationRules
             rules={inboxPrefs.rules || []}
-            onRulesChange={updateInboxRules}
+            onRulesChange={handleRulesChange}
             disabled={inboxLoading || inboxSaving}
             showPushToggle={pushSubscribed}
             userTier={profile?.tier || "free"}
