@@ -71,7 +71,7 @@ interface SubscriptionRow {
 async function getAllActiveSubscriptions(): Promise<SubscriptionRow[]> {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_KEY!
   );
 
   const { data, error } = await supabase.rpc("get_all_active_subscriptions");
@@ -95,7 +95,7 @@ async function getAllActiveSubscriptions(): Promise<SubscriptionRow[]> {
 async function hasBeenNotified(userId: string, eventId: string): Promise<boolean> {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_KEY!
   );
 
   const { data } = await supabase
@@ -114,7 +114,7 @@ async function hasBeenNotified(userId: string, eventId: string): Promise<boolean
 async function markAsNotified(userId: string, eventId: string): Promise<void> {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_KEY!
   );
 
   await supabase.rpc("add_to_inbox", {
@@ -263,7 +263,7 @@ export async function sendNotificationToAll(payload: NotificationPayload): Promi
     if (toDeactivate.length > 0) {
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
+        process.env.SUPABASE_SERVICE_KEY!
       );
 
       for (const endpoint of toDeactivate) {
