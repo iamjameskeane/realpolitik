@@ -85,6 +85,9 @@ export function FilterBar({
               ? "border-accent bg-accent/10 text-accent"
               : "border-foreground/20 bg-foreground/5 text-foreground/60"
           }`}
+          aria-label={`Sort by ${currentSortOption.label}`}
+          aria-expanded={showSortHelp}
+          aria-haspopup="listbox"
         >
           {"isPulsing" in currentSortOption && currentSortOption.isPulsing && (
             <span className="relative flex h-2 w-2">

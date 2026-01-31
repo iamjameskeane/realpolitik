@@ -16,6 +16,30 @@ export function AuthModal() {
 
   if (!authModalOpen) return null;
 
+  // Helper to get user-friendly error messages
+  const getErrorMessage = (err: unknown, context: "send" | "verify"): string => {
+    const message = err instanceof Error ? err.message.toLowerCase() : "";
+
+    if (context === "send") {
+      if (message.includes("rate limit") || message.includes("too many")) {
+        return "Too many attempts. Please wait a few minutes and try again.";
+      }
+      if (message.includes("invalid") && message.includes("email")) {
+        return "Please enter a valid email address.";
+      }
+      return "Unable to send code. Please check your email and try again.";
+    }
+
+    // Verify context
+    if (message.includes("expired") || message.includes("token has expired")) {
+      return "Code has expired. Please request a new one.";
+    }
+    if (message.includes("invalid") || message.includes("otp")) {
+      return "Invalid code. Please check and try again.";
+    }
+    return "Verification failed. Please try again.";
+  };
+
   // Step 1: Send OTP code
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,8 +58,30 @@ export function AuthModal() {
 
       setCodeSent(true);
     } catch (err) {
-      console.error("Error sending code:", err);
-      setError(err instanceof Error ? err.message : "Failed to send code");
+      setError(getErrorMessage(err, "send"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Resend OTP code
+  const handleResendCode = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+
+      if (error) throw error;
+      setCode("");
+      setError(null);
+    } catch (err) {
+      setError(getErrorMessage(err, "send"));
     } finally {
       setLoading(false);
     }
@@ -59,8 +105,7 @@ export function AuthModal() {
       // Success! Auth context will detect the session change
       handleClose();
     } catch (err) {
-      console.error("Error verifying code:", err);
-      setError(err instanceof Error ? err.message : "Invalid code");
+      setError(getErrorMessage(err, "verify"));
     } finally {
       setLoading(false);
     }
@@ -173,17 +218,28 @@ export function AuthModal() {
                   {loading ? "Verifying..." : "Verify Code"}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCodeSent(false);
-                    setCode("");
-                    setError(null);
-                  }}
-                  className="mt-3 w-full text-xs text-foreground/50 hover:text-foreground/70"
-                >
-                  ← Change email
-                </button>
+                <div className="mt-3 flex items-center justify-center gap-4 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={loading}
+                    className="text-foreground/50 hover:text-accent disabled:opacity-50"
+                  >
+                    Resend code
+                  </button>
+                  <span className="text-foreground/20">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCodeSent(false);
+                      setCode("");
+                      setError(null);
+                    }}
+                    className="text-foreground/50 hover:text-foreground/70"
+                  >
+                    Change email
+                  </button>
+                </div>
               </form>
             ) : (
               // Email input form

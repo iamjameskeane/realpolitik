@@ -359,6 +359,12 @@ export function Dashboard({
             <button
               onClick={() => setInboxOpen(!inboxOpen)}
               className="glass-panel relative flex items-center gap-2 px-3 py-2 transition-all hover:scale-105"
+              aria-label={
+                inboxOpen
+                  ? "Close inbox"
+                  : `Open inbox${inboxCount > 0 ? `, ${inboxCount} alerts` : ""}`
+              }
+              aria-expanded={inboxOpen}
             >
               <svg
                 className={`h-4 w-4 ${inboxCount > 0 ? "text-accent" : "text-foreground/50"}`}
@@ -402,6 +408,7 @@ export function Dashboard({
                           <button
                             onClick={startCatchUp}
                             className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 transition-all hover:bg-accent/20"
+                            aria-label={`Catch up on ${inboxCount} alerts`}
                           >
                             <svg
                               className="h-3 w-3 text-accent"
@@ -427,6 +434,7 @@ export function Dashboard({
                       <button
                         onClick={clearInbox}
                         className="font-mono text-xs text-foreground/40 transition-colors hover:text-foreground"
+                        aria-label="Mark all alerts as read"
                       >
                         Mark all read
                       </button>

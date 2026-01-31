@@ -19,24 +19,8 @@ export async function POST(request: NextRequest) {
     const secret = process.env.PUSH_API_SECRET;
     const expectedToken = `Bearer ${secret}`;
 
-    // Debug logging (mask secret for security)
-    console.log("[Send] Auth check:", {
-      hasAuthHeader: !!authHeader,
-      hasSecret: !!secret,
-      secretLength: secret?.length,
-      secretPrefix: secret?.substring(0, 5),
-      authHeaderPrefix: authHeader?.substring(0, 12),
-      match: authHeader === expectedToken,
-    });
-
     if (!authHeader || authHeader !== expectedToken) {
-      console.warn("[Send] Unauthorized - headers don't match");
-      console.warn(
-        "[Send] Expected length:",
-        expectedToken.length,
-        "Got length:",
-        authHeader?.length
-      );
+      console.warn("[Send] Unauthorized request");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

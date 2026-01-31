@@ -8,17 +8,10 @@
 import { useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { EntityType } from "@/types/entities";
+import { CATEGORY_COLORS } from "@/types/events";
 import { useEntityEvents } from "@/hooks/useEntityEvents";
 import { getEntityIcon } from "@/lib/entities";
 import { CountryFlag } from "./CountryFlag";
-
-// Category colors matching the app's theme
-const CATEGORY_COLORS: Record<string, string> = {
-  MILITARY: "#ef4444",
-  DIPLOMACY: "#3b82f6",
-  ECONOMY: "#22c55e",
-  UNREST: "#f59e0b",
-};
 
 interface EntityModalProps {
   entityId: string;
@@ -38,7 +31,7 @@ export function EntityModal({
 }: EntityModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
-  const { events, loading } = useEntityEvents({ entityId, limit: 20 });
+  const { events, loading, error } = useEntityEvents({ entityId, limit: 20 });
 
   // Close on escape key
   const handleKeyDown = useCallback(
@@ -118,6 +111,16 @@ export function EntityModal({
               <div className="text-center">
                 <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" />
                 <p className="font-mono text-xs text-foreground/40">Loading events...</p>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="text-center">
+                <div className="mx-auto mb-3 text-2xl">⚠️</div>
+                <p className="font-mono text-xs text-red-400">Failed to load events</p>
+                <p className="mt-1 font-mono text-[10px] text-foreground/30">
+                  Please try again later
+                </p>
               </div>
             </div>
           ) : events.length === 0 ? (

@@ -3,7 +3,13 @@ import { tavily } from "@tavily/core";
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getClientIP } from "@/lib/request";
-import { MAX_QUESTION_LENGTH } from "@/lib/constants";
+import {
+  MAX_QUESTION_LENGTH,
+  BRIEFING_MAX_ITERATIONS,
+  BRIEFING_MAX_SEARCHES,
+  BRIEFING_MODEL_PRO,
+  BRIEFING_MODEL_FREE,
+} from "@/lib/constants";
 
 // Vercel function configuration - increase timeout for AI streaming
 export const maxDuration = 60; // seconds (requires Pro plan for > 10s)
@@ -851,7 +857,7 @@ export async function POST(request: NextRequest) {
       console.log(`[Briefing] User ${user.id} subscription expired, treating as free tier`);
     }
     // Pro users get the full Flash model, free users get Flash-Lite
-    const modelToUse = userTier === "pro" ? "gemini-2.5-flash" : "gemini-2.0-flash-lite";
+    const modelToUse = userTier === "pro" ? BRIEFING_MODEL_PRO : BRIEFING_MODEL_FREE;
     console.log(`[Briefing] User tier: ${userTier}, using model: ${modelToUse}`);
 
     // Fetch entities for this event
@@ -921,8 +927,8 @@ EVENT CONTEXT:
 
           // Tool calling loop
           let continueLoop = true;
-          const maxIterations = 3;
-          const maxSearches = 2;
+          const maxIterations = BRIEFING_MAX_ITERATIONS;
+          const maxSearches = BRIEFING_MAX_SEARCHES;
           let iterations = 0;
           let totalInputTokens = 0;
           let totalOutputTokens = 0;

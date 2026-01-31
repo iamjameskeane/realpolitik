@@ -117,6 +117,22 @@ export const MAX_QUESTION_LENGTH = 2000;
 // errors gracefully in the briefing API if limits are exceeded.
 
 // =============================================================================
+// AI BRIEFING SETTINGS
+// =============================================================================
+
+/** Maximum tool call iterations per briefing request */
+export const BRIEFING_MAX_ITERATIONS = 3;
+
+/** Maximum web searches per briefing request */
+export const BRIEFING_MAX_SEARCHES = 2;
+
+/** Default Gemini model for Pro tier users */
+export const BRIEFING_MODEL_PRO = "gemini-2.5-flash";
+
+/** Default Gemini model for Free tier users */
+export const BRIEFING_MODEL_FREE = "gemini-2.0-flash-lite";
+
+// =============================================================================
 // UI CONSTANTS
 // =============================================================================
 

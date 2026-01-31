@@ -64,22 +64,13 @@ export function EventsSidebar({
   incomingEvents = [],
   onStartFlyover,
 }: EventsSidebarProps) {
-  const [sortBy, setSortBy] = useState<SortOption>("hot");
+  // Initialize sort to "unread" if there are incoming events, else "hot"
+  const [sortBy, setSortBy] = useState<SortOption>(() =>
+    incomingEvents.length > 0 ? "unread" : "hot"
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [hideSeen, setHideSeen] = useState(false);
   const { reactions } = useBatchReactions();
-
-  // Smart default sort: "What's New" if there are incoming events, else "Hot"
-  const hasSetInitialSort = useRef(false);
-  useEffect(() => {
-    if (hasSetInitialSort.current) return;
-    if (incomingEvents.length > 0) {
-      setSortBy("unread");
-      hasSetInitialSort.current = true;
-    } else if (events.length > 0) {
-      hasSetInitialSort.current = true;
-    }
-  }, [incomingEvents.length, events.length]);
 
   // Filter events by active categories, search query, and hide seen toggle
   const filteredEvents = useMemo(() => {
@@ -249,6 +240,8 @@ export function EventsSidebar({
         className={`fixed top-1/2 z-20 -translate-y-1/2 rounded-l-lg bg-foreground/10 px-3 py-6 backdrop-blur-sm transition-all hover:bg-foreground/20 md:px-2 md:py-4 ${
           isOpen ? "right-[calc(100%-16px)] md:right-80" : "right-0"
         }`}
+        aria-label={isOpen ? "Close event sidebar" : "Open event sidebar"}
+        aria-expanded={isOpen}
       >
         <svg
           className={`h-6 w-6 text-foreground/70 transition-transform md:h-5 md:w-5 ${isOpen ? "rotate-180" : ""}`}
