@@ -571,12 +571,12 @@ export function EventsSidebar({
                     </>
                   )}
                 </svg>
-                Seen
+                Unseen
               </button>
               {/* Styled tooltip */}
               <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 opacity-0 transition-opacity group-hover:opacity-100">
                 <div className="whitespace-nowrap rounded-md border border-foreground/10 bg-background/95 px-2.5 py-1.5 text-[10px] text-foreground/70 shadow-lg backdrop-blur-md">
-                  {hideSeen ? "Hiding seen events" : "Click to hide seen events"}
+                  {hideSeen ? "Showing only unread events" : "Click to hide read events"}
                 </div>
                 <div className="absolute -top-1 right-3 h-2 w-2 rotate-45 border-l border-t border-foreground/10 bg-background/95" />
               </div>

@@ -238,7 +238,7 @@ export function FilterBar({
                   </>
                 )}
               </svg>
-              Seen
+              Unseen
             </button>
           )}
         </div>
