@@ -288,7 +288,17 @@ export function AboutModal({ onClose }: AboutModalProps) {
               href="/privacy"
               className="font-mono text-xs text-slate-400 transition-colors hover:text-slate-200"
             >
-              PRIVACY PROTOCOL
+              PRIVACY
+            </a>
+
+            <span className="text-slate-600">•</span>
+
+            {/* Terms Link */}
+            <a
+              href="/terms"
+              className="font-mono text-xs text-slate-400 transition-colors hover:text-slate-200"
+            >
+              TERMS
             </a>
 
             <span className="text-slate-600">•</span>

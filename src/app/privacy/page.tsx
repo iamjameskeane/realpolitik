@@ -30,10 +30,95 @@ export default function PrivacyPage() {
           <section>
             <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">OVERVIEW</h2>
             <p className="leading-relaxed">
-              Realpolitik is designed with privacy in mind. We collect minimal data necessary to
-              operate the service and do not sell or share personal information with third parties
-              for marketing purposes.
+              Realpolitik is designed with privacy in mind. We collect only the data necessary to
+              operate the service and provide you with a personalized experience. We do not sell or
+              share personal information with third parties for marketing purposes.
             </p>
+          </section>
+
+          {/* User Accounts */}
+          <section>
+            <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">USER ACCOUNTS</h2>
+            <p className="mb-4 leading-relaxed">
+              Creating an account enables features like synced preferences, reaction history, and
+              push notifications across devices.
+            </p>
+
+            <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+              <h3 className="mb-2 font-mono text-sm font-semibold text-emerald-400">
+                What We Store
+              </h3>
+              <ul className="list-inside list-disc space-y-2 text-sm text-slate-400">
+                <li>
+                  <strong className="text-slate-300">Email address:</strong> Used for authentication
+                  and account recovery. We may send transactional emails (password reset,
+                  verification).
+                </li>
+                <li>
+                  <strong className="text-slate-300">Display name:</strong> Derived from your email
+                  by default, or set by you.
+                </li>
+                <li>
+                  <strong className="text-slate-300">Account preferences:</strong> Your notification
+                  settings and UI preferences.
+                </li>
+                <li>
+                  <strong className="text-slate-300">Usage data:</strong> Daily briefing count for
+                  quota enforcement.
+                </li>
+                <li>
+                  <strong className="text-slate-300">Reactions:</strong> Which events you&apos;ve
+                  reacted to (critical, market, noise).
+                </li>
+                <li>
+                  <strong className="text-slate-300">Read state:</strong> Which events you&apos;ve
+                  viewed, synced across devices.
+                </li>
+              </ul>
+              <p className="mt-3 text-sm text-slate-500">
+                Authentication is handled by{" "}
+                <a
+                  href="https://supabase.com/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 underline hover:text-slate-200"
+                >
+                  Supabase
+                </a>
+                , which stores your credentials securely with industry-standard encryption.
+              </p>
+            </div>
+          </section>
+
+          {/* Briefings */}
+          <section>
+            <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">
+              BRIEFINGS (PYTHIA)
+            </h2>
+            <p className="mb-4 leading-relaxed">
+              When you consult Pythia, our AI analyst, your conversations are processed in real-time
+              but not stored on our servers.
+            </p>
+
+            <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+              <h3 className="mb-2 font-mono text-sm font-semibold text-amber-400">
+                How Briefings Work
+              </h3>
+              <ul className="list-inside list-disc space-y-2 text-sm text-slate-400">
+                <li>
+                  <strong className="text-slate-300">Not stored:</strong> Briefing conversations
+                  exist only in your browser session and are cleared when you close the tab.
+                </li>
+                <li>
+                  <strong className="text-slate-300">Processed by AI:</strong> Your questions are
+                  sent to Google Gemini along with event context and web search results.
+                </li>
+                <li>
+                  <strong className="text-slate-300">No personal data sent:</strong> We do not send
+                  your email, name, or account information to AI providers.
+                </li>
+              </ul>
+            </div>
           </section>
 
           {/* Third-Party Services */}
@@ -42,8 +127,29 @@ export default function PrivacyPage() {
               THIRD-PARTY SERVICES
             </h2>
             <p className="mb-4 leading-relaxed">
-              We use the following third-party services to operate and improve Realpolitik:
+              We use the following third-party services to operate Realpolitik:
             </p>
+
+            {/* Supabase */}
+            <div className="mb-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
+              <h3 className="mb-2 font-mono text-sm font-semibold text-emerald-400">Supabase</h3>
+              <p className="mb-3 text-sm leading-relaxed">
+                Provides authentication and database services. Stores your account, preferences, and
+                application data.
+              </p>
+              <p className="text-sm text-slate-500">
+                See{" "}
+                <a
+                  href="https://supabase.com/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 underline hover:text-slate-200"
+                >
+                  Supabase Privacy Policy
+                </a>
+                .
+              </p>
+            </div>
 
             {/* Vercel Analytics */}
             <div className="mb-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
@@ -72,10 +178,6 @@ export default function PrivacyPage() {
               </p>
             </div>
 
-            <p className="mb-4 leading-relaxed">
-              When you consult Pythia (our AI oracle), we also send data to:
-            </p>
-
             {/* Google Gemini */}
             <div className="mb-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
               <h3 className="mb-2 font-mono text-sm font-semibold text-amber-400">Google Gemini</h3>
@@ -84,7 +186,7 @@ export default function PrivacyPage() {
               </p>
               <ul className="list-inside list-disc space-y-1 pl-2 text-sm text-slate-400">
                 <li>The event title, summary, category, and location</li>
-                <li>Your question and recent chat history (last 5 exchanges)</li>
+                <li>Your question and recent chat history (current session only)</li>
                 <li>Search results from Tavily related to your question</li>
               </ul>
               <p className="mt-3 text-sm text-slate-500">
@@ -102,7 +204,7 @@ export default function PrivacyPage() {
             </div>
 
             {/* Tavily */}
-            <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+            <div className="mb-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
               <h3 className="mb-2 font-mono text-sm font-semibold text-cyan-400">Tavily</h3>
               <p className="mb-3 text-sm leading-relaxed">
                 Provides real-time web search for Pythia. When you ask a question, we send:
@@ -123,46 +225,30 @@ export default function PrivacyPage() {
                 .
               </p>
             </div>
-          </section>
 
-          {/* IP Address Usage */}
-          <section>
-            <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">
-              IP ADDRESS USAGE
-            </h2>
-            <p className="mb-4 leading-relaxed">
-              We use your IP address for rate limiting to prevent abuse and ensure fair usage of
-              Pythia.
-            </p>
+            {/* Stripe */}
             <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
-              <h3 className="mb-2 font-mono text-sm font-semibold text-emerald-400">
-                How We Handle Your IP
-              </h3>
-              <ul className="list-inside list-disc space-y-2 text-sm text-slate-400">
-                <li>
-                  <strong className="text-slate-300">Hashed, not stored raw:</strong> Your IP is
-                  immediately hashed using SHA-256 with a secret salt. Only a truncated hash (16
-                  characters) is stored.
-                </li>
-                <li>
-                  <strong className="text-slate-300">Purpose:</strong> Daily Pythia limits (to
-                  control API costs) and tracking your reaction votes on events.
-                </li>
-                <li>
-                  <strong className="text-slate-300">Not reversible:</strong> The hash cannot be
-                  reversed to reveal your actual IP address.
-                </li>
-                <li>
-                  <strong className="text-slate-300">Storage:</strong> Hashed identifiers are stored
-                  in Upstash Redis and automatically expire after 24 hours (for rate limits) or when
-                  events age out.
-                </li>
-                <li>
-                  <strong className="text-slate-300">Session tokens:</strong> When consulting
-                  Pythia, a session token is generated and stored for 1 hour to reduce repeated
-                  verification. This token is tied to your hashed IP and expires automatically.
-                </li>
+              <h3 className="mb-2 font-mono text-sm font-semibold text-violet-400">Stripe</h3>
+              <p className="mb-3 text-sm leading-relaxed">
+                Processes payments for Pro subscriptions. When you upgrade:
+              </p>
+              <ul className="list-inside list-disc space-y-1 pl-2 text-sm text-slate-400">
+                <li>Payment details are handled entirely by Stripe</li>
+                <li>We never see or store your credit card number</li>
+                <li>We store only your Stripe customer ID and subscription status</li>
               </ul>
+              <p className="mt-3 text-sm text-slate-500">
+                See{" "}
+                <a
+                  href="https://stripe.com/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 underline hover:text-slate-200"
+                >
+                  Stripe&apos;s Privacy Policy
+                </a>
+                .
+              </p>
             </div>
           </section>
 
@@ -172,7 +258,7 @@ export default function PrivacyPage() {
               PUSH NOTIFICATIONS
             </h2>
             <p className="mb-4 leading-relaxed">
-              If you enable push notifications, we store the following on our servers:
+              If you enable push notifications, we store the following linked to your account:
             </p>
 
             <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
@@ -190,21 +276,18 @@ export default function PrivacyPage() {
                   encrypt notifications so only your browser can decrypt them.
                 </li>
                 <li>
-                  <strong className="text-slate-300">Your preferences:</strong> Minimum severity
-                  threshold and event categories you want to be notified about.
+                  <strong className="text-slate-300">Device name:</strong> Browser and platform info
+                  to help you manage multiple devices.
                 </li>
                 <li>
-                  <strong className="text-slate-300">User agent:</strong> Your browser type, stored
-                  to help diagnose issues.
-                </li>
-                <li>
-                  <strong className="text-slate-300">Timestamps:</strong> When you subscribed and
-                  last received a notification.
+                  <strong className="text-slate-300">Your preferences:</strong> Severity thresholds
+                  and event categories for each device.
                 </li>
               </ul>
               <p className="mt-3 text-sm text-slate-500">
-                This data is stored in Upstash Redis and is deleted when you unsubscribe or when
-                your browser revokes the push subscription.
+                This data is deleted when you unsubscribe, remove the device from your account, or
+                when the browser revokes the subscription. Inactive subscriptions are automatically
+                cleaned up after 90 days.
               </p>
             </div>
           </section>
@@ -215,35 +298,32 @@ export default function PrivacyPage() {
               CLIENT-SIDE STORAGE
             </h2>
             <p className="mb-4 leading-relaxed">
-              We store small amounts of data in your browser&apos;s localStorage to enhance your
-              experience. This data never leaves your device.
+              We store small amounts of data in your browser to enhance your experience. This data
+              never leaves your device unless you&apos;re signed in (then it syncs to your account).
             </p>
 
             <div className="space-y-3">
               <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                <code className="font-mono text-xs text-purple-400">sb-*-auth-token (cookies)</code>
+                <p className="mt-2 text-sm text-slate-400">
+                  Supabase authentication tokens. Keep you signed in across sessions. These are the
+                  only cookies we use, and they are essential for login functionality.
+                </p>
+              </div>
+
+              <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
                 <code className="font-mono text-xs text-purple-400">realpolitik:readIds</code>
                 <p className="mt-2 text-sm text-slate-400">
-                  Array of event IDs you&apos;ve clicked on. Used to show which events you&apos;ve
-                  already viewed (visual &quot;read&quot; state). Pruned automatically to only
-                  include current events.
+                  Array of event IDs you&apos;ve clicked on. Shows which events you&apos;ve already
+                  viewed. Synced to your account if signed in.
                 </p>
               </div>
 
               <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
                 <code className="font-mono text-xs text-purple-400">realpolitik:lastVisit</code>
                 <p className="mt-2 text-sm text-slate-400">
-                  Timestamp of your last visit. Used to determine which events are &quot;new&quot;
-                  since you last checked.
-                </p>
-              </div>
-
-              <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <code className="font-mono text-xs text-purple-400">
-                  realpolitik:push:preferences
-                </code>
-                <p className="mt-2 text-sm text-slate-400">
-                  Your push notification preferences: whether enabled, minimum severity level, and
-                  which event categories to notify about. Synced with server when you subscribe.
+                  Timestamp of your last visit. Used to highlight &quot;new&quot; events. Synced to
+                  your account if signed in.
                 </p>
               </div>
 
@@ -252,25 +332,15 @@ export default function PrivacyPage() {
                   realpolitik:installPromptDismissed
                 </code>
                 <p className="mt-2 text-sm text-slate-400">
-                  Set to &quot;permanent&quot; when you dismiss the &quot;Install App&quot; prompt
-                  using the X button. Prevents showing the prompt again.
-                </p>
-              </div>
-
-              <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <code className="font-mono text-xs text-purple-400">
-                  realpolitik:notificationPromptDismissed
-                </code>
-                <p className="mt-2 text-sm text-slate-400">
-                  Set when you dismiss the notification enablement prompt. Prevents asking again.
+                  Set when you dismiss the &quot;Install App&quot; prompt. Prevents showing it
+                  again.
                 </p>
               </div>
             </div>
 
             <p className="mt-4 text-sm text-slate-500">
-              You can clear this data at any time by clearing your browser&apos;s localStorage for
-              this site, or by visiting the app with{" "}
-              <code className="text-slate-400">?reset=1</code> in the URL.
+              You can clear this data at any time by clearing your browser&apos;s storage for this
+              site, or by signing out and clearing localStorage.
             </p>
           </section>
 
@@ -280,11 +350,12 @@ export default function PrivacyPage() {
               WHAT WE DON&apos;T COLLECT
             </h2>
             <ul className="list-inside list-disc space-y-2 text-slate-400">
-              <li>No account registration or personal information required</li>
-              <li>No email addresses or names</li>
+              <li>No briefing or chat history is stored on our servers</li>
+              <li>No payment card numbers (handled entirely by Stripe)</li>
               <li>No cookies for tracking or advertising</li>
               <li>No cross-site tracking or advertising scripts</li>
               <li>No location data from your device</li>
+              <li>No selling or sharing of data with advertisers</li>
             </ul>
           </section>
 
@@ -293,26 +364,52 @@ export default function PrivacyPage() {
             <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">DATA RETENTION</h2>
             <ul className="list-inside list-disc space-y-2 text-slate-400">
               <li>
-                <strong className="text-slate-300">Rate limit counters:</strong> Expire
-                automatically at midnight UTC each day
+                <strong className="text-slate-300">Account data:</strong> Retained until you delete
+                your account
               </li>
               <li>
-                <strong className="text-slate-300">Reaction votes:</strong> Retained while the event
-                is active, deleted when events age out of the system
+                <strong className="text-slate-300">Briefing usage:</strong> Daily counters reset at
+                midnight UTC
+              </li>
+              <li>
+                <strong className="text-slate-300">Reactions:</strong> Retained while the event is
+                active, deleted when events age out
+              </li>
+              <li>
+                <strong className="text-slate-300">Read history:</strong> Automatically pruned to
+                only include recent events
               </li>
               <li>
                 <strong className="text-slate-300">Push subscriptions:</strong> Deleted when you
-                unsubscribe, when your browser revokes the subscription, or when we detect the
-                endpoint is no longer valid
+                unsubscribe or after 90 days of inactivity
               </li>
               <li>
-                <strong className="text-slate-300">Notified event IDs:</strong> We track which
-                events triggered notifications to prevent duplicates. This data expires after 7
-                days.
+                <strong className="text-slate-300">Subscription data:</strong> Stripe retains
+                payment history per their policies; we retain subscription status
+              </li>
+            </ul>
+          </section>
+
+          {/* Your Rights */}
+          <section>
+            <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">YOUR RIGHTS</h2>
+            <p className="mb-4 leading-relaxed">You have the right to:</p>
+            <ul className="list-inside list-disc space-y-2 text-slate-400">
+              <li>
+                <strong className="text-slate-300">Access your data:</strong> View your profile and
+                preferences in the Settings panel
               </li>
               <li>
-                <strong className="text-slate-300">Client-side data:</strong> Persists until you
-                clear it or the browser clears localStorage
+                <strong className="text-slate-300">Export your data:</strong> Contact us for a full
+                export of your account data
+              </li>
+              <li>
+                <strong className="text-slate-300">Delete your account:</strong> Contact us to
+                permanently delete your account and all associated data
+              </li>
+              <li>
+                <strong className="text-slate-300">Cancel subscription:</strong> Manage your
+                subscription anytime via the Stripe customer portal
               </li>
             </ul>
           </section>
@@ -321,7 +418,8 @@ export default function PrivacyPage() {
           <section className="border-t border-slate-800 pt-10">
             <h2 className="mb-4 font-mono text-lg font-semibold text-slate-100">QUESTIONS?</h2>
             <p className="leading-relaxed text-slate-400">
-              If you have questions about this privacy policy, reach out on{" "}
+              If you have questions about this privacy policy or want to exercise your data rights,
+              reach out on{" "}
               <a
                 href="https://x.com/iamjameskeane"
                 target="_blank"
@@ -329,6 +427,13 @@ export default function PrivacyPage() {
                 className="text-slate-300 underline hover:text-slate-100"
               >
                 Twitter / X
+              </a>{" "}
+              or email{" "}
+              <a
+                href="mailto:realpolitikw@gmail.com"
+                className="text-slate-300 underline hover:text-slate-100"
+              >
+                realpolitikw@gmail.com
               </a>
               .
             </p>
