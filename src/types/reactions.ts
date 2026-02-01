@@ -24,7 +24,7 @@ export interface EnrichedReactionData extends ReactionCounts {
   consensus: ConsensusType;
   /** Percentage of votes for the consensus type (0-100) */
   consensusPct: number;
-  /** True if total votes >= HOT_EVENT_MIN_VOTES */
+  /** True if weighted vote score >= HOT_WEIGHTED_THRESHOLD (critical votes count more) */
   isHot: boolean;
   /** Original severity adjusted by critical consensus */
   adjustedSeverity: number;

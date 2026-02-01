@@ -26,7 +26,7 @@ A real-time geopolitical event monitoring dashboard that aggregates news from mu
 - **Mobile**: Three-phase "Pilot's View" intelligence sheet
   - Scanner mode: Scrollable event feed with sort/filter
   - Pilot mode: Detailed event cards with swipe navigation
-  - Analyst mode: AI briefing (coming soon)
+  - Analyst mode: AI briefing with Pythia
 - **iOS Safari optimized**: Full viewport height, safe area handling
 
 ### 🔗 Sharing & Deep Linking

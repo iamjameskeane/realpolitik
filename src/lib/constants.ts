@@ -64,15 +64,30 @@ export const CONSENSUS_THRESHOLD = 0.6;
 export const MIN_VOTES_FOR_CONSENSUS = 3;
 
 /**
- * Minimum votes required for "hot" badge.
+ * Weights for calculating "hot" badge eligibility.
  *
- * TODO: Review this algorithm. Currently just a simple threshold.
- * Consider more sophisticated approaches:
- * - Velocity-based: X reactions in last Y hours
- * - Relative: Top 10% of events by reaction count
- * - Weighted: Critical votes count more than noise
- * - Recency decay: Recent reactions weighted higher
- * - Trending (Reddit/HN style): Balance recency + engagement
+ * Critical votes indicate high importance/engagement, so they count most.
+ * Market votes show financial relevance - moderate weight.
+ * Noise votes shouldn't contribute much to "hot" status.
+ *
+ * Examples of what triggers hot badge (threshold = 6):
+ * - 3 critical votes (3 × 2.0 = 6) ✓
+ * - 4 market votes (4 × 1.5 = 6) ✓
+ * - 2 critical + 1 market + 1 noise = 5.5 (close but not quite)
+ * - 2 critical + 2 market = 7 ✓
+ */
+export const HOT_VOTE_WEIGHTS = {
+  critical: 2.0, // Critical = high importance
+  market: 1.5, // Market impact = moderate
+  noise: 0.5, // Noise shouldn't make things "hot"
+} as const;
+
+/** Weighted threshold for hot badge (in weighted points, not raw votes) */
+export const HOT_WEIGHTED_THRESHOLD = 6;
+
+/**
+ * @deprecated Use HOT_VOTE_WEIGHTS and HOT_WEIGHTED_THRESHOLD instead.
+ * Kept for backwards compatibility - will be removed in next major version.
  */
 export const HOT_EVENT_MIN_VOTES = 5;
 
