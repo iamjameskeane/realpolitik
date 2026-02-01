@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dashboard } from "@/components/Dashboard";
@@ -11,6 +11,7 @@ import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useEvents } from "@/hooks/useEvents";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { GeoEvent } from "@/types/events";
+import { EntityFromDB, fetchEntityBySlug } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface ClientPageProps {
@@ -55,10 +56,15 @@ function HomeContent({ initialEvents }: ClientPageProps) {
     }
   }, [searchParams]);
 
-  // Deep linking - get event ID from URL
+  // Deep linking - get event ID and entity slug from URL
   const initialEventId = searchParams.get("event");
+  const initialEntitySlug = searchParams.get("entity");
 
-  // Handle deep link - fetch event if not in current data
+  // Entity deep linking state
+  const [initialEntity, setInitialEntity] = useState<EntityFromDB | null>(null);
+  const [entityLoading, setEntityLoading] = useState(false);
+
+  // Handle event deep link - fetch event if not in current data
   useEffect(() => {
     if (!initialEventId || isLoading) return;
 
@@ -71,6 +77,37 @@ function HomeContent({ initialEvents }: ClientPageProps) {
       console.error("Failed to load deep-linked event:", err)
     );
   }, [initialEventId, events, isLoading, fetchEventById]);
+
+  // Handle entity deep link - fetch entity by slug
+  useEffect(() => {
+    if (!initialEntitySlug) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setInitialEntity(null);
+      return;
+    }
+
+    setEntityLoading(true);
+    fetchEntityBySlug(initialEntitySlug)
+      .then((entity) => {
+        setInitialEntity(entity);
+        if (!entity) {
+          console.warn("Entity not found:", initialEntitySlug);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load deep-linked entity:", err);
+        setInitialEntity(null);
+      })
+      .finally(() => setEntityLoading(false));
+  }, [initialEntitySlug]);
+
+  // Callback to clear entity from URL when modal closes
+  const clearEntityParam = useCallback(() => {
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.delete("entity");
+    window.history.replaceState({}, "", newUrl.toString());
+    setInitialEntity(null);
+  }, []);
 
   // Listen for notification clicks from service worker (when app is already open)
   useEffect(() => {
@@ -122,6 +159,9 @@ function HomeContent({ initialEvents }: ClientPageProps) {
         lastUpdated={lastUpdated}
         isRefreshing={isRefreshing || isExpanding}
         initialEventId={initialEventId}
+        initialEntity={initialEntity}
+        initialEntityLoading={entityLoading}
+        onEntityModalClose={clearEntityParam}
         onExpandTimeRange={expandToHours}
         maxHoursLoaded={maxHoursLoaded}
       />
@@ -140,6 +180,9 @@ function HomeContent({ initialEvents }: ClientPageProps) {
       lastUpdated={lastUpdated}
       isRefreshing={isRefreshing || isExpanding}
       initialEventId={initialEventId}
+      initialEntity={initialEntity}
+      initialEntityLoading={entityLoading}
+      onEntityModalClose={clearEntityParam}
       onExpandTimeRange={expandToHours}
       maxHoursLoaded={maxHoursLoaded}
       fetchEventById={fetchEventById}

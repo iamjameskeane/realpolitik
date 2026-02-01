@@ -10,8 +10,11 @@ import { BriefingModal } from "./BriefingModal";
 import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "./AboutModal";
 import { SettingsModal } from "./SettingsModal";
+import { EntityModal } from "./entities";
 import { useAuth } from "@/contexts/AuthContext";
 import { GeoEvent, CATEGORY_COLORS, CATEGORY_DESCRIPTIONS, EventCategory } from "@/types/events";
+import { EntityFromDB } from "@/lib/supabase";
+import { EntityType } from "@/types/entities";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
 import { useNotificationInbox } from "@/hooks/useNotificationInbox";
@@ -36,6 +39,12 @@ interface DashboardProps {
   lastUpdated?: Date | null;
   isRefreshing?: boolean;
   initialEventId?: string | null;
+  /** Entity to open on load (for deep linking via ?entity=slug) */
+  initialEntity?: EntityFromDB | null;
+  /** Whether the initial entity is still loading */
+  initialEntityLoading?: boolean;
+  /** Callback when entity modal is closed (to clear URL param) */
+  onEntityModalClose?: () => void;
   /** Callback to expand time range - fetches more data from server */
   onExpandTimeRange?: (hours: number) => Promise<void>;
   /** Maximum hours currently loaded from server */
@@ -52,6 +61,9 @@ export function Dashboard({
   lastUpdated,
   isRefreshing,
   initialEventId,
+  initialEntity,
+  // initialEntityLoading - unused but kept in props for API consistency
+  onEntityModalClose,
   onExpandTimeRange,
   maxHoursLoaded = 24,
   fetchEventById,
@@ -84,10 +96,32 @@ export function Dashboard({
   const [briefingEvent, setBriefingEvent] = useState<GeoEvent | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Entity modal state for deep linking
+  const [entityModalOpen, setEntityModalOpen] = useState(false);
   const mapRef = useRef<WorldMapHandle>(null);
   const initialEventHandled = useRef(false);
+  const initialEntityHandled = useRef(false);
   // Track when a map event was clicked to prevent sidebar toggle interference
   const lastMapClickRef = useRef<number>(0);
+
+  // Handle entity deep linking
+  useEffect(() => {
+    if (initialEntity && !initialEntityHandled.current) {
+      initialEntityHandled.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEntityModalOpen(true);
+    }
+    // Reset handler when entity changes
+    if (!initialEntity) {
+      initialEntityHandled.current = false;
+    }
+  }, [initialEntity]);
+
+  // Handle entity modal close
+  const handleEntityModalClose = useCallback(() => {
+    setEntityModalOpen(false);
+    onEntityModalClose?.();
+  }, [onEntityModalClose]);
 
   // Calculate which time ranges have data (dynamic slider) - needed before useEventStates
   const availableTimeRanges = useMemo(() => {
@@ -827,6 +861,29 @@ export function Dashboard({
             />
           )}
         </AnimatePresence>
+
+        {/* Entity Modal for deep linking */}
+        {entityModalOpen && initialEntity && (
+          <EntityModal
+            entityId={initialEntity.id}
+            entityName={initialEntity.name}
+            entityType={initialEntity.node_type as EntityType}
+            onClose={handleEntityModalClose}
+            onEventClick={(eventId) => {
+              handleEntityModalClose();
+              // Navigate to the event
+              if (fetchEventById) {
+                fetchEventById(eventId).then((event) => {
+                  if (event) {
+                    setSelectedEventId(eventId);
+                    setSidebarOpen(true);
+                    mapRef.current?.flyToEvent(event);
+                  }
+                });
+              }
+            }}
+          />
+        )}
       </div>
     </BatchReactionsProvider>
   );

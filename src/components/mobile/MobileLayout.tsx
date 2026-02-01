@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { GeoEvent, EventCategory } from "@/types/events";
-import { EventEntity } from "@/types/entities";
+import { EventEntity, EntityType } from "@/types/entities";
+import { EntityFromDB } from "@/lib/supabase";
 import { WorldMap, WorldMapHandle } from "../WorldMap";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { MapFallback } from "../map/MapFallback";
@@ -31,6 +32,12 @@ interface MobileLayoutProps {
   lastUpdated?: Date | null;
   isRefreshing?: boolean;
   initialEventId?: string | null;
+  /** Entity to open on load (for deep linking via ?entity=slug) */
+  initialEntity?: EntityFromDB | null;
+  /** Whether the initial entity is still loading */
+  initialEntityLoading?: boolean;
+  /** Callback when entity modal is closed (to clear URL param) */
+  onEntityModalClose?: () => void;
   /** Callback to expand time range - fetches more data from server */
   onExpandTimeRange?: (hours: number) => Promise<void>;
   /** Maximum hours currently loaded from server */
@@ -70,6 +77,9 @@ function MobileLayoutInner({
   lastUpdated,
   isRefreshing,
   initialEventId,
+  initialEntity,
+  initialEntityLoading,
+  onEntityModalClose,
   onExpandTimeRange,
   maxHoursLoaded = 24,
   fetchEventById,
@@ -81,6 +91,9 @@ function MobileLayoutInner({
 
   // Fix Safari viewport height on older iOS
   useViewportHeight();
+
+  // Track whether we've handled the initial entity deep link
+  const initialEntityHandled = useRef(false);
 
   // UI State (not related to event selection)
   const [timeRangeIndex, setTimeRangeIndex] = useState(4); // Default to 24H (index 4), will clamp to max available
@@ -788,6 +801,39 @@ function MobileLayoutInner({
     },
     [pushEvent, markAsRead]
   );
+
+  // Handle entity deep linking - when initialEntity is loaded, navigate to it
+  useEffect(() => {
+    if (initialEntity && !initialEntityHandled.current && !initialEntityLoading) {
+      initialEntityHandled.current = true;
+
+      // Convert EntityFromDB to EventEntity format
+      const eventEntity: EventEntity = {
+        entity_id: initialEntity.id,
+        name: initialEntity.name,
+        node_type: initialEntity.node_type as EntityType,
+        relation_type: "involves", // Default relation for deep linked entities
+        hit_count: 0,
+      };
+
+      // Trigger the entity navigation
+      handleEntityClick(eventEntity);
+    }
+
+    // Reset handler when entity changes
+    if (!initialEntity) {
+      initialEntityHandled.current = false;
+    }
+  }, [initialEntity, initialEntityLoading, handleEntityClick]);
+
+  // Handle entity modal close (when navigating back from entity)
+  useEffect(() => {
+    // When we go back to scanner from an entity view, clear the URL param
+    if (currentFrame.type === "scanner" && initialEntityHandled.current && onEntityModalClose) {
+      onEntityModalClose();
+      initialEntityHandled.current = false;
+    }
+  }, [currentFrame.type, onEntityModalClose]);
 
   // Handle request briefing - open full-screen modal instead of using stack
   const handleRequestBriefing = useCallback((event: GeoEvent) => {

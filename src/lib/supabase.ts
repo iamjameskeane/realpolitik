@@ -307,3 +307,61 @@ export async function fetchEntities(): Promise<EntityFromDB[]> {
 
   return data || [];
 }
+
+/**
+ * Fetch a single entity by slug
+ * Used for deep linking when navigating to /entity/[slug]
+ * Falls back to case-insensitive name match if slug not found
+ */
+export async function fetchEntityBySlug(slug: string): Promise<EntityFromDB | null> {
+  const client = getSupabaseClient();
+
+  // First, try exact slug match
+  const { data: bySlug, error: slugError } = await client
+    .from("entities")
+    .select("*")
+    .eq("slug", slug)
+    .single();
+
+  if (!slugError && bySlug) {
+    return bySlug;
+  }
+
+  // Fallback: try case-insensitive name match
+  // Convert slug format to name (e.g., "united-states" -> "united states")
+  const nameFromSlug = slug.replace(/-/g, " ");
+  const { data: byName, error: nameError } = await client
+    .from("entities")
+    .select("*")
+    .ilike("name", nameFromSlug)
+    .limit(1)
+    .single();
+
+  if (!nameError && byName) {
+    return byName;
+  }
+
+  // Both attempts failed
+  if (slugError?.code !== "PGRST116") {
+    console.error("Error fetching entity by slug:", slugError);
+  }
+
+  return null;
+}
+
+/**
+ * Fetch a single entity by ID
+ * Used when we have the UUID but need full entity details
+ */
+export async function fetchEntityById(id: string): Promise<EntityFromDB | null> {
+  const client = getSupabaseClient();
+  const { data, error } = await client.from("entities").select("*").eq("id", id).single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null; // Not found
+    console.error("Error fetching entity by ID:", error);
+    throw error;
+  }
+
+  return data;
+}
