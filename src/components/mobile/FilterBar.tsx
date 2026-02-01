@@ -80,115 +80,196 @@ export function FilterBar({
     <div className="relative px-4 py-2">
       <div className="flex items-center justify-between gap-2">
         {/* Sort button - left aligned */}
-        <button
-          onClick={() => {
-            setShowSortHelp(!showSortHelp);
-            setShowTimePopover(false);
-            setShowCategoryPopover(false);
-          }}
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-all ${
-            showSortHelp
-              ? "border-accent bg-accent/10 text-accent"
-              : "border-foreground/20 bg-foreground/5 text-foreground/60"
-          }`}
-          aria-label={`Sort by ${currentSortOption.label}`}
-          aria-expanded={showSortHelp}
-          aria-haspopup="listbox"
-        >
-          {"isPulsing" in currentSortOption && currentSortOption.isPulsing && (
-            <span className="relative flex h-2 w-2">
-              {incomingCount > 0 ? (
-                <>
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-500 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
-                </>
-              ) : (
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-foreground/30" />
-              )}
+        <div className="relative">
+          <button
+            onClick={() => {
+              setShowSortHelp(!showSortHelp);
+              setShowTimePopover(false);
+              setShowCategoryPopover(false);
+            }}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-all ${
+              showSortHelp
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-foreground/20 bg-foreground/5 text-foreground/60"
+            }`}
+            aria-label={`Sort by ${currentSortOption.label}`}
+            aria-expanded={showSortHelp}
+            aria-haspopup="listbox"
+          >
+            {"isPulsing" in currentSortOption && currentSortOption.isPulsing && (
+              <span className="relative flex h-2 w-2">
+                {incomingCount > 0 ? (
+                  <>
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-500 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
+                  </>
+                ) : (
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-foreground/30" />
+                )}
+              </span>
+            )}
+            <span
+              key={sortBy}
+              className="inline-block whitespace-nowrap animate-[fadeSlideIn_0.2s_ease-out]"
+            >
+              {currentSortOption.shortLabel}
             </span>
+            <svg
+              className={`h-3 w-3 transition-transform ${showSortHelp ? "rotate-180" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+
+          {/* Sort Popover */}
+          {showSortHelp && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowSortHelp(false)} />
+              <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-foreground/10 bg-background/95 shadow-xl backdrop-blur-xl">
+                <div className="px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40 border-b border-foreground/10">
+                  Sort By
+                </div>
+                <div className="custom-scrollbar max-h-64 overflow-y-auto p-2 space-y-1">
+                  {SORT_OPTIONS.map((option) => {
+                    const isActive = sortBy === option.value;
+
+                    return (
+                      <button
+                        key={option.value}
+                        onClick={() => {
+                          onSortChange(option.value);
+                          setShowSortHelp(false);
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                          isActive
+                            ? "bg-accent/20 text-accent"
+                            : "text-foreground/60 active:bg-foreground/10"
+                        }`}
+                      >
+                        {"isPulsing" in option && option.isPulsing ? (
+                          <span className="relative flex h-4 w-4 items-center justify-center">
+                            {incomingCount > 0 ? (
+                              <>
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-500 opacity-75" />
+                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-violet-500" />
+                              </>
+                            ) : (
+                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-foreground/30" />
+                            )}
+                          </span>
+                        ) : option.shortLabel.includes("🔥") ||
+                          option.shortLabel.includes("☢️") ||
+                          option.shortLabel.includes("💬") ? (
+                          <span className="flex h-4 w-4 items-center justify-center text-sm">
+                            {option.shortLabel.split(" ")[0]}
+                          </span>
+                        ) : null}
+                        <div className="flex-1">
+                          <div className="font-mono text-xs font-medium uppercase">
+                            {option.label}
+                          </div>
+                          <div className="text-[10px] text-foreground/40">{option.tooltip}</div>
+                        </div>
+                        {isActive && (
+                          <svg
+                            className="h-4 w-4 text-accent"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
           )}
-          <span
-            key={sortBy}
-            className="inline-block whitespace-nowrap animate-[fadeSlideIn_0.2s_ease-out]"
-          >
-            {currentSortOption.shortLabel}
-          </span>
-          <svg
-            className={`h-3 w-3 transition-transform ${showSortHelp ? "rotate-180" : ""}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+        </div>
 
         {/* Time & Category buttons - right aligned */}
         <div className="flex items-center gap-2">
           {/* Time range button */}
-          <button
-            onClick={() => {
-              setShowTimePopover(!showTimePopover);
-              setShowCategoryPopover(false);
-              setShowSortHelp(false);
-            }}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-colors ${
-              showTimePopover
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-foreground/20 bg-foreground/5 text-foreground/60"
-            }`}
-          >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            {currentTimeLabel}
-          </button>
-
-          {/* Category filter button */}
-          <button
-            onClick={() => {
-              setShowCategoryPopover(!showCategoryPopover);
-              setShowTimePopover(false);
-              setShowSortHelp(false);
-            }}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-colors ${
-              showCategoryPopover
-                ? "border-accent bg-accent/10 text-accent"
-                : activeCount < 4
-                  ? "border-accent/50 bg-accent/10 text-accent"
-                  : "border-foreground/20 bg-foreground/5 text-foreground/60"
-            }`}
-          >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-              />
-            </svg>
-            {activeCount < 4 ? `${activeCount}/4` : "All"}
-          </button>
-
-          {/* Severity filter button */}
-          {onMinSeverityChange && (
+          <div className="relative">
             <button
               onClick={() => {
-                setShowSeverityPopover(!showSeverityPopover);
-                setShowTimePopover(false);
+                setShowTimePopover(!showTimePopover);
                 setShowCategoryPopover(false);
                 setShowSortHelp(false);
               }}
               className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-colors ${
-                showSeverityPopover
+                showTimePopover
                   ? "border-accent bg-accent/10 text-accent"
-                  : minSeverity > 1
-                    ? "border-orange-500/50 bg-orange-500/10 text-orange-400"
+                  : "border-foreground/20 bg-foreground/5 text-foreground/60"
+              }`}
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              {currentTimeLabel}
+            </button>
+
+            {/* Time Range Popover */}
+            {showTimePopover && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowTimePopover(false)} />
+                <div className="absolute right-0 top-full z-50 mt-2 w-48 rounded-xl border border-foreground/10 bg-background/95 p-2 shadow-xl backdrop-blur-xl">
+                  <div className="mb-2 px-2 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
+                    Time Range
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {availableTimeRanges.map((range, i) => (
+                      <button
+                        key={range.label}
+                        onClick={() => handleTimeSelect(i)}
+                        className={`rounded-lg px-3 py-2 font-mono text-xs font-medium transition-colors ${
+                          timeRangeIndex === i
+                            ? "bg-accent text-white"
+                            : "text-foreground/60 active:bg-foreground/10"
+                        }`}
+                      >
+                        {range.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Category filter button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowCategoryPopover(!showCategoryPopover);
+                setShowTimePopover(false);
+                setShowSortHelp(false);
+              }}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-colors ${
+                showCategoryPopover
+                  ? "border-accent bg-accent/10 text-accent"
+                  : activeCount < 4
+                    ? "border-accent/50 bg-accent/10 text-accent"
                     : "border-foreground/20 bg-foreground/5 text-foreground/60"
               }`}
             >
@@ -197,11 +278,128 @@ export function FilterBar({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
                 />
               </svg>
-              {minSeverity > 1 ? `${minSeverity}+` : "Sev"}
+              {activeCount < 4 ? `${activeCount}/4` : "All"}
             </button>
+
+            {/* Category Popover */}
+            {showCategoryPopover && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowCategoryPopover(false)} />
+                <div className="absolute right-0 top-full z-50 mt-2 rounded-xl border border-foreground/10 bg-background/95 p-3 shadow-xl backdrop-blur-xl">
+                  <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
+                    Categories
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {CATEGORIES.map((cat) => {
+                      const isActive = activeCategories.has(cat);
+                      const count = categoryCounts[cat];
+
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => handleCategoryToggle(cat)}
+                          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 font-mono text-[10px] font-medium uppercase transition-all ${
+                            isActive
+                              ? "bg-foreground/15 text-foreground"
+                              : "bg-foreground/5 text-foreground/30"
+                          }`}
+                          style={{
+                            borderColor: isActive ? CATEGORY_COLORS[cat] : "transparent",
+                            borderWidth: "1px",
+                          }}
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{
+                              backgroundColor: isActive ? CATEGORY_COLORS[cat] : "currentColor",
+                            }}
+                          />
+                          {cat}
+                          <span className="opacity-50">{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Severity filter button */}
+          {onMinSeverityChange && (
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowSeverityPopover(!showSeverityPopover);
+                  setShowTimePopover(false);
+                  setShowCategoryPopover(false);
+                  setShowSortHelp(false);
+                }}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[10px] font-medium uppercase transition-colors ${
+                  showSeverityPopover
+                    ? "border-accent bg-accent/10 text-accent"
+                    : minSeverity > 1
+                      ? "border-orange-500/50 bg-orange-500/10 text-orange-400"
+                      : "border-foreground/20 bg-foreground/5 text-foreground/60"
+                }`}
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+                {minSeverity > 1 ? `${minSeverity}+` : "Sev"}
+              </button>
+
+              {/* Severity Popover */}
+              {showSeverityPopover && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowSeverityPopover(false)}
+                  />
+                  <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-foreground/10 bg-background/95 p-4 shadow-xl backdrop-blur-xl">
+                    <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
+                      Minimum Severity
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-lg font-bold text-orange-400">
+                        {minSeverity}+
+                      </span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        value={minSeverity}
+                        onChange={(e) => onMinSeverityChange(Number(e.target.value))}
+                        className="severity-slider flex-1"
+                      />
+                    </div>
+                    <div className="mt-2 flex justify-between text-[9px] text-foreground/30">
+                      <span>All</span>
+                      <span>Critical only</span>
+                    </div>
+                    {minSeverity > 1 && (
+                      <button
+                        onClick={() => {
+                          onMinSeverityChange(1);
+                          setShowSeverityPopover(false);
+                        }}
+                        className="mt-3 w-full rounded-lg border border-foreground/10 py-1.5 text-xs text-foreground/50 transition-colors hover:bg-foreground/5"
+                      >
+                        Reset to All
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           {/* Hide Seen toggle - closed eye (purple) = hiding seen, open eye (grey) = showing all */}
@@ -246,184 +444,6 @@ export function FilterBar({
           )}
         </div>
       </div>
-
-      {/* Time Range Popover */}
-      {showTimePopover && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setShowTimePopover(false)} />
-          <div className="absolute right-4 top-full z-50 mt-2 w-48 rounded-xl border border-foreground/10 bg-background/95 p-2 shadow-xl backdrop-blur-xl">
-            <div className="mb-2 px-2 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
-              Time Range
-            </div>
-            <div className="grid grid-cols-3 gap-1">
-              {availableTimeRanges.map((range, i) => (
-                <button
-                  key={range.label}
-                  onClick={() => handleTimeSelect(i)}
-                  className={`rounded-lg px-3 py-2 font-mono text-xs font-medium transition-colors ${
-                    timeRangeIndex === i
-                      ? "bg-accent text-white"
-                      : "text-foreground/60 active:bg-foreground/10"
-                  }`}
-                >
-                  {range.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Category Popover */}
-      {showCategoryPopover && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setShowCategoryPopover(false)} />
-          <div className="absolute right-4 top-full z-50 mt-2 rounded-xl border border-foreground/10 bg-background/95 p-3 shadow-xl backdrop-blur-xl">
-            <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
-              Categories
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {CATEGORIES.map((cat) => {
-                const isActive = activeCategories.has(cat);
-                const count = categoryCounts[cat];
-
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => handleCategoryToggle(cat)}
-                    className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 font-mono text-[10px] font-medium uppercase transition-all ${
-                      isActive
-                        ? "bg-foreground/15 text-foreground"
-                        : "bg-foreground/5 text-foreground/30"
-                    }`}
-                    style={{
-                      borderColor: isActive ? CATEGORY_COLORS[cat] : "transparent",
-                      borderWidth: "1px",
-                    }}
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{
-                        backgroundColor: isActive ? CATEGORY_COLORS[cat] : "currentColor",
-                      }}
-                    />
-                    {cat}
-                    <span className="opacity-50">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Sort Popover */}
-      {showSortHelp && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setShowSortHelp(false)} />
-          <div className="absolute left-4 top-full z-50 mt-2 w-64 rounded-xl border border-foreground/10 bg-background/95 shadow-xl backdrop-blur-xl">
-            <div className="px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40 border-b border-foreground/10">
-              Sort By
-            </div>
-            <div className="custom-scrollbar max-h-64 overflow-y-auto p-2 space-y-1">
-              {SORT_OPTIONS.map((option) => {
-                const isActive = sortBy === option.value;
-
-                return (
-                  <button
-                    key={option.value}
-                    onClick={() => {
-                      onSortChange(option.value);
-                      setShowSortHelp(false);
-                    }}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                      isActive
-                        ? "bg-accent/20 text-accent"
-                        : "text-foreground/60 active:bg-foreground/10"
-                    }`}
-                  >
-                    {"isPulsing" in option && option.isPulsing ? (
-                      <span className="relative flex h-4 w-4 items-center justify-center">
-                        {incomingCount > 0 ? (
-                          <>
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-500 opacity-75" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-violet-500" />
-                          </>
-                        ) : (
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-foreground/30" />
-                        )}
-                      </span>
-                    ) : option.shortLabel.includes("🔥") ||
-                      option.shortLabel.includes("☢️") ||
-                      option.shortLabel.includes("💬") ? (
-                      <span className="flex h-4 w-4 items-center justify-center text-sm">
-                        {option.shortLabel.split(" ")[0]}
-                      </span>
-                    ) : null}
-                    <div className="flex-1">
-                      <div className="font-mono text-xs font-medium uppercase">{option.label}</div>
-                      <div className="text-[10px] text-foreground/40">{option.tooltip}</div>
-                    </div>
-                    {isActive && (
-                      <svg
-                        className="h-4 w-4 text-accent"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Severity Popover */}
-      {showSeverityPopover && onMinSeverityChange && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setShowSeverityPopover(false)} />
-          <div className="absolute right-4 top-full z-50 mt-2 w-56 rounded-xl border border-foreground/10 bg-background/95 p-4 shadow-xl backdrop-blur-xl">
-            <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-wider text-foreground/40">
-              Minimum Severity
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-lg font-bold text-orange-400">{minSeverity}+</span>
-              <input
-                type="range"
-                min={1}
-                max={10}
-                value={minSeverity}
-                onChange={(e) => onMinSeverityChange(Number(e.target.value))}
-                className="severity-slider flex-1"
-              />
-            </div>
-            <div className="mt-2 flex justify-between text-[9px] text-foreground/30">
-              <span>All</span>
-              <span>Critical only</span>
-            </div>
-            {minSeverity > 1 && (
-              <button
-                onClick={() => {
-                  onMinSeverityChange(1);
-                  setShowSeverityPopover(false);
-                }}
-                className="mt-3 w-full rounded-lg border border-foreground/10 py-1.5 text-xs text-foreground/50 transition-colors hover:bg-foreground/5"
-              >
-                Reset to All
-              </button>
-            )}
-          </div>
-        </>
-      )}
     </div>
   );
 }
