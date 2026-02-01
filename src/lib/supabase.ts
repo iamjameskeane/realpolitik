@@ -263,31 +263,8 @@ export async function fetchImpactChain(
   return data;
 }
 
-/**
- * Submit a reaction to an event
- */
-export async function submitReaction(
-  eventId: string,
-  reactionType: "critical" | "market" | "noise",
-  userFingerprint: string
-): Promise<void> {
-  const client = getSupabaseClient();
-  const { error } = await client.from("reactions").upsert(
-    {
-      event_id: eventId,
-      user_fingerprint: userFingerprint,
-      reaction_type: reactionType,
-    },
-    {
-      onConflict: "event_id,user_fingerprint",
-    }
-  );
-
-  if (error) {
-    console.error("Error submitting reaction:", error);
-    throw error;
-  }
-}
+// Note: Reactions are now handled via /api/reactions route using user_id authentication
+// See src/lib/reactions.ts for the implementation
 
 /**
  * Fetch all entities (for graph exploration)
