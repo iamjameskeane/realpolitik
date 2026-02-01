@@ -26,6 +26,7 @@ import { EnrichedReactionData } from "@/hooks/useBatchReactions";
 import { EventVisualState } from "@/hooks/useEventStates";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+const MAPBOX_TOKEN_MISSING = !MAPBOX_TOKEN;
 
 // Center on Europe for initial view
 const INITIAL_CENTER: [number, number] = [15, 50];
@@ -63,6 +64,8 @@ interface WorldMapProps {
     onClose: () => void;
     label?: string;
   };
+  /** Fetch a single event by ID (for entity modal navigation when event not loaded) */
+  fetchEventById?: (id: string) => Promise<GeoEvent | null>;
 }
 
 export interface WorldMapHandle {
@@ -85,6 +88,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     onClusterLongPress,
     onClusterFlyover,
     externalStack,
+    fetchEventById,
   },
   ref
 ) {
@@ -105,6 +109,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     y: number;
   } | null>(null);
   const [isFlying, setIsFlying] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
   // Cluster interaction state (desktop)
   const [clusterPopup, setClusterPopup] = useState<{
@@ -139,8 +144,9 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
   // Hooks
   // Block auto-rotation when any cluster UI is open (popup, context menu, or tooltip)
-  const hasClusterUIOpen = clusterPopup !== null || clusterContextMenu !== null || clusterTooltip !== null;
-  
+  const hasClusterUIOpen =
+    clusterPopup !== null || clusterContextMenu !== null || clusterTooltip !== null;
+
   const { startAutoRotate, stopAutoRotate, recordInteraction, lastInteractionRef } = useAutoRotate(
     map,
     selectedEventRef,
@@ -159,25 +165,25 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   const handleSingleEventClick = useCallback(
     (event: GeoEvent) => {
       if (!map.current) return;
-      
+
       // Clear any existing selection and prepare for fly animation
       setStackedEvents([]);
       setStackIndex(0);
       setSelectedEvent(null);
       setPopupPosition(null);
       setIsFlying(true);
-      
+
       // Stop any existing animation
       map.current.stop();
-      
+
       // Notify parent (updates URL, marks as read)
       onEventClick?.(event);
-      
+
       // Fly to the event
       const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
-      const flyDuration = 1200;
-      
+      const flyDuration = 1000;
+
       map.current.flyTo({
         center: event.coordinates,
         zoom: targetZoom,
@@ -188,7 +194,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           right: sidebarOpen ? SIDEBAR_WIDTH : 0,
         },
       });
-      
+
       // Show popup after animation completes
       setTimeout(() => {
         setIsFlying(false);
@@ -205,25 +211,25 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   const handleStackedEventClick = useCallback(
     (eventsAtLocation: GeoEvent[]) => {
       if (!map.current) return;
-      
+
       const firstEvent = eventsAtLocation[0];
-      
+
       // Clear any existing selection and prepare for fly animation
       setSelectedEvent(null);
       setPopupPosition(null);
       setIsFlying(true);
-      
+
       // Stop any existing animation
       map.current.stop();
-      
+
       // Notify parent (updates URL, marks as read)
       onEventClick?.(firstEvent);
-      
+
       // Fly to the events
       const currentZoom = map.current.getZoom();
       const targetZoom = Math.max(currentZoom, 4);
-      const flyDuration = 1200;
-      
+      const flyDuration = 1000;
+
       map.current.flyTo({
         center: firstEvent.coordinates,
         zoom: targetZoom,
@@ -234,7 +240,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           right: sidebarOpen ? SIDEBAR_WIDTH : 0,
         },
       });
-      
+
       // Show popup after animation completes
       setTimeout(() => {
         setIsFlying(false);
@@ -304,24 +310,28 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Handle event click from cluster popup - fly to event
   const handleClusterEventClick = useCallback(
     (event: GeoEvent) => {
-      if (!map.current) return;
-      
+      if (!map.current) {
+        console.warn("[WorldMap] handleClusterEventClick: map.current is null");
+        return;
+      }
+
+      const currentZoom = map.current.getZoom();
+
       // Clear everything and set flying state FIRST
       setSelectedEvent(null);
       setPopupPosition(null);
       setClusterPopup(null);
       setIsFlying(true);
-      
+
       // Stop any existing animation
       map.current.stop();
-      
+
       // Notify parent to mark as read and update URL
       onEventClick?.(event);
-      
-      const currentZoom = map.current.getZoom();
+
       const targetZoom = Math.max(currentZoom, 4);
-      const flyDuration = 1200;
-      
+      const flyDuration = 1000;
+
       map.current.flyTo({
         center: event.coordinates,
         zoom: targetZoom,
@@ -332,7 +342,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           right: sidebarOpen ? SIDEBAR_WIDTH : 0,
         },
       });
-      
+
       // Show popup only after the fly animation completes
       setTimeout(() => {
         setIsFlying(false);
@@ -346,15 +356,51 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     [onEventClick, sidebarOpen]
   );
 
+  // Handle event click from entity modal - fly to event by ID
+  const handleEntityEventClick = useCallback(
+    async (eventId: string) => {
+      // First try to find in loaded events
+      let event = events.find((e) => e.id === eventId);
+
+      // If not found, fetch from server
+      if (!event && fetchEventById) {
+        const fetchedEvent = await fetchEventById(eventId);
+        if (fetchedEvent) {
+          event = fetchedEvent;
+        }
+      }
+
+      if (!event) {
+        console.warn(`[WorldMap] Event ${eventId} not found`);
+        return;
+      }
+
+      // Validate coordinates
+      if (
+        !event.coordinates ||
+        !Array.isArray(event.coordinates) ||
+        event.coordinates.length !== 2 ||
+        typeof event.coordinates[0] !== "number" ||
+        typeof event.coordinates[1] !== "number"
+      ) {
+        console.error("[WorldMap] Invalid coordinates for event:", event.id, event.coordinates);
+        return;
+      }
+
+      handleClusterEventClick(event);
+    },
+    [events, handleClusterEventClick, fetchEventById]
+  );
+
   // Start flyover from cluster popup
   const handleClusterFlyover = useCallback(() => {
     if (!clusterPopup) return;
-    
+
     const { events: clusterEvents } = clusterPopup.data;
-    
+
     // Close popup
     setClusterPopup(null);
-    
+
     // Trigger flyover mode via parent callback
     if (onClusterFlyover) {
       onClusterFlyover(clusterEvents);
@@ -378,7 +424,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       map.current.flyTo({
         center: coordinates,
         zoom: targetZoom,
-        duration: 600,
+        duration: 1000,
         padding: MAP_PADDING,
       });
 
@@ -389,9 +435,9 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Start flyover from context menu
   const handleClusterFlyoverFromMenu = useCallback(() => {
     if (!clusterContextMenu) return;
-    
+
     const { events: clusterEvents } = clusterContextMenu.data;
-    
+
     // Trigger flyover mode via parent callback
     if (onClusterFlyover) {
       onClusterFlyover(clusterEvents);
@@ -434,8 +480,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     });
 
     // If clicking on empty space, clear all popups
-    if ((!clusterFeatures || clusterFeatures.length === 0) && 
-        (!eventFeatures || eventFeatures.length === 0)) {
+    if (
+      (!clusterFeatures || clusterFeatures.length === 0) &&
+      (!eventFeatures || eventFeatures.length === 0)
+    ) {
       setSelectedEvent(null);
       setPopupPosition(null);
       setClusterPopup(null);
@@ -454,17 +502,16 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
         // Stop any existing flyTo animation
         map.current.stop();
-        
+
         // Check if we're already near the target location (same location optimization)
         // If so, skip the fly animation and show popup immediately
         const currentCenter = map.current.getCenter();
         const [targetLng, targetLat] = event.coordinates;
         const distance = Math.sqrt(
-          Math.pow(targetLng - currentCenter.lng, 2) + 
-          Math.pow(targetLat - currentCenter.lat, 2)
+          Math.pow(targetLng - currentCenter.lng, 2) + Math.pow(targetLat - currentCenter.lat, 2)
         );
         const isNearby = distance < 0.05; // ~5km at equator
-        
+
         if (isNearby) {
           // Already at location - show popup immediately without flying
           setIsFlying(false);
@@ -493,7 +540,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           center: event.coordinates,
           zoom: targetZoom,
           pitch: 45,
-          duration: 1500,
+          duration: 1000,
           padding,
         });
 
@@ -518,6 +565,16 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   // Initialize Mapbox (only once)
   useEffect(() => {
     if (!mapContainer.current || mapInitialized.current) return;
+
+    // Validate Mapbox token before initialization
+    if (MAPBOX_TOKEN_MISSING) {
+      console.error(
+        "[WorldMap] Mapbox token is missing. Set NEXT_PUBLIC_MAPBOX_TOKEN environment variable."
+      );
+      setMapError(true);
+      return;
+    }
+
     mapInitialized.current = true;
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -642,9 +699,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     const updateClusterPosition = () => {
       if (!map.current || !clusterPopup) return;
       const point = map.current.project(clusterPopup.data.coordinates);
-      setClusterPopup((prev) =>
-        prev ? { ...prev, position: { x: point.x, y: point.y } } : null
-      );
+      setClusterPopup((prev) => (prev ? { ...prev, position: { x: point.x, y: point.y } } : null));
     };
 
     map.current.on("move", updateClusterPosition);
@@ -712,7 +767,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     if (map.current) {
       map.current.easeTo({
         center: newEvent.coordinates,
-        duration: 500,
+        duration: 1000,
         padding: MAP_PADDING,
       });
       map.current.once("moveend", () => {
@@ -737,7 +792,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     if (map.current) {
       map.current.easeTo({
         center: newEvent.coordinates,
-        duration: 500,
+        duration: 1000,
         padding: MAP_PADDING,
       });
       map.current.once("moveend", () => {
@@ -749,6 +804,23 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       recordInteraction();
     }
   }, [stackIndex, stackedEvents, recordInteraction, onEventClick]);
+
+  // Show fallback if map failed to initialize
+  if (mapError) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+        <div className="text-center">
+          <div className="mb-4 text-6xl">🌍</div>
+          <h2 className="mb-2 font-mono text-xl font-bold text-slate-200">Map Unavailable</h2>
+          <p className="text-sm text-slate-400">
+            The interactive map could not be loaded.
+            <br />
+            Please try refreshing the page.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0">
@@ -766,6 +838,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           onNext={handleNextEvent}
           onRequestBriefing={onRequestBriefing}
           stackLabel="events here"
+          onEntityEventClick={handleEntityEventClick}
         />
       )}
       {/* External stack popup (catch up mode) - tracks event on map, hidden during fly */}
@@ -784,6 +857,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
             onNext={externalStack.onNext}
             onRequestBriefing={onRequestBriefing}
             stackLabel={externalStack.label || "catching up"}
+            onEntityEventClick={handleEntityEventClick}
           />
         )}
 

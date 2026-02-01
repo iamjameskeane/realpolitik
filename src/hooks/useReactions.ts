@@ -2,10 +2,12 @@
  * Hook for managing reactions (Analyst Protocol)
  *
  * Provides optimistic UI updates with rollback on failure.
+ * Requires user authentication.
  */
 
 import { useState, useCallback, useEffect } from "react";
 import { ReactionType, ReactionCounts } from "@/types/reactions";
+import { getSupabaseClient } from "@/lib/supabase";
 
 // Extended counts that includes user's vote (from API)
 interface ReactionCountsWithVote extends ReactionCounts {
@@ -51,7 +53,18 @@ export function useReactions({ eventId }: UseReactionsOptions): UseReactionsRetu
 
     const fetchCounts = async () => {
       try {
-        const response = await fetch(`/api/reactions?eventId=${eventId}`);
+        // Get auth session
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const headers: Record<string, string> = {};
+        if (session) {
+          headers.Authorization = `Bearer ${session.access_token}`;
+        }
+
+        const response = await fetch(`/api/reactions?eventId=${eventId}`, { headers });
         if (response.ok && !cancelled) {
           const data = await response.json();
           setCounts(data.counts);
@@ -104,9 +117,22 @@ export function useReactions({ eventId }: UseReactionsOptions): UseReactionsRetu
       setError(null);
 
       try {
+        // Get auth session
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          throw new Error("You must be signed in to vote");
+        }
+
         const response = await fetch("/api/reactions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
           body: JSON.stringify({ eventId, type }),
         });
 
@@ -149,8 +175,21 @@ export function useReactions({ eventId }: UseReactionsOptions): UseReactionsRetu
     setError(null);
 
     try {
+      // Get auth session
+      const supabase = getSupabaseClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("You must be signed in to vote");
+      }
+
       const response = await fetch(`/api/reactions?eventId=${eventId}`, {
         method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (!response.ok) {

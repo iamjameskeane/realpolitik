@@ -5,9 +5,12 @@
  * GET /api/reactions?eventId=xxx - Get reaction counts for single event (with user vote)
  * POST /api/reactions - Cast or change a vote
  * DELETE /api/reactions - Remove a vote
+ *
+ * Requires authentication - reactions are linked to user accounts.
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import {
   getReactionCountsWithUserVote,
   castVote,
@@ -15,7 +18,6 @@ import {
   getAllReactionCounts,
   ReactionType,
 } from "@/lib/reactions";
-import { getClientIP } from "@/lib/request";
 
 /**
  * GET - Fetch reaction counts
@@ -30,8 +32,25 @@ export async function GET(request: NextRequest) {
 
     // Single event request (includes user vote status) - used by voting UI
     if (eventId) {
-      const clientIP = getClientIP(request);
-      const counts = await getReactionCountsWithUserVote(eventId, clientIP);
+      // Get user ID from auth header
+      const authHeader = request.headers.get("authorization");
+      let userId: string | null = null;
+
+      if (authHeader?.startsWith("Bearer ")) {
+        const token = authHeader.substring(7);
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          { global: { headers: { Authorization: `Bearer ${token}` } } }
+        );
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        userId = user?.id || null;
+      }
+
+      const counts = await getReactionCountsWithUserVote(eventId, userId);
       return NextResponse.json({ counts });
     }
 
@@ -57,9 +76,35 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST - Cast or change a vote
+ *
+ * Rate limiting note: This endpoint requires authentication and only allows
+ * 1 vote per event per user (enforced by database). Spam is limited to
+ * vote/unvote toggles on the same event, which has minimal impact.
  */
 export async function POST(request: NextRequest) {
   try {
+    // Auth required
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    const token = authHeader.substring(7);
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { eventId, type } = body as { eventId: string; type: ReactionType };
 
@@ -72,8 +117,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid reaction type" }, { status: 400 });
     }
 
-    const clientIP = getClientIP(request);
-    const result = await castVote(eventId, clientIP, type);
+    const result = await castVote(eventId, user.id, type);
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 409 });
@@ -91,6 +135,28 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    // Auth required
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    const token = authHeader.substring(7);
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const eventId = searchParams.get("eventId");
 
@@ -98,8 +164,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "eventId required" }, { status: 400 });
     }
 
-    const clientIP = getClientIP(request);
-    const result = await removeVote(eventId, clientIP);
+    const result = await removeVote(eventId, user.id);
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 404 });

@@ -12,12 +12,15 @@ import { motion, useAnimation } from "framer-motion";
 import { GeoEvent, EventCategory } from "@/types/events";
 import { EventList } from "./EventList";
 import { EventCard } from "./EventCard";
+import { EntityEventList } from "./EntityEventList";
+import { EntityBrowser } from "./EntityBrowser";
 import { FilterBar, SortOption } from "./FilterBar";
 import { BriefingChat } from "../briefing";
 import { EventVisualState } from "@/hooks/useEventStates";
 import { TimeRange } from "@/lib/constants";
+import type { NavigationFrame } from "@/hooks/useNavigationStack";
 
-export type SheetPhase = "scanner" | "pilot" | "analyst";
+export type SheetPhase = "scanner" | "pilot" | "analyst" | "entity";
 
 // Sheet height levels (percentage of viewport) - independent of phase
 type SheetHeight = "collapsed" | "medium" | "expanded";
@@ -65,7 +68,9 @@ interface IntelligenceSheetProps {
   clearNotificationInbox?: () => void;
   notificationsEnabled?: boolean;
   notificationsLoading?: boolean;
+  isAuthenticated?: boolean;
   onOpenSettings?: () => void;
+  onOpenAuth?: () => void;
   // What's New - only new events since last visit (for Catch Up)
   incomingEvents: GeoEvent[];
   incomingCount: number;
@@ -81,6 +86,9 @@ interface IntelligenceSheetProps {
   // Hide seen toggle
   hideSeen?: boolean;
   onHideSeenChange?: (value: boolean) => void;
+  // Severity filter
+  minSeverity?: number;
+  onMinSeverityChange?: (value: number) => void;
   // Cluster view (long press on cluster shows events in that cluster)
   clusterViewOpen?: boolean;
   clusterViewEvents?: GeoEvent[];
@@ -88,6 +96,14 @@ interface IntelligenceSheetProps {
   onClusterEventSelect?: (event: GeoEvent, index: number) => void;
   onExitClusterView?: () => void;
   onStartClusterFlyover?: () => void;
+  // Navigation stack
+  currentFrame: NavigationFrame;
+  entityLoading?: boolean;
+  onEntityClick?: (entity: import("@/types/entities").EventEntity) => void;
+  onEntityEventSelect?: (event: GeoEvent, index: number) => void;
+  onNavigateWithinEntity?: (index: number) => void;
+  onEventFromEntity?: (event: GeoEvent) => void;
+  onRequestBriefing?: (event: GeoEvent) => void;
 }
 
 /**
@@ -123,7 +139,9 @@ export function IntelligenceSheet({
   clearNotificationInbox,
   notificationsEnabled,
   notificationsLoading,
+  isAuthenticated,
   onOpenSettings,
+  onOpenAuth,
   incomingEvents: _incomingEvents,
   incomingCount,
   inboxOpen,
@@ -136,6 +154,8 @@ export function IntelligenceSheet({
   onExitTouring,
   hideSeen,
   onHideSeenChange,
+  minSeverity,
+  onMinSeverityChange,
   // Cluster view
   clusterViewOpen,
   clusterViewEvents = [],
@@ -143,6 +163,14 @@ export function IntelligenceSheet({
   onClusterEventSelect,
   onExitClusterView,
   onStartClusterFlyover,
+  // Navigation stack
+  currentFrame,
+  entityLoading,
+  onEntityClick,
+  onEntityEventSelect,
+  onNavigateWithinEntity,
+  onEventFromEntity,
+  onRequestBriefing,
 }: IntelligenceSheetProps) {
   const controls = useAnimation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -208,8 +236,8 @@ export function IntelligenceSheet({
       // Reset scroll expansion flag when phase changes
       hasExpandedThisScrollRef.current = false;
 
-      // Analyst mode (chat) needs space - expand if not already
-      if (phase === "analyst" && sheetHeight !== "expanded") {
+      // Analyst mode (chat) and entity mode need space - expand if not already
+      if ((phase === "analyst" || phase === "entity") && sheetHeight !== "expanded") {
         setSheetHeight("expanded");
       }
     });
@@ -580,8 +608,12 @@ export function IntelligenceSheet({
                           // In inbox view, back closes inbox
                           onInboxToggle();
                         } else if (phase !== "scanner") {
-                          // In pilot/analyst, go back to previous view (inbox stays open if it was)
-                          onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
+                          // In pilot/analyst/entity, go back to previous view (inbox stays open if it was)
+                          if (phase === "entity") {
+                            onPhaseChange("pilot"); // Entity always goes back to pilot
+                          } else {
+                            onPhaseChange(phase === "analyst" ? "pilot" : "scanner");
+                          }
                         }
                       }}
                       className="mr-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/10 text-foreground/60 transition-colors active:bg-foreground/20"
@@ -605,7 +637,11 @@ export function IntelligenceSheet({
                     {phase === "scanner" && (inboxOpen ? "Notifications" : "Event Feed")}
                     {phase === "pilot" &&
                       (isTouringMode ? (catchUpMode ? "Catching Up" : "Flyover") : "Event Details")}
-                    {phase === "analyst" && "AI Briefing"}
+                    {phase === "analyst" && "Ask Pythia"}
+                    {phase === "entity" &&
+                      (currentFrame.type === "entity-list" ||
+                        currentFrame.type === "entity-browser") &&
+                      currentFrame.entity.name}
                   </h2>
                   {/* Event count for scanner mode - only show in feed, not inbox */}
                   {phase === "scanner" && !inboxOpen && (
@@ -857,6 +893,8 @@ export function IntelligenceSheet({
               incomingCount={incomingCount}
               hideSeen={hideSeen}
               onHideSeenChange={onHideSeenChange}
+              minSeverity={minSeverity}
+              onMinSeverityChange={onMinSeverityChange}
             />
           </div>
         )}
@@ -876,6 +914,38 @@ export function IntelligenceSheet({
                   onEventSelect={handleClusterEventSelect}
                   eventStateMap={eventStateMap}
                 />
+              ) : inboxOpen && !isAuthenticated ? (
+                // Inbox is open but user not logged in
+                <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
+                  <svg
+                    className="mb-4 h-12 w-12 text-foreground/20"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                    />
+                  </svg>
+                  <p className="mb-2 text-sm font-medium text-foreground/70">
+                    Sign in for notifications
+                  </p>
+                  <p className="mb-4 text-xs text-foreground/40">
+                    Get alerts when critical events occur
+                  </p>
+                  <button
+                    onClick={() => {
+                      onInboxToggle(); // Close inbox first
+                      onOpenAuth?.();
+                    }}
+                    className="rounded-full border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+                  >
+                    Sign In
+                  </button>
+                </div>
               ) : inboxOpen && notificationsLoading !== true && notificationsEnabled === false ? (
                 // Inbox is open but notifications not set up
                 <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
@@ -896,7 +966,7 @@ export function IntelligenceSheet({
                     Notifications not enabled
                   </p>
                   <p className="mb-4 text-xs text-foreground/40">
-                    Enable push notifications to receive alerts for major events
+                    Enable notifications in Settings to track events
                   </p>
                   <button
                     onClick={() => {
@@ -960,17 +1030,60 @@ export function IntelligenceSheet({
                 stackIndex={stackIndex}
                 onNext={onNextEvent}
                 onPrevious={onPreviousEvent}
-                onRequestBriefing={handleRequestBriefing}
+                onRequestBriefing={() => onRequestBriefing?.(displayEvent)}
                 isTouringMode={isTouringMode}
                 catchUpMode={catchUpMode}
                 flyoverMode={flyoverMode}
                 onExitTouring={onExitTouring}
+                onEntityClick={onEntityClick}
               />
             </div>
           )}
 
-          {phase === "analyst" && displayEvent && (
-            <BriefingChat event={displayEvent} className="h-full" />
+          {/* Entity list view - shows feed of events for entity */}
+          {phase === "entity" && currentFrame.type === "entity-list" && !entityLoading && (
+            <div
+              ref={scrollRef}
+              className="custom-scrollbar h-full overflow-y-auto overscroll-contain"
+              onScroll={handleScroll}
+            >
+              <EntityEventList
+                entity={currentFrame.entity}
+                events={currentFrame.events}
+                onEventSelect={onEntityEventSelect ?? (() => {})}
+                onBack={() => onPhaseChange("scanner")}
+                eventStateMap={eventStateMap}
+              />
+            </div>
+          )}
+
+          {/* Entity browser view - swipeable event cards within entity */}
+          {phase === "entity" && currentFrame.type === "entity-browser" && !entityLoading && (
+            <div
+              ref={scrollRef}
+              className="flex h-full flex-col overflow-hidden"
+              onScroll={handleScroll}
+            >
+              <EntityBrowser
+                entity={currentFrame.entity}
+                events={currentFrame.events}
+                currentIndex={currentFrame.index}
+                onNavigate={onNavigateWithinEntity ?? (() => {})}
+                onEventClick={onEventFromEntity ?? (() => {})}
+                onEntityClick={onEntityClick ?? (() => {})}
+                onRequestBriefing={onRequestBriefing ?? (() => {})}
+                onBack={() => onPhaseChange("scanner")}
+              />
+            </div>
+          )}
+
+          {phase === "entity" && entityLoading && (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" />
+                <p className="font-mono text-xs text-foreground/40">Loading events...</p>
+              </div>
+            </div>
           )}
         </div>
       </div>

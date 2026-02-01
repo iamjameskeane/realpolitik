@@ -1,11 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type {
-  Condition,
-  ConditionField,
-  Operator,
-} from "@/types/notifications";
+import type { Condition, ConditionField, Operator } from "@/types/notifications";
 import { FIELD_CONFIGS } from "@/types/notifications";
 import { SelectCompact } from "@/components/ui/Select";
 
@@ -14,6 +10,7 @@ interface ConditionRowProps {
   onChange: (condition: Condition) => void;
   onRemove: () => void;
   canRemove: boolean;
+  minSeverity?: number; // Minimum allowed severity (tier restriction)
 }
 
 const OPERATOR_LABELS: Record<Operator, string> = {
@@ -30,6 +27,7 @@ export function ConditionRow({
   onChange,
   onRemove,
   canRemove,
+  minSeverity = 1,
 }: ConditionRowProps) {
   const fieldConfig = FIELD_CONFIGS.find((f) => f.field === condition.field);
 
@@ -96,29 +94,46 @@ export function ConditionRow({
     if (!fieldConfig) return null;
 
     switch (fieldConfig.type) {
-      case "numeric":
+      case "numeric": {
+        // Apply minSeverity restriction for severity field
+        const effectiveMin =
+          condition.field === "severity" && minSeverity > (fieldConfig.min ?? 1)
+            ? minSeverity
+            : fieldConfig.min;
+        const isRestricted = condition.field === "severity" && minSeverity > 1;
+
         return (
-          <input
-            type="number"
-            inputMode="numeric"
-            min={fieldConfig.min}
-            max={fieldConfig.max}
-            value={Number(condition.value)}
-            onChange={(e) => handleValueChange(Number(e.target.value))}
-            className="w-16 rounded-lg border border-slate-600 bg-slate-800/80 px-2.5 py-1.5 text-center text-sm text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-          />
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              inputMode="numeric"
+              min={effectiveMin}
+              max={fieldConfig.max}
+              value={Number(condition.value)}
+              onChange={(e) =>
+                handleValueChange(Math.max(effectiveMin ?? 1, Number(e.target.value)))
+              }
+              className="w-16 rounded-lg border border-slate-600 bg-slate-800/80 px-2.5 py-1.5 text-center text-sm text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            />
+            {isRestricted && (
+              <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
+                {minSeverity}+ only
+              </span>
+            )}
+          </div>
         );
+      }
 
       case "select":
         if (condition.operator === "in") {
           // Multi-select chips for "in" operator
-          const selectedValues = Array.isArray(condition.value)
-            ? condition.value
-            : [];
+          const selectedValues = Array.isArray(condition.value) ? condition.value : [];
           const isEmpty = selectedValues.length === 0;
           return (
             <div className="space-y-1">
-              <div className={`flex flex-wrap gap-1.5 rounded-lg p-1 ${isEmpty ? "ring-1 ring-red-500/50 bg-red-500/10" : ""}`}>
+              <div
+                className={`flex flex-wrap gap-1.5 rounded-lg p-1 ${isEmpty ? "ring-1 ring-red-500/50 bg-red-500/10" : ""}`}
+              >
                 {fieldConfig.options?.map((opt) => {
                   const isSelected = selectedValues.includes(opt.value);
                   // Prevent deselecting the last item
@@ -149,9 +164,7 @@ export function ConditionRow({
                   );
                 })}
               </div>
-              {isEmpty && (
-                <p className="text-[10px] text-red-400">Select at least one value</p>
-              )}
+              {isEmpty && <p className="text-[10px] text-red-400">Select at least one value</p>}
             </div>
           );
         }

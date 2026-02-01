@@ -62,7 +62,7 @@ export function BriefingModal({ event, onClose }: BriefingModalProps) {
                 className="font-mono text-xs font-medium uppercase tracking-wide"
                 style={{ color: categoryColor }}
               >
-                Live Intelligence Briefing
+                Ask Pythia
               </span>
             </div>
             <h2 className="mt-2 text-lg font-semibold leading-snug text-foreground">

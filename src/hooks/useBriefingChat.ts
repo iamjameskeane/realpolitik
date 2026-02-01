@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef } from "react";
 import { GeoEvent, EventCategory } from "@/types/events";
-import { solveChallenge } from "@/lib/pow";
+import { getSupabaseClient } from "@/lib/supabase";
 
 // Preset chips by category
 const UNIVERSAL_CHIPS = ["What's happening?", "What happens next?", "Historical context?"];
@@ -14,13 +14,15 @@ const CATEGORY_CHIPS: Record<EventCategory, string[]> = {
   UNREST: ["How widespread?", "Government response?", "What are the demands?"],
 };
 
-// Status labels for display
+// Status labels for display (fallbacks if no query provided)
 const STATUS_LABELS: Record<string, string> = {
   authenticating: "Authenticating...",
-  searching: "Searching sources...",
+  searching: "Searching the web...",
   analyzing: "Analyzing results...",
   thinking: "Reasoning...",
-  generating: "Generating briefing...",
+  generating: "Pythia is responding...",
+  atlas: "Querying Atlas...",
+  constellation: "Traversing Constellation...",
 };
 
 export type BriefingStatus =
@@ -30,6 +32,8 @@ export type BriefingStatus =
   | "analyzing"
   | "thinking"
   | "generating"
+  | "atlas"
+  | "constellation"
   | "done";
 
 // Session token storage (persists across component remounts)
@@ -103,6 +107,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<BriefingStatus>("idle");
+  const [statusQuery, setStatusQuery] = useState<string | null>(null);
   const [error, setError] = useState<Error | undefined>();
   const [usedChipsMap, setUsedChipsMap] = useState<Record<string, Set<string>>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -120,8 +125,8 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
     [usedChipsMap, event.id]
   );
 
-  // Status label for display
-  const statusLabel = STATUS_LABELS[status] || "";
+  // Status label for display - prefer query message if available
+  const statusLabel = statusQuery || STATUS_LABELS[status] || "";
 
   // Parse SSE chunk - handles buffering of partial chunks across network packets
   const parseSSEChunk = useCallback((chunk: string): SSEEvent[] => {
@@ -199,6 +204,16 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
       sseBufferRef.current = "";
 
       try {
+        // Get user's auth session for API request
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          throw new Error("You must be signed in to consult Pythia.");
+        }
+
         // Build base request payload
         const basePayload = {
           eventId: event.id,
@@ -210,51 +225,21 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
           history: messages.map((m) => ({ role: m.role, content: m.content })),
         };
 
-        // Make request with session token if available
-        let response = await fetch("/api/briefing", {
+        // Make request with auth token in header
+        const response = await fetch("/api/briefing", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...basePayload,
-            sessionToken: sessionToken || undefined,
-          }),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(basePayload),
           signal: abortControllerRef.current.signal,
         });
 
-        // Handle PoW challenge (401 response)
+        // Handle authentication errors
         if (response.status === 401) {
-          const challengeData = await response.json();
-
-          if (challengeData.requiresPow) {
-            setStatus("authenticating");
-
-            // Solve the proof of work challenge
-            const { nonce } = await solveChallenge(
-              challengeData.challenge,
-              challengeData.difficulty
-            );
-
-            // Retry with PoW solution
-            response = await fetch("/api/briefing", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...basePayload,
-                powSolution: {
-                  challenge: challengeData.challenge,
-                  nonce,
-                },
-              }),
-              signal: abortControllerRef.current.signal,
-            });
-
-            // If still 401, clear token and throw
-            if (response.status === 401) {
-              sessionToken = null;
-              const errorData = await response.json();
-              throw new Error(errorData.message || "Authentication failed");
-            }
-          }
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Authentication failed. Please sign in again.");
         }
 
         if (!response.ok) {
@@ -267,8 +252,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
 
             if (response.status === 503) {
               throw new Error(
-                errorData.message ||
-                  "AI briefings are temporarily unavailable. Please check back later."
+                errorData.message || "Pythia is temporarily unavailable. Please check back later."
               );
             }
 
@@ -304,6 +288,8 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
             // Status updates
             if ("status" in evt && evt.status) {
               setStatus(evt.status);
+              // Capture query message if provided
+              setStatusQuery(evt.query || null);
             }
 
             // Content chunks
@@ -311,6 +297,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
               if (!hasReceivedContent) {
                 hasReceivedContent = true;
                 setStatus("generating");
+                setStatusQuery(null); // Clear query when generating starts
               }
 
               accumulatedContent += evt.content;
@@ -366,8 +353,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
 
         // If stream finished without any content, treat as error
         if (!hasReceivedContent || !accumulatedContent.trim()) {
-          const errorMsg =
-            "Unable to generate briefing. The AI service may be temporarily unavailable.";
+          const errorMsg = "Pythia could not respond. The service may be temporarily unavailable.";
           const errorContent = `⚠️ **Error:** ${errorMsg}`;
           setMessages((prev) =>
             prev.map((msg) =>
@@ -397,6 +383,7 @@ export function useBriefingChat({ event, onError }: UseBriefingChatOptions): Use
       } finally {
         setIsLoading(false);
         setStatus("idle");
+        setStatusQuery(null);
         abortControllerRef.current = null;
       }
     },

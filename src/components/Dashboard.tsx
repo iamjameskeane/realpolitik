@@ -10,16 +10,17 @@ import { BriefingModal } from "./BriefingModal";
 import { AnimatePresence } from "framer-motion";
 import { AboutModal } from "./AboutModal";
 import { SettingsModal } from "./SettingsModal";
+import { EntityModal } from "./entities";
+import { useAuth } from "@/contexts/AuthContext";
 import { GeoEvent, CATEGORY_COLORS, CATEGORY_DESCRIPTIONS, EventCategory } from "@/types/events";
+import { EntityFromDB } from "@/lib/supabase";
+import { EntityType } from "@/types/entities";
 import { BatchReactionsProvider, useBatchReactions } from "@/hooks/useBatchReactions";
 import { useEventStates } from "@/hooks/useEventStates";
 import { useNotificationInbox } from "@/hooks/useNotificationInbox";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
-import {
-  TIME_DISPLAY_UPDATE_MS,
-  TIME_RANGES,
-  MIN_TIME_RANGE_OPTIONS,
-} from "@/lib/constants";
+import { useInboxPreferences } from "@/hooks/useInboxPreferences";
+import { TIME_DISPLAY_UPDATE_MS, TIME_RANGES, MIN_TIME_RANGE_OPTIONS } from "@/lib/constants";
 import { formatRelativeTime } from "@/lib/formatters";
 import { useTouringMode } from "@/hooks/useTouringMode";
 
@@ -38,18 +39,56 @@ interface DashboardProps {
   lastUpdated?: Date | null;
   isRefreshing?: boolean;
   initialEventId?: string | null;
+  /** Entity to open on load (for deep linking via ?entity=slug) */
+  initialEntity?: EntityFromDB | null;
+  /** Whether the initial entity is still loading */
+  initialEntityLoading?: boolean;
+  /** Callback when entity modal is closed (to clear URL param) */
+  onEntityModalClose?: () => void;
+  /** Callback to expand time range - fetches more data from server */
+  onExpandTimeRange?: (hours: number) => Promise<void>;
+  /** Maximum hours currently loaded from server */
+  maxHoursLoaded?: number;
+  /** Fetch a single event by ID (for entity modal navigation) */
+  fetchEventById?: (id: string) => Promise<GeoEvent | null>;
 }
 
 const CATEGORIES: EventCategory[] = ["MILITARY", "DIPLOMACY", "ECONOMY", "UNREST"];
 const ALL_CATEGORIES = new Set<EventCategory>(CATEGORIES);
 
-export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }: DashboardProps) {
+export function Dashboard({
+  events,
+  lastUpdated,
+  isRefreshing,
+  initialEventId,
+  initialEntity,
+  // initialEntityLoading - unused but kept in props for API consistency
+  onEntityModalClose,
+  onExpandTimeRange,
+  maxHoursLoaded = 24,
+  fetchEventById,
+}: DashboardProps) {
   const [showSplash, setShowSplash] = useState(false); // Disabled - set to true to re-enable
   const [timeRangeIndex, setTimeRangeIndex] = useState(4); // Default to 24H
+
+  // Handle time range change - expand data fetch if needed
+  const handleTimeRangeChange = useCallback(
+    (newIndex: number) => {
+      setTimeRangeIndex(newIndex);
+
+      // Check if we need to fetch more data
+      const selectedRange = TIME_RANGES[newIndex];
+      if (selectedRange && onExpandTimeRange && selectedRange.hours > maxHoursLoaded) {
+        onExpandTimeRange(selectedRange.hours);
+      }
+    },
+    [onExpandTimeRange, maxHoursLoaded]
+  );
   const [isSliderActive, setIsSliderActive] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [hoveredCategory, setHoveredCategory] = useState<EventCategory | null>(null);
   const [activeCategories, setActiveCategories] = useState<Set<EventCategory>>(ALL_CATEGORIES);
+  const [minSeverity, setMinSeverity] = useState(1); // Filter events >= this severity
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [displayedTime, setDisplayedTime] = useState<string>("");
@@ -57,10 +96,32 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
   const [briefingEvent, setBriefingEvent] = useState<GeoEvent | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Entity modal state for deep linking
+  const [entityModalOpen, setEntityModalOpen] = useState(false);
   const mapRef = useRef<WorldMapHandle>(null);
   const initialEventHandled = useRef(false);
+  const initialEntityHandled = useRef(false);
   // Track when a map event was clicked to prevent sidebar toggle interference
   const lastMapClickRef = useRef<number>(0);
+
+  // Handle entity deep linking
+  useEffect(() => {
+    if (initialEntity && !initialEntityHandled.current) {
+      initialEntityHandled.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEntityModalOpen(true);
+    }
+    // Reset handler when entity changes
+    if (!initialEntity) {
+      initialEntityHandled.current = false;
+    }
+  }, [initialEntity]);
+
+  // Handle entity modal close
+  const handleEntityModalClose = useCallback(() => {
+    setEntityModalOpen(false);
+    onEntityModalClose?.();
+  }, [onEntityModalClose]);
 
   // Calculate which time ranges have data (dynamic slider) - needed before useEventStates
   const availableTimeRanges = useMemo(() => {
@@ -112,19 +173,25 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
     isLoaded: eventStatesLoaded,
   } = useEventStates(timeFilteredEvents);
 
+  // Auth context for gating features
+  const { user, openAuthModal } = useAuth();
+
   // Notification inbox - tracks events that arrived via push notifications
   // Uses ALL events (not time-filtered) so notifications don't disappear based on time range
+  // Only enabled if user is signed in
   const {
     inboxEvents,
     inboxCount,
     removeFromInbox,
     clearInbox: clearNotificationInbox,
     isLoaded: inboxLoaded,
-  } = useNotificationInbox(events);
+  } = useNotificationInbox(user ? events : []);
 
-  // Push notification subscription status
-  const { isSubscribed: notificationsEnabled, isLoading: notificationsLoading } =
-    usePushNotifications();
+  // Push notification subscription status (for showing push-specific messages)
+  const { isSubscribed: pushSubscribed } = usePushNotifications();
+
+  // Inbox preferences - determines if inbox is enabled
+  const { preferences: inboxPrefs, isLoading: inboxPrefsLoading } = useInboxPreferences();
 
   // Update URL with event ID (for sharing)
   const updateUrlWithEvent = useCallback((eventId: string | null) => {
@@ -190,20 +257,25 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
   // Also include the selected event even if it's outside the time/category filters
   // This ensures notification/inbox clicks always show the event on the map
   const filteredEvents = useMemo(() => {
-    const filtered = timeFilteredEvents.filter((e) => activeCategories.has(e.category));
-    
+    let filtered = timeFilteredEvents.filter((e) => activeCategories.has(e.category));
+
+    // Filter by minimum severity
+    if (minSeverity > 1) {
+      filtered = filtered.filter((e) => e.severity >= minSeverity);
+    }
+
     // If there's a selected event that's not in the filtered list, add it
     // This handles: notification deep links, inbox clicks, any selection of older events
-    // Note: We bypass category filter for selected events - if user clicked it, they want to see it
+    // Note: We bypass category/severity filter for selected events - if user clicked it, they want to see it
     if (selectedEventId && !filtered.some((e) => e.id === selectedEventId)) {
       const selectedEvent = events.find((e) => e.id === selectedEventId);
       if (selectedEvent) {
         return [selectedEvent, ...filtered];
       }
     }
-    
+
     return filtered;
-  }, [timeFilteredEvents, activeCategories, selectedEventId, events]);
+  }, [timeFilteredEvents, activeCategories, minSeverity, selectedEventId, events]);
 
   const categoryCounts = useMemo(() => {
     return {
@@ -290,10 +362,11 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
     label: "in flight",
   });
 
-  // Start catch up with notification inbox events
+  // Start catch up with notification inbox events (only if signed in)
   const startCatchUp = useCallback(() => {
+    if (!user) return;
     catchUp.start(inboxEvents);
-  }, [catchUp, inboxEvents]);
+  }, [user, catchUp, inboxEvents]);
 
   // Sidebar toggle that ignores clicks immediately after a map event click
   // This prevents the toggle button from opening sidebar when clicking dots near the right edge
@@ -322,81 +395,124 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
         {/* Inbox container - Top Left under header */}
         <div className="absolute left-3 top-28 z-40 flex flex-col items-start gap-2 md:left-4 md:top-20 md:gap-3">
           {/* Inbox Button - always visible */}
-            <div className="relative">
-              <button
-                onClick={() => setInboxOpen(!inboxOpen)}
-                className="glass-panel relative flex items-center gap-2 px-3 py-2 transition-all hover:scale-105"
-              >
-                <svg
+          <div className="relative">
+            <button
+              onClick={() => setInboxOpen(!inboxOpen)}
+              className="glass-panel relative flex items-center gap-2 px-3 py-2 transition-all hover:scale-105"
+              aria-label={
+                inboxOpen
+                  ? "Close inbox"
+                  : `Open inbox${inboxCount > 0 ? `, ${inboxCount} alerts` : ""}`
+              }
+              aria-expanded={inboxOpen}
+            >
+              <svg
                 className={`h-4 w-4 ${inboxCount > 0 ? "text-accent" : "text-foreground/50"}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                  />
-                </svg>
-                <span className="font-mono text-xs uppercase text-foreground/70">
-                {inboxCount > 0 ? `${inboxCount} ${inboxCount === 1 ? "ALERT" : "ALERTS"}` : "INBOX"}
-                </span>
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                />
+              </svg>
+              <span className="font-mono text-xs uppercase text-foreground/70">
+                {inboxCount > 0
+                  ? `${inboxCount} ${inboxCount === 1 ? "ALERT" : "ALERTS"}`
+                  : "INBOX"}
+              </span>
               {inboxCount > 0 && (
                 <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-accent" />
               )}
-              </button>
+            </button>
 
             {/* Inbox Dropdown */}
-              {inboxOpen && (
-                <div className="absolute left-0 top-12 w-96 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="glass-panel overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-medium uppercase text-accent">
-                        Notifications
-                        </span>
+            {inboxOpen && (
+              <div className="absolute left-0 top-12 w-96 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="glass-panel overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-medium uppercase text-accent">
+                        Inbox
+                      </span>
+                      <span className="font-mono text-[9px] uppercase text-foreground/30">
+                        Synced
+                      </span>
                       {inboxCount > 0 && (
                         <>
                           <span className="font-mono text-xs text-foreground/40">{inboxCount}</span>
                           {/* Catch Up puck - fly through notification events */}
-                        <button
-                          onClick={startCatchUp}
-                          className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 transition-all hover:bg-accent/20"
-                        >
-                          <svg
-                            className="h-3 w-3 text-accent"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+                          <button
+                            onClick={startCatchUp}
+                            className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 transition-all hover:bg-accent/20"
+                            aria-label={`Catch up on ${inboxCount} alerts`}
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2.5}
-                              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                            />
-                          </svg>
-                          <span className="font-mono text-[10px] font-medium uppercase text-accent">
-                            Catch Up
-                          </span>
-                        </button>
+                            <svg
+                              className="h-3 w-3 text-accent"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2.5}
+                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                              />
+                            </svg>
+                            <span className="font-mono text-[10px] font-medium uppercase text-accent">
+                              Catch Up
+                            </span>
+                          </button>
                         </>
                       )}
-                      </div>
+                    </div>
                     {inboxCount > 0 && (
                       <button
                         onClick={clearInbox}
                         className="font-mono text-xs text-foreground/40 transition-colors hover:text-foreground"
+                        aria-label="Mark all alerts as read"
                       >
                         Mark all read
                       </button>
                     )}
-                    </div>
-                    <div className="custom-scrollbar max-h-80 overflow-y-auto">
-                    {/* Not subscribed - prompt to set up notifications */}
-                    {notificationsLoading !== true && notificationsEnabled === false ? (
+                  </div>
+                  <div className="custom-scrollbar max-h-80 overflow-y-auto">
+                    {/* Not logged in - prompt to sign in */}
+                    {!user ? (
+                      <div className="px-4 py-8 text-center">
+                        <svg
+                          className="mx-auto mb-3 h-8 w-8 text-foreground/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                          />
+                        </svg>
+                        <p className="text-sm text-foreground/70">Sign in for notifications</p>
+                        <p className="mt-1 text-xs text-foreground/40">
+                          Get alerts when critical events occur
+                        </p>
+                        <button
+                          onClick={() => {
+                            setInboxOpen(false);
+                            openAuthModal();
+                          }}
+                          className="mt-3 rounded-full border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+                        >
+                          Sign In
+                        </button>
+                      </div>
+                    ) : !inboxPrefsLoading && !inboxPrefs.enabled ? (
+                      /* Inbox not enabled - prompt to set up notifications */
                       <div className="px-4 py-8 text-center">
                         <svg
                           className="mx-auto mb-3 h-8 w-8 text-foreground/30"
@@ -413,7 +529,7 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                         </svg>
                         <p className="text-sm text-foreground/70">Notifications not enabled</p>
                         <p className="mt-1 text-xs text-foreground/40">
-                          Enable push notifications in{" "}
+                          Enable notifications in{" "}
                           <button
                             onClick={() => {
                               setInboxOpen(false);
@@ -422,9 +538,13 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                             className="text-accent hover:underline"
                           >
                             Settings
-                          </button>{" "}
-                          to receive alerts
+                          </button>
                         </p>
+                        {!pushSubscribed && (
+                          <p className="mt-2 text-xs text-foreground/30">
+                            Push alerts available after enabling
+                          </p>
+                        )}
                       </div>
                     ) : inboxCount === 0 ? (
                       <div className="px-4 py-8 text-center">
@@ -489,11 +609,11 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                         </button>
                       ))
                     )}
-                    </div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
           {/* Floating Toast Notifications - appear under inbox */}
         </div>
@@ -509,6 +629,7 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
             eventStateMap={eventStateMap}
             sidebarOpen={sidebarOpen}
             onClusterFlyover={(events) => flyover.start(events)}
+            fetchEventById={fetchEventById}
             externalStack={
               catchUp.isActive && catchUp.events.length > 0
                 ? {
@@ -545,6 +666,8 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
           eventStateMap={eventStateMap}
           incomingEvents={incomingEvents}
           onStartFlyover={(events) => flyover.start(events)}
+          minSeverity={minSeverity}
+          onMinSeverityChange={setMinSeverity}
         />
 
         {/* Header - responsive sizing */}
@@ -608,7 +731,7 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
                   min={0}
                   max={availableTimeRanges.length - 1}
                   value={clampedTimeRangeIndex}
-                  onChange={(e) => setTimeRangeIndex(Number(e.target.value))}
+                  onChange={(e) => handleTimeRangeChange(Number(e.target.value))}
                   onMouseDown={() => setIsSliderActive(true)}
                   onMouseUp={() => setIsSliderActive(false)}
                   onMouseLeave={() => setIsSliderActive(false)}
@@ -633,8 +756,8 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
           </div>
         </div>
 
-        {/* Settings Button - hidden on mobile, positioned above category legend */}
-        <div className="absolute bottom-52 left-4 z-10 hidden md:bottom-48 md:left-6 md:block">
+        {/* Settings - hidden on mobile, positioned above category legend */}
+        <div className="absolute bottom-52 left-4 z-10 hidden flex-col gap-2 md:bottom-48 md:left-6 md:flex">
           <button
             onClick={() => setSettingsOpen(true)}
             className="glass-panel flex items-center gap-2 px-3 py-2 transition-all hover:bg-foreground/10"
@@ -755,19 +878,42 @@ export function Dashboard({ events, lastUpdated, isRefreshing, initialEventId }:
 
         {/* About Modal */}
         <AnimatePresence>
-        {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+          {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
         </AnimatePresence>
 
         {/* Settings Modal */}
         <AnimatePresence>
-        {settingsOpen && (
-          <SettingsModal
-            onClose={() => setSettingsOpen(false)}
-            is2DMode={is2DMode}
-            onToggle2DMode={() => setIs2DMode(!is2DMode)}
+          {settingsOpen && (
+            <SettingsModal
+              onClose={() => setSettingsOpen(false)}
+              is2DMode={is2DMode}
+              onToggle2DMode={() => setIs2DMode(!is2DMode)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Entity Modal for deep linking */}
+        {entityModalOpen && initialEntity && (
+          <EntityModal
+            entityId={initialEntity.id}
+            entityName={initialEntity.name}
+            entityType={initialEntity.node_type as EntityType}
+            onClose={handleEntityModalClose}
+            onEventClick={(eventId) => {
+              handleEntityModalClose();
+              // Navigate to the event
+              if (fetchEventById) {
+                fetchEventById(eventId).then((event) => {
+                  if (event) {
+                    setSelectedEventId(eventId);
+                    setSidebarOpen(true);
+                    mapRef.current?.flyToEvent(event);
+                  }
+                });
+              }
+            }}
           />
         )}
-        </AnimatePresence>
       </div>
     </BatchReactionsProvider>
   );

@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthModal } from "@/components/auth/AuthModal";
 import "./globals.css";
 
 // Viewport configuration for edge-to-edge display
@@ -29,7 +31,8 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://realpolitik.world"),
   title: "Realpolitik | Global Situational Awareness",
-  description: "Real-time geopolitical event tracking on an interactive globe. Monitor military, diplomatic, economic, and civil unrest events worldwide.",
+  description:
+    "Real-time geopolitical event tracking on an interactive globe. Monitor military, diplomatic, economic, and civil unrest events worldwide.",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -41,7 +44,8 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Realpolitik | Global Situational Awareness",
-    description: "Real-time geopolitical event tracking on an interactive globe. Monitor military, diplomatic, economic, and civil unrest events worldwide.",
+    description:
+      "Real-time geopolitical event tracking on an interactive globe. Monitor military, diplomatic, economic, and civil unrest events worldwide.",
     type: "website",
     siteName: "Realpolitik",
   },
@@ -70,7 +74,10 @@ export default function RootLayout({
       <body
         className={`${outfit.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground`}
       >
-        {children}
+        <AuthProvider>
+          {children}
+          <AuthModal />
+        </AuthProvider>
         <Analytics />
       </body>
     </html>

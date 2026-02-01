@@ -1,20 +1,22 @@
-import { GoogleGenAI, Content, Part, FunctionDeclaration, Type } from "@google/genai";
+import {
+  GoogleGenAI,
+  Content,
+  Part,
+  FunctionDeclaration,
+  Type,
+  ThinkingLevel,
+} from "@google/genai";
 import { tavily } from "@tavily/core";
 import { NextRequest } from "next/server";
-import {
-  checkBriefingLimit,
-  incrementBriefingCount,
-  logBriefingUsage,
-  checkAndIncrementGlobalLimit,
-  storeSessionToken,
-  validateSessionToken,
-} from "@/lib/usage";
+import { createClient } from "@supabase/supabase-js";
 import { getClientIP } from "@/lib/request";
-import { generateChallenge, verifySolution, generateSessionToken } from "@/lib/pow";
 import {
   MAX_QUESTION_LENGTH,
-  MAX_HISTORY_LENGTH,
-  POW_DIFFICULTY,
+  BRIEFING_MAX_ITERATIONS,
+  BRIEFING_MAX_SEARCHES,
+  BRIEFING_MODEL,
+  BRIEFING_THINKING_LEVEL_PRO,
+  BRIEFING_THINKING_LEVEL_FREE,
 } from "@/lib/constants";
 
 // Vercel function configuration - increase timeout for AI streaming
@@ -37,11 +39,6 @@ interface ChatMessage {
   content: string;
 }
 
-interface PowSolution {
-  challenge: string;
-  nonce: number;
-}
-
 interface BriefingRequest {
   eventId: string;
   eventTitle: string;
@@ -50,9 +47,6 @@ interface BriefingRequest {
   eventLocation: string;
   question: string;
   history: ChatMessage[];
-  // Session authentication (one of these required)
-  sessionToken?: string;
-  powSolution?: PowSolution;
 }
 
 // Lazily initialize Tavily client
@@ -87,8 +81,111 @@ const searchNewsTool: FunctionDeclaration = {
   },
 };
 
+const getEntityEventsTool: FunctionDeclaration = {
+  name: "get_entity_events",
+  description:
+    "Get recent events involving a specific entity (country, company, leader, organization, etc.). Use this to provide context about what else an entity has been involved in, or to answer questions like 'What else has [entity] been doing lately?'",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      entity_name: {
+        type: Type.STRING,
+        description:
+          "The name of the entity to look up (e.g., 'China', 'TSMC', 'Vladimir Putin', 'NATO'). Use the exact name as shown in the ENTITIES INVOLVED section.",
+      },
+      limit: {
+        type: Type.NUMBER,
+        description: "Maximum number of events to return (default: 5, max: 10)",
+      },
+    },
+    required: ["entity_name"],
+  },
+};
+
+const getCausalChainTool: FunctionDeclaration = {
+  name: "get_causal_chain",
+  description:
+    "Trace the chain of events and factors that LED TO this event. Use this to answer questions like 'What caused this?', 'How did we get here?', 'What's the background?'. Returns preceding events and their causal relationships.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      max_depth: {
+        type: Type.NUMBER,
+        description: "How many steps back to trace (default: 3, max: 5)",
+      },
+    },
+    required: [],
+  },
+};
+
+const getImpactChainTool: FunctionDeclaration = {
+  name: "get_impact_chain",
+  description:
+    "Trace the downstream impacts and effects of this event. Use this to answer questions like 'What will this affect?', 'What are the consequences?', 'Who/what is impacted?'. Returns affected entities and their relationships.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      max_depth: {
+        type: Type.NUMBER,
+        description: "How many steps forward to trace (default: 3, max: 5)",
+      },
+    },
+    required: [],
+  },
+};
+
+const getEventGraphTool: FunctionDeclaration = {
+  name: "get_event_graph",
+  description:
+    "Get the knowledge graph structure around THIS specific event. Shows all entities involved and their relationships (supply chains, dependencies, alliances). This is the PRIORITY tool - call it FIRST to understand the network topology, then use other tools to explore further. Returns entity network with relationship percentages and confidence scores.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      include_indirect: {
+        type: Type.BOOLEAN,
+        description:
+          "Whether to include indirect relationships (1 hop away from event entities). Default: false",
+      },
+    },
+    required: [],
+  },
+};
+
+const getEntityRelationshipsTool: FunctionDeclaration = {
+  name: "get_entity_relationships",
+  description:
+    "Get known relationships for an entity from our knowledge graph. Use to understand existing connections between countries, organizations, leaders, companies, etc. Returns edges with relation type, target entity, percentages, and confidence. Use entity names exactly as shown in ENTITIES INVOLVED.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      entity_name: {
+        type: Type.STRING,
+        description:
+          "The entity name exactly as it appears (e.g., 'Russia', 'NATO', 'TSMC', 'Vladimir Putin')",
+      },
+      limit: {
+        type: Type.NUMBER,
+        description: "Maximum number of relationships to return (default: 10, max: 20)",
+      },
+    },
+    required: ["entity_name"],
+  },
+};
+
+// Context cache for the current request (populated after initial setup)
+interface BriefingContext {
+  eventId: string;
+  entities: Array<{ entity_id: string; name: string; node_type: string; relation_type: string }>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any; // Supabase client with RPC methods (types not generated)
+}
+
 // Execute tool calls
-async function executeToolCall(toolName: string, args: Record<string, unknown>): Promise<string> {
+async function executeToolCall(
+  toolName: string,
+  args: Record<string, unknown>,
+  context?: BriefingContext
+): Promise<string> {
   if (toolName === "search_news") {
     const query = args.query as string;
     console.log(`[Briefing] Executing search: "${query}"`);
@@ -113,29 +210,426 @@ async function executeToolCall(toolName: string, args: Record<string, unknown>):
     }
   }
 
+  if (toolName === "get_entity_events") {
+    const entityName = args.entity_name as string;
+    const limit = Math.min((args.limit as number) || 5, 10);
+    console.log(`[Briefing] Looking up events for entity: "${entityName}"`);
+
+    if (!context) {
+      return `Entity lookup unavailable - no context loaded`;
+    }
+
+    // Find the entity in the cache (case-insensitive match)
+    const entity = context.entities.find((e) => e.name.toLowerCase() === entityName.toLowerCase());
+
+    if (!entity) {
+      // Try partial match
+      const partialMatch = context.entities.find((e) =>
+        e.name.toLowerCase().includes(entityName.toLowerCase())
+      );
+      if (partialMatch) {
+        return `Entity "${entityName}" not found. Did you mean "${partialMatch.name}"? Available entities: ${context.entities.map((e) => e.name).join(", ")}`;
+      }
+      return `Entity "${entityName}" not found in this event. Available entities: ${context.entities.map((e) => e.name).join(", ")}`;
+    }
+
+    try {
+      // Fetch events for this entity
+      const { data: events, error } = await context.supabase.rpc("get_entity_events", {
+        entity_uuid: entity.entity_id,
+        max_count: limit,
+      });
+
+      if (error) {
+        console.error("Entity events lookup error:", error);
+        return `Failed to lookup events for "${entityName}"`;
+      }
+
+      if (!events || events.length === 0) {
+        return `No other events found for "${entityName}"`;
+      }
+
+      const eventList = events
+        .map(
+          (e: {
+            event_id: string;
+            title: string;
+            category: string;
+            event_timestamp: string;
+            relation_type: string;
+          }) => {
+            const date = new Date(e.event_timestamp).toLocaleDateString();
+            return `- [${e.category}] ${e.title} (${date}) - ${e.relation_type} [ID: ${e.event_id}]`;
+          }
+        )
+        .join("\n");
+
+      return `Recent events involving "${entityName}" (${entity.node_type}):\n\n${eventList}\n\nTo cite these events, use: [Event Title](/?event=EVENT_ID)`;
+    } catch (error) {
+      console.error("Entity events lookup error:", error);
+      return `Failed to lookup events: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
+  if (toolName === "get_causal_chain") {
+    const maxDepth = Math.min((args.max_depth as number) || 3, 5);
+    console.log(`[Briefing] Tracing causal chain for event, depth: ${maxDepth}`);
+
+    if (!context) {
+      return `Causal chain unavailable - no context loaded`;
+    }
+
+    try {
+      const { data: chain, error } = await context.supabase.rpc("get_causal_chain", {
+        event_id: context.eventId,
+        max_depth: maxDepth,
+      });
+
+      if (error) {
+        console.error("Causal chain lookup error:", error);
+        return `Failed to trace causal chain`;
+      }
+
+      if (!chain || chain.length === 0) {
+        return `No causal chain data available for this event. The graph may not have causal relationships mapped yet.`;
+      }
+
+      const chainList = chain
+        .map(
+          (item: { name: string; depth: number; relation: string; confidence: number }) =>
+            `${"  ".repeat(item.depth - 1)}↳ ${item.name} (${item.relation}, confidence: ${Math.round(item.confidence * 100)}%)`
+        )
+        .join("\n");
+
+      return `Causal chain leading to this event:\n\n${chainList}`;
+    } catch (error) {
+      console.error("Causal chain lookup error:", error);
+      return `Failed to trace causal chain: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
+  if (toolName === "get_impact_chain") {
+    const maxDepth = Math.min((args.max_depth as number) || 3, 5);
+    console.log(`[Briefing] Tracing impact chain for event, depth: ${maxDepth}`);
+
+    if (!context) {
+      return `Impact chain unavailable - no context loaded`;
+    }
+
+    try {
+      // Note: The constellation migration changed parameter name from event_id to start_node_id
+      const { data: chain, error } = await context.supabase.rpc("get_impact_chain", {
+        start_node_id: context.eventId,
+        max_depth: maxDepth,
+        min_weight: 0.1, // Lower threshold to catch more relationships
+        min_cumulative: 0.05,
+        edges_per_node: 10,
+      });
+
+      if (error) {
+        console.error("Impact chain lookup error:", error);
+        return `Failed to trace impact chain: ${error.message}`;
+      }
+
+      if (!chain || chain.length === 0) {
+        return `No impact chain data available for this event. The graph may not have impact relationships mapped yet.`;
+      }
+
+      const chainList = chain
+        .map(
+          (item: { name: string; node_type: string; depth: number; cumulative_weight: number }) => {
+            const weight = Math.round(item.cumulative_weight * 100);
+            return `${"  ".repeat(item.depth - 1)}→ ${item.name} (${item.node_type}) [${weight}% impact]`;
+          }
+        )
+        .join("\n");
+
+      return `Downstream impacts of this event:\n\n${chainList}`;
+    } catch (error) {
+      console.error("Impact chain lookup error:", error);
+      return `Failed to trace impact chain: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
+  if (toolName === "get_event_graph") {
+    const includeIndirect = (args.include_indirect as boolean) || false;
+    console.log(`[Briefing] Getting event graph, include_indirect: ${includeIndirect}`);
+
+    if (!context) {
+      return `Event graph unavailable - no context loaded`;
+    }
+
+    if (!context.entities || context.entities.length === 0) {
+      return `No entities found for this event. The event may not have been processed for graph integration yet.`;
+    }
+
+    try {
+      const entityUuids = context.entities.map((e) => e.entity_id);
+      const entityNames = context.entities.map((e) => e.name);
+
+      // Build graph description with entities
+      let graphDescription = `Event Graph for this event (${context.entities.length} entities):\n\nEntities in this event:\n`;
+      for (const ent of context.entities) {
+        graphDescription += `- ${ent.name} (${ent.node_type}) [${ent.relation_type}]\n`;
+      }
+
+      // Query edges between these entities (direct relationships within the event)
+      const { data: edges, error } = await context.supabase
+        .from("edges")
+        .select(
+          "source:source_id(name, node_type), target:target_id(name, node_type), relation_type, percentage, confidence, polarity"
+        )
+        .in("source_id", entityUuids)
+        .in("target_id", entityUuids);
+
+      if (error) {
+        console.error("Event graph edges lookup error:", error);
+        graphDescription += "\nNo relationship data available between entities.";
+      } else if (edges && edges.length > 0) {
+        graphDescription += `\nRelationships within event (${edges.length}):\n`;
+        for (const edge of edges) {
+          const source = edge.source as { name: string; node_type: string } | null;
+          const target = edge.target as { name: string; node_type: string } | null;
+          const rel = edge.relation_type || "unknown";
+          const pct = edge.percentage ? ` [${edge.percentage}%]` : "";
+          const pol = edge.polarity || 0;
+          const conf = edge.confidence || 0;
+
+          graphDescription += `- ${source?.name || "Unknown"} --[${rel}]${pct}--> ${target?.name || "Unknown"} `;
+          graphDescription += `(confidence: ${Math.round(conf * 100)}%, polarity: ${pol > 0 ? "+" : ""}${pol.toFixed(1)})\n`;
+        }
+      } else {
+        graphDescription += "\nNo direct relationships found between entities in this event.\n";
+      }
+
+      // Optional: Include indirect relationships (1 hop away)
+      if (includeIndirect && entityUuids.length > 0) {
+        const { data: indirectEdges } = await context.supabase
+          .from("edges")
+          .select(
+            "source:source_id(name), target:target_id(name, node_type), relation_type, percentage, polarity"
+          )
+          .in("source_id", entityUuids)
+          .limit(20);
+
+        if (indirectEdges && indirectEdges.length > 0) {
+          // Filter to edges pointing outside the event
+          type IndirectEdge = {
+            source: { name: string } | null;
+            target: { name: string; node_type: string } | null;
+            relation_type: string | null;
+            percentage: number | null;
+            polarity: number | null;
+          };
+          const externalEdges = (indirectEdges as IndirectEdge[]).filter((e) => {
+            const targetName = e.target?.name;
+            return targetName && !entityNames.includes(targetName);
+          });
+
+          if (externalEdges.length > 0) {
+            graphDescription += `\nIndirect relationships (1 hop, ${Math.min(externalEdges.length, 10)} shown):\n`;
+            for (const edge of externalEdges.slice(0, 10)) {
+              const rel = edge.relation_type || "unknown";
+              const pct = edge.percentage ? ` [${edge.percentage}%]` : "";
+              graphDescription += `- ${edge.source?.name || "Unknown"} --[${rel}]${pct}--> ${edge.target?.name || "Unknown"} (${edge.target?.node_type || "entity"})\n`;
+            }
+          }
+        }
+      }
+
+      return graphDescription;
+    } catch (error) {
+      console.error("Event graph lookup error:", error);
+      return `Failed to get event graph: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
+  if (toolName === "get_entity_relationships") {
+    const entityName = args.entity_name as string;
+    const limit = Math.min((args.limit as number) || 10, 20);
+    console.log(`[Briefing] Getting relationships for entity: "${entityName}"`);
+
+    if (!context) {
+      return `Entity relationships unavailable - no context loaded`;
+    }
+
+    // Find the entity in the cache (case-insensitive match)
+    let entityUuid: string | null = null;
+
+    // First try to find in event entities
+    const entity = context.entities.find((e) => e.name.toLowerCase() === entityName.toLowerCase());
+    if (entity) {
+      entityUuid = entity.entity_id;
+    }
+
+    // If not found in event entities, search the nodes table
+    if (!entityUuid) {
+      try {
+        const { data: nodeResult } = await context.supabase
+          .from("nodes")
+          .select("id, name, node_type")
+          .ilike("name", `%${entityName}%`)
+          .limit(1);
+
+        if (nodeResult && nodeResult.length > 0) {
+          entityUuid = nodeResult[0].id;
+        }
+      } catch {
+        // Ignore search errors
+      }
+    }
+
+    if (!entityUuid) {
+      const availableEntities = context.entities.map((e) => e.name).join(", ");
+      return `Entity "${entityName}" not found in knowledge graph. Available entities in this event: ${availableEntities || "none"}`;
+    }
+
+    try {
+      // Query edges for this entity
+      const { data: edges, error } = await context.supabase
+        .from("edges")
+        .select(
+          "relation_type, target:target_id(name, node_type), confidence, polarity, percentage"
+        )
+        .eq("source_id", entityUuid)
+        .limit(limit);
+
+      if (error) {
+        console.error("Entity relationships lookup error:", error);
+        return `Failed to lookup relationships for "${entityName}"`;
+      }
+
+      if (!edges || edges.length === 0) {
+        return `No relationships found for "${entityName}" in the knowledge graph.`;
+      }
+
+      // Format relationships
+      const relationships: string[] = [];
+      for (const edge of edges) {
+        const target = edge.target as { name: string; node_type: string } | null;
+        const relType = edge.relation_type || "unknown";
+        const confidence = edge.confidence || 0;
+        const polarity = edge.polarity || 0;
+        const percentage = edge.percentage;
+
+        let relStr = `- ${relType} ${target?.name || "Unknown"} (${target?.node_type || "entity"})`;
+        if (percentage) {
+          relStr += ` [${percentage}%]`;
+        }
+        relStr += ` [confidence: ${Math.round(confidence * 100)}%, polarity: ${polarity > 0 ? "+" : ""}${polarity.toFixed(1)}]`;
+        relationships.push(relStr);
+      }
+
+      return `Relationships for "${entityName}":\n${relationships.join("\n")}`;
+    } catch (error) {
+      console.error("Entity relationships lookup error:", error);
+      return `Failed to lookup relationships: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
   return `Unknown tool: ${toolName}`;
 }
 
 // System prompt for the briefing assistant
 const SYSTEM_PROMPT = `<role>
-You are a news explainer for Realpolitik, a platform that helps regular people understand geopolitical events.
+You are an intelligence analyst for Realpolitik, a platform that helps people understand geopolitical events.
 Your job is to answer questions clearly and help users understand why events matter.
 </role>
 
 <instructions>
 1. Answer questions about the event the user is viewing
 2. Use the search_news tool when you need current information (max 1-2 searches per question)
-3. Connect events to real-world impacts when relevant (prices, products, travel, investments)
-4. Be direct - give your actual read on the situation, don't over-hedge
-5. Cite your sources at the end
+3. Use the get_entity_events tool to look up what else a specific entity has been involved in
+4. Connect events to real-world impacts when relevant (prices, products, travel, investments)
+5. Be direct - give your actual read on the situation, don't over-hedge
+6. Cite your sources at the end
 </instructions>
 
-<search_rules>
-- Search ONCE for current information, then respond with what you have
-- Skip searching for follow-up questions if you already have context
-- After searching, ALWAYS provide a response - never search repeatedly for "better" results
-- If results are limited, work with what you have and say so
-</search_rules>
+<tools>
+You have 6 tools available. The database tools (2-6) query OUR tracked events and knowledge graph - prefer these over web search when possible.
+
+1. search_news (LIMITED - max 2/question)
+   - Searches the web for current news
+   - Use for: Breaking developments, analyst opinions, latest updates not yet in our database
+   - Costs: Uses external API, limited to 2 calls
+
+2. get_event_graph (PRIORITY TOOL - call FIRST)
+   - Shows the relationship network around THIS specific event
+   - Returns: All entities involved, their relationships, supply chains, dependencies, percentages
+   - Use for: Understanding the network topology before answering ANY question about impacts or relationships
+   - Example: "TSMC --[supplies][90%]--> Apple", "Germany --[depends_on][60%]--> Russia"
+   - ALWAYS call this first when the question involves relationships, dependencies, or impacts
+
+3. get_entity_relationships (UNLIMITED - use freely)
+   - Gets known relationships for any specific entity from the knowledge graph
+   - Returns: Edges with relation type, target entity, percentages, confidence, polarity
+   - Use for: "What is [entity] connected to?", "Who does [entity] supply?", deeper relationship analysis
+   - Example: User asks about supply chains → call this for key entities
+
+4. get_entity_events (UNLIMITED - use freely)
+   - Looks up recent events involving a specific entity from OUR database
+   - Use for: "What else has [entity] done?", "Is [entity] involved in other events?", context about an actor
+   - Example: User asks "What's China been up to?" → call get_entity_events("China")
+
+5. get_causal_chain (UNLIMITED - use freely)
+   - Traces what events/factors LED TO this event (backwards in time)
+   - Use for: "Why did this happen?", "What caused this?", "Background?", "How did we get here?"
+   - Returns: Chain of preceding events with causal relationships and confidence scores
+   - Example: User asks "Why is this happening?" → call get_causal_chain first
+
+6. get_impact_chain (UNLIMITED - use freely)
+   - Traces what this event AFFECTS downstream (forwards in time)
+   - Use for: "What happens next?", "Who's affected?", "Consequences?", "Should I be worried?"
+   - Returns: Affected entities (companies, sectors, countries) and relationship paths
+   - Example: User asks "How does this affect me?" → call get_impact_chain first
+</tools>
+
+<tool_selection>
+CHOOSE THE RIGHT TOOL FOR THE QUESTION:
+
+"Who/what is involved?" / "What are the relationships?" / "Dependencies?"
+→ START with get_event_graph to see the network, then get_entity_relationships for deeper dives
+
+"Why did this happen?" / "Background?" / "What led to this?"
+→ START with get_causal_chain, then optionally search_news for color
+
+"What happens next?" / "Who's affected?" / "Consequences?"
+→ START with get_event_graph to understand the network, THEN get_impact_chain to trace effects
+
+"What else has [entity] done?" / "Is [country] involved elsewhere?"
+→ Use get_entity_events with the entity name
+
+"What does [entity] supply/depend on?" / "Who are their partners/enemies?"
+→ Use get_entity_relationships for relationship details with percentages
+
+"Latest updates?" / "What are experts saying?" / "Current status?"
+→ Use search_news (this is where web search shines)
+
+IMPORTANT: The database tools give you structured, verified information from our knowledge graph.
+- get_event_graph shows relationships with actual percentages (e.g., "supplies 90% of chips")
+- Use these specific numbers in your answers - they make your analysis concrete
+- Web search gives you raw news that may be unverified. Prefer database tools when the question fits.
+</tool_selection>
+
+<tool_examples>
+USER: "Why is this happening?"
+TOOL CALLS: get_causal_chain() → then synthesize the chain into a narrative
+
+USER: "How does this affect regular people?"
+TOOL CALLS: get_event_graph() → understand the network, then get_impact_chain() → trace through to consumer-facing companies/products
+
+USER: "What are the relationships here?" / "Who depends on whom?"
+TOOL CALLS: get_event_graph() → shows all entities and their connections with percentages
+
+USER: "What does TSMC supply?" / "Who are Russia's allies?"
+TOOL CALLS: get_entity_relationships("TSMC") or get_entity_relationships("Russia") → detailed relationship data
+
+USER: "What else has Russia been involved in recently?"
+TOOL CALLS: get_entity_events("Russia") → list their recent activity
+
+USER: "What's the latest on this situation?"
+TOOL CALLS: search_news("[specific event topic]") → get fresh updates
+</tool_examples>
 
 <style>
 - Write for someone smart but not following this topic closely
@@ -147,15 +641,22 @@ Your job is to answer questions clearly and help users understand why events mat
 </style>
 
 <source_citation>
-End every response with a Sources section. Use EXACT markdown link format:
+End every response with a **Sources:** section when you have citable sources.
 
-**Sources:**
+WEB sources (from search_news):
 - [The Guardian](https://www.theguardian.com/article-url)
 - [Reuters](https://www.reuters.com/article-url)
 
-CRITICAL: Links must be [Text](URL) with NO space between ] and (
-DO NOT use numbered references like [1] or put URLs in parentheses separately.
-Only cite sources you actually used.
+DATABASE events (from get_entity_events - each event has an ID):
+- [Event Title](/?event=EVENT_UUID)
+Use the event ID from the tool result to create clickable deep links to those events.
+
+Rules:
+- Links must be [Text](URL) with NO space between ] and (
+- Do NOT cite "Atlas", "Constellation", or tool names as sources
+- Graph tools (get_event_graph, get_entity_relationships, get_causal_chain, get_impact_chain) provide analysis context, not citable sources - don't cite them
+- If you only used graph tools, you can skip Sources
+- DO use the specific percentages and data from graph tools in your answer (e.g., "supplies 90% of chips")
 </source_citation>
 
 <guardrails>
@@ -187,19 +688,60 @@ BAD: "It's difficult to predict what will happen. Many factors could influence t
 export async function POST(request: NextRequest) {
   try {
     const body: BriefingRequest = await request.json();
-    const {
-      eventId,
-      eventTitle,
-      eventSummary,
-      eventCategory,
-      eventLocation,
-      question,
-      history,
-      sessionToken,
-      powSolution,
-    } = body;
+    const { eventId, eventTitle, eventSummary, eventCategory, eventLocation, question, history } =
+      body;
 
-    const clientIP = getClientIP(request);
+    // ==========================================================================
+    // STEP 0: User Authentication (Required)
+    // ==========================================================================
+
+    // Get authorization header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({
+          error: "Authentication required",
+          message: "You must be signed in to use the briefing agent.",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const token = authHeader.substring(7);
+
+    // Validate user session with Supabase
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      }
+    );
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid session",
+          message: "Please sign in again.",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    console.log(`[Briefing] Authenticated user: ${user.email} (${user.id})`);
 
     // ==========================================================================
     // STEP 1: Input Validation
@@ -227,164 +769,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate history
+    // Validate history format (we'll slice to last N messages for context)
     if (history && Array.isArray(history)) {
-      if (history.length > MAX_HISTORY_LENGTH) {
-        return new Response(
-          JSON.stringify({
-            error: "History too long",
-            message: "Too many messages in conversation history.",
-          }),
-          {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-
       // Validate each history message
       for (const msg of history) {
-        if (
-          !msg.role ||
-          !msg.content ||
-          (msg.role !== "user" && msg.role !== "assistant")
-        ) {
-          return new Response(
-            JSON.stringify({ error: "Invalid history message format" }),
-            {
-              status: 400,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
-      }
-    }
-
-    // ==========================================================================
-    // STEP 2: Session Authentication (PoW or Token)
-    // ==========================================================================
-
-    let newSessionToken: string | undefined;
-
-    try {
-      if (sessionToken) {
-        // Validate existing session token
-        const isValid = await validateSessionToken(sessionToken, clientIP);
-        if (!isValid) {
-          // Token invalid or expired - need new PoW
-          const challenge = generateChallenge();
-          return new Response(
-            JSON.stringify({
-              error: "Session expired",
-              requiresPow: true,
-              challenge,
-              difficulty: POW_DIFFICULTY,
-            }),
-            {
-              status: 401,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
-        // Token valid, continue with request
-        console.log("[Briefing] Valid session token");
-      } else if (powSolution) {
-        // Verify PoW solution and issue new token
-        const result = await verifySolution(
-          powSolution.challenge,
-          powSolution.nonce,
-          POW_DIFFICULTY
-        );
-
-        if (!result.valid) {
-          console.warn(`[Briefing] Invalid PoW: ${result.error}`);
-          return new Response(
-            JSON.stringify({
-              error: "Invalid proof of work",
-              message: result.error,
-              requiresPow: true,
-              challenge: generateChallenge(),
-              difficulty: POW_DIFFICULTY,
-            }),
-            {
-              status: 401,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
-
-        // PoW verified - generate and store session token
-        newSessionToken = generateSessionToken();
-        await storeSessionToken(newSessionToken, clientIP);
-        console.log("[Briefing] PoW verified, new session token issued");
-      } else {
-        // No token or solution - need to solve PoW
-        const challenge = generateChallenge();
-        return new Response(
-          JSON.stringify({
-            error: "Authentication required",
-            requiresPow: true,
-            challenge,
-            difficulty: POW_DIFFICULTY,
-          }),
-          {
-            status: 401,
+        if (!msg.role || !msg.content || (msg.role !== "user" && msg.role !== "assistant")) {
+          return new Response(JSON.stringify({ error: "Invalid history message format" }), {
+            status: 400,
             headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-    } catch (authError) {
-      console.error("[Briefing] Auth error:", authError);
-      return new Response(
-        JSON.stringify({
-          error: "Authentication failed",
-          message: "Please try again.",
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
+          });
         }
-      );
+      }
     }
 
     // ==========================================================================
-    // STEP 3: Rate Limiting (Global + Per-IP)
+    // STEP 2: Rate Limiting (User-based)
     // ==========================================================================
 
     let limitChecked = false;
 
     try {
-      // Check global rate limit first (protects against distributed attacks)
-      const globalLimit = await checkAndIncrementGlobalLimit();
-      if (!globalLimit.allowed) {
-        console.warn(
-          `[Briefing] Global rate limit exceeded: ${globalLimit.current}/${globalLimit.limit}`
-        );
-        return new Response(
-          JSON.stringify({
-            error: "Service busy",
-            message: "Too many requests right now. Please try again in a minute.",
-          }),
-          {
-            status: 429,
-            headers: {
-              "Content-Type": "application/json",
-              "Retry-After": "60",
-            },
-          }
-        );
-      }
+      // Check user's daily briefing quota
+      const { data: canUse, error: quotaError } = await supabase.rpc("increment_briefing_usage", {
+        user_uuid: user.id,
+      });
 
-      // Check per-IP daily limit
-      const { allowed, remaining, limit } = await checkBriefingLimit(clientIP);
+      if (quotaError) throw quotaError;
 
-      if (!allowed) {
+      if (!canUse) {
+        // Get current usage to show in error message
+        const { data: usage } = await supabase.rpc("get_briefing_usage", {
+          user_uuid: user.id,
+        });
+
+        const usageData = usage?.[0];
+        const limit = usageData?.limit_value || 10; // Default to free tier limit
+
         return new Response(
           JSON.stringify({
             error: "Daily limit reached",
             message: `You've used all ${limit} briefings for today. Check back tomorrow!`,
             remaining: 0,
             limit,
+            resetsAt: usageData?.resets_at,
           }),
           {
             status: 429,
@@ -393,11 +820,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Get remaining quota
+      const { data: usage } = await supabase.rpc("get_briefing_usage", {
+        user_uuid: user.id,
+      });
+
+      const usageData = usage?.[0];
+
       limitChecked = true;
-      console.log(`[Briefing] IP has ${remaining} requests remaining today`);
-    } catch (redisError) {
-      // Fail CLOSED on Redis errors - deny the request
-      console.error("[Briefing] Redis error (denying request):", redisError);
+      console.log(`[Briefing] User has ${usageData?.remaining || 0} briefings remaining today`);
+    } catch (dbError) {
+      void limitChecked; // Suppress unused variable warning
+      // Fail CLOSED on database errors - deny the request
+      console.error("[Briefing] Database error (denying request):", dbError);
       return new Response(
         JSON.stringify({
           error: "Service temporarily unavailable",
@@ -410,13 +845,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch user's tier for model selection (also check subscription expiration)
+    const { data: userProfile } = await supabase
+      .from("profiles")
+      .select("tier, subscription_status, subscription_ends_at")
+      .eq("id", user.id)
+      .single();
+
+    // Check if subscription has expired (cancelled with end date passed)
+    let userTier = userProfile?.tier || "free";
+    if (
+      userTier === "pro" &&
+      userProfile?.subscription_status === "canceled" &&
+      userProfile?.subscription_ends_at &&
+      new Date(userProfile.subscription_ends_at) < new Date()
+    ) {
+      // Subscription has expired - treat as free tier
+      userTier = "free";
+      console.log(`[Briefing] User ${user.id} subscription expired, treating as free tier`);
+    }
+    // Pro users get HIGH thinking level, free users get LOW (minimal) thinking
+    const thinkingLevel =
+      userTier === "pro" ? BRIEFING_THINKING_LEVEL_PRO : BRIEFING_THINKING_LEVEL_FREE;
+    console.log(
+      `[Briefing] User tier: ${userTier}, model: ${BRIEFING_MODEL}, thinking: ${thinkingLevel}`
+    );
+
+    // Fetch entities for this event
+    const { data: entities } = await supabase.rpc("get_event_entities", {
+      event_uuid: eventId,
+    });
+
+    // Build context for tool calls
+    const briefingContext: BriefingContext = {
+      eventId,
+      entities: entities || [],
+      supabase,
+    };
+
+    // Build entity context string
+    const entityContext =
+      entities && entities.length > 0
+        ? `\nENTITIES INVOLVED:\n${entities.map((e: { name: string; node_type: string; relation_type: string }) => `- ${e.name} (${e.node_type}) [${e.relation_type}]`).join("\n")}`
+        : "";
+
     // Build event context
     const eventContext = `
 EVENT CONTEXT:
 - Title: ${eventTitle}
 - Category: ${eventCategory}
 - Location: ${eventLocation}
-- Summary: ${eventSummary}
+- Summary: ${eventSummary}${entityContext}
 `.trim();
 
     // Build conversation history for Gemini
@@ -435,9 +914,8 @@ EVENT CONTEXT:
       },
     ];
 
-    // Add conversation history
-    const recentHistory = history.slice(-10);
-    for (const msg of recentHistory) {
+    // Add full conversation history (Gemini has 1M token context)
+    for (const msg of history) {
       contents.push({
         role: msg.role === "assistant" ? "model" : "user",
         parts: [{ text: msg.content }],
@@ -456,17 +934,12 @@ EVENT CONTEXT:
         };
 
         try {
-          // Send new session token if one was just created
-          if (newSessionToken) {
-            sendEvent({ sessionToken: newSessionToken });
-          }
-
           const ai = getGeminiClient();
 
           // Tool calling loop
           let continueLoop = true;
-          const maxIterations = 3;
-          const maxSearches = 2;
+          const maxIterations = BRIEFING_MAX_ITERATIONS;
+          const maxSearches = BRIEFING_MAX_SEARCHES;
           let iterations = 0;
           let totalInputTokens = 0;
           let totalOutputTokens = 0;
@@ -477,16 +950,37 @@ EVENT CONTEXT:
             // After max searches, don't include tools
             const shouldDisableTools = tavilySearchCount >= maxSearches;
 
+            // Build available tools
+            const availableTools: FunctionDeclaration[] = [];
+            if (!shouldDisableTools) {
+              availableTools.push(searchNewsTool);
+            }
+            // Entity and graph tools are always available (no search limit)
+            if (briefingContext.entities.length > 0) {
+              // Priority tool - shows the event's relationship network
+              availableTools.push(getEventGraphTool);
+              availableTools.push(getEntityEventsTool);
+              availableTools.push(getEntityRelationshipsTool);
+            }
+            // Graph traversal tools always available
+            availableTools.push(getCausalChainTool);
+            availableTools.push(getImpactChainTool);
+
             // Call Gemini API
             const response = await ai.models.generateContent({
-              model: "gemini-2.5-flash",
+              model: BRIEFING_MODEL,
               contents,
               config: {
                 systemInstruction: SYSTEM_PROMPT,
-                tools: shouldDisableTools
-                  ? undefined
-                  : [{ functionDeclarations: [searchNewsTool] }],
+                tools:
+                  availableTools.length > 0
+                    ? [{ functionDeclarations: availableTools }]
+                    : undefined,
                 maxOutputTokens: 8000,
+                // Thinking level: HIGH for Pro (thorough analysis), MINIMAL for Free (faster)
+                thinkingConfig: {
+                  thinkingLevel: ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel],
+                },
               },
             });
 
@@ -510,7 +1004,7 @@ EVENT CONTEXT:
                 !!part.functionCall
             );
 
-            if (functionCalls && functionCalls.length > 0 && !shouldDisableTools) {
+            if (functionCalls && functionCalls.length > 0) {
               // Add model response to conversation
               contents.push({
                 role: "model",
@@ -521,18 +1015,62 @@ EVENT CONTEXT:
               const functionResponses: Part[] = [];
 
               for (const funcCall of functionCalls) {
-                if (tavilySearchCount >= maxSearches) {
-                  console.log(`[Briefing] Skipping search - limit reached (${maxSearches})`);
-                  break;
-                }
-
                 const { name, args } = funcCall.functionCall;
 
-                // Send status update to client
-                sendEvent({ status: "searching", query: args.query });
+                // Check search limit for news searches only
+                if (name === "search_news" && tavilySearchCount >= maxSearches) {
+                  console.log(`[Briefing] Skipping search - limit reached (${maxSearches})`);
+                  functionResponses.push({
+                    functionResponse: {
+                      name,
+                      response: {
+                        result:
+                          "Search limit reached. Please respond with information you already have.",
+                      },
+                    },
+                  });
+                  continue;
+                }
 
-                const result = await executeToolCall(name, args);
-                tavilySearchCount++;
+                // Send status update to client with branded messages
+                if (name === "search_news") {
+                  sendEvent({
+                    status: "searching",
+                    query: `Searching the web for "${args.query}"`,
+                  });
+                } else if (name === "get_entity_events") {
+                  sendEvent({
+                    status: "atlas",
+                    query: `Querying Atlas for ${args.entity_name} events`,
+                  });
+                } else if (name === "get_causal_chain") {
+                  sendEvent({
+                    status: "constellation",
+                    query: "Tracing causal chain in Constellation",
+                  });
+                } else if (name === "get_impact_chain") {
+                  sendEvent({
+                    status: "constellation",
+                    query: "Mapping impact chain in Constellation",
+                  });
+                } else if (name === "get_event_graph") {
+                  sendEvent({
+                    status: "constellation",
+                    query: "Loading event relationship network from Constellation",
+                  });
+                } else if (name === "get_entity_relationships") {
+                  sendEvent({
+                    status: "constellation",
+                    query: `Querying Constellation for ${args.entity_name} relationships`,
+                  });
+                }
+
+                const result = await executeToolCall(name, args, briefingContext);
+
+                // Only count Tavily searches against the limit
+                if (name === "search_news") {
+                  tavilySearchCount++;
+                }
 
                 functionResponses.push({
                   functionResponse: {
@@ -589,18 +1127,10 @@ EVENT CONTEXT:
               searches: tavilySearchCount,
             });
 
-            // Log usage (non-blocking)
-            if (limitChecked) {
-              incrementBriefingCount(clientIP).catch((err) =>
-                console.error("[Briefing] Failed to increment counter:", err)
-              );
-
-              logBriefingUsage({
-                inputTokens: totalInputTokens || 500,
-                outputTokens: totalOutputTokens || Math.ceil(totalChars / 4),
-                tavilySearches: tavilySearchCount,
-              }).catch((err) => console.error("[Briefing] Failed to log usage:", err));
-            }
+            // Usage already tracked in Supabase via increment_briefing_usage RPC call
+            console.log(
+              `[Briefing] Usage: ${totalInputTokens || 0} input tokens, ${totalOutputTokens || 0} output tokens, ${tavilySearchCount} searches`
+            );
 
             sendEvent({ done: true });
             console.log("[Briefing] Done event sent, closing stream");
@@ -625,6 +1155,16 @@ EVENT CONTEXT:
             sendEvent({
               error:
                 "AI briefings are temporarily unavailable due to high demand. Please try again later.",
+            });
+          } else if (
+            errorMessage.includes("too long") ||
+            errorMessage.includes("context length") ||
+            errorMessage.includes("token") ||
+            errorMessage.includes("exceeds maximum") ||
+            errorMessage.includes("INVALID_ARGUMENT")
+          ) {
+            sendEvent({
+              error: "Conversation is too long. Please start a new conversation to continue.",
             });
           } else {
             sendEvent({ error: "Unable to generate briefing. Please try again." });
@@ -661,6 +1201,26 @@ EVENT CONTEXT:
         }),
         {
           status: 503,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (
+      errorMessage.includes("too long") ||
+      errorMessage.includes("context length") ||
+      errorMessage.includes("token") ||
+      errorMessage.includes("exceeds maximum") ||
+      errorMessage.includes("INVALID_ARGUMENT")
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "Conversation too long",
+          message: "Please start a new conversation to continue.",
+          code: "CONTEXT_TOO_LONG",
+        }),
+        {
+          status: 400,
           headers: { "Content-Type": "application/json" },
         }
       );

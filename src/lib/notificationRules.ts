@@ -11,7 +11,6 @@ import type {
   NotificationPreferences,
   Condition,
   ConditionField,
-  RegionName,
 } from "@/types/notifications";
 import { getRegionFromLocation, isInQuietHours } from "@/types/notifications";
 
@@ -36,10 +35,7 @@ export interface EventForMatching {
 /**
  * Extract the value of a field from an event for condition evaluation
  */
-function getEventFieldValue(
-  event: EventForMatching,
-  field: ConditionField
-): string | number {
+function getEventFieldValue(event: EventForMatching, field: ConditionField): string | number {
   switch (field) {
     case "severity":
       return event.severity;
@@ -55,17 +51,15 @@ function getEventFieldValue(
       // Extract country from location_name
       // First try the last part after comma (e.g., "Kyiv, Ukraine" -> "Ukraine")
       const parts = event.location_name.split(",");
-      const lastPart = parts.length > 1 
-        ? parts[parts.length - 1].trim() 
-        : event.location_name;
-      
+      const lastPart = parts.length > 1 ? parts[parts.length - 1].trim() : event.location_name;
+
       // Normalize common variations
       const normalized = lastPart
         .replace(/^Gaza Strip$/i, "Gaza")
         .replace(/^West Bank$/i, "Palestine")
         .replace(/^United States$/i, "USA")
         .replace(/^United Kingdom$/i, "UK");
-      
+
       return normalized;
 
     case "sources":
@@ -89,10 +83,7 @@ function getEventFieldValue(
 /**
  * Evaluate a single condition against an event
  */
-export function evaluateCondition(
-  event: EventForMatching,
-  condition: Condition
-): boolean {
+export function evaluateCondition(event: EventForMatching, condition: Condition): boolean {
   const eventValue = getEventFieldValue(event, condition.field);
   const conditionValue = condition.value;
 
@@ -125,9 +116,7 @@ export function evaluateCondition(
       );
 
     case "contains":
-      return String(eventValue)
-        .toLowerCase()
-        .includes(String(conditionValue).toLowerCase());
+      return String(eventValue).toLowerCase().includes(String(conditionValue).toLowerCase());
 
     default:
       console.warn(`Unknown operator: ${condition.operator}`);
@@ -142,10 +131,7 @@ export function evaluateCondition(
 /**
  * Check if an event matches a single rule (all conditions must match)
  */
-export function matchesRule(
-  event: EventForMatching,
-  rule: NotificationRule
-): boolean {
+export function matchesRule(event: EventForMatching, rule: NotificationRule): boolean {
   // Disabled rules never match
   if (!rule.enabled) {
     return false;
@@ -157,18 +143,13 @@ export function matchesRule(
   }
 
   // All conditions must match (AND)
-  return rule.conditions.every((condition) =>
-    evaluateCondition(event, condition)
-  );
+  return rule.conditions.every((condition) => evaluateCondition(event, condition));
 }
 
 /**
  * Check if an event matches any of the user's rules (OR across rules)
  */
-export function matchesRules(
-  event: EventForMatching,
-  rules: NotificationRule[]
-): boolean {
+export function matchesRules(event: EventForMatching, rules: NotificationRule[]): boolean {
   // No rules = no notifications (must opt-in)
   if (!rules || rules.length === 0) {
     return false;
@@ -196,6 +177,48 @@ export function shouldNotify(
   }
 
   // Check if event matches any rules
+  return matchesRules(event, preferences.rules);
+}
+
+/**
+ * Check if an event should trigger a PUSH notification (vs inbox only)
+ * Only matches rules with sendPush: true
+ */
+export function shouldSendPush(
+  event: EventForMatching,
+  preferences: NotificationPreferences
+): boolean {
+  // Notifications must be enabled
+  if (!preferences.enabled) {
+    return false;
+  }
+
+  // Check quiet hours (suppress push notifications during quiet period)
+  if (isInQuietHours(preferences.quietHours)) {
+    return false;
+  }
+
+  // Only check rules with sendPush enabled
+  const pushRules = preferences.rules.filter((rule) => rule.sendPush === true);
+
+  // Check if event matches any push-enabled rules
+  return matchesRules(event, pushRules);
+}
+
+/**
+ * Check if an event should be added to inbox
+ * Matches any enabled rule (regardless of sendPush setting)
+ */
+export function shouldAddToInbox(
+  event: EventForMatching,
+  preferences: NotificationPreferences
+): boolean {
+  // Inbox must be enabled
+  if (!preferences.enabled) {
+    return false;
+  }
+
+  // Check if event matches any rules (push or inbox-only)
   return matchesRules(event, preferences.rules);
 }
 
@@ -228,9 +251,7 @@ export function getDetailedMatchResults(
     });
 
     const matched =
-      rule.enabled &&
-      conditionResults.length > 0 &&
-      conditionResults.every((r) => r.matched);
+      rule.enabled && conditionResults.length > 0 && conditionResults.every((r) => r.matched);
 
     return { rule, matched, conditionResults };
   });
@@ -239,11 +260,43 @@ export function getDetailedMatchResults(
 /**
  * Get which rules matched for an event (for logging/debugging)
  */
-export function getMatchingRuleNames(
-  event: EventForMatching,
-  rules: NotificationRule[]
-): string[] {
+export function getMatchingRuleNames(event: EventForMatching, rules: NotificationRule[]): string[] {
   return rules.filter((rule) => matchesRule(event, rule)).map((rule) => rule.name);
+}
+
+// =============================================================================
+// INBOX MATCHING (empty conditions = match all)
+// =============================================================================
+
+/**
+ * Check if an event matches a single inbox rule
+ * Unlike push rules, empty conditions = match all events
+ */
+export function matchesInboxRule(event: EventForMatching, rule: NotificationRule): boolean {
+  // Disabled rules never match
+  if (!rule.enabled) {
+    return false;
+  }
+
+  // Empty conditions = match ALL events (inbox catch-all)
+  if (rule.conditions.length === 0) {
+    return true;
+  }
+
+  // All conditions must match (AND)
+  return rule.conditions.every((condition) => evaluateCondition(event, condition));
+}
+
+/**
+ * Check if an event matches any inbox rules
+ */
+export function matchesInboxRules(event: EventForMatching, rules: NotificationRule[]): boolean {
+  // No rules = no match
+  if (!rules || rules.length === 0) {
+    return false;
+  }
+
+  return rules.some((rule) => matchesInboxRule(event, rule));
 }
 
 // =============================================================================
@@ -263,9 +316,6 @@ export function filterMatchingEvents<T extends EventForMatching>(
 /**
  * Count how many events would match the given rules
  */
-export function countMatchingEvents(
-  events: EventForMatching[],
-  rules: NotificationRule[]
-): number {
+export function countMatchingEvents(events: EventForMatching[], rules: NotificationRule[]): number {
   return events.filter((event) => matchesRules(event, rules)).length;
 }

@@ -17,11 +17,8 @@ import type {
   NotificationRule,
   LegacyPreferences,
 } from "@/types/notifications";
-import {
-  DEFAULT_PREFERENCES,
-  migrateLegacyPreferences,
-  DEFAULT_RULE,
-} from "@/types/notifications";
+import { DEFAULT_PREFERENCES, migrateLegacyPreferences, DEFAULT_RULE } from "@/types/notifications";
+import { getSupabaseClient } from "@/lib/supabase";
 
 // =============================================================================
 // TYPES
@@ -168,13 +165,13 @@ function loadStoredPreferences(): { prefs: NotificationPreferences; isNew: boole
     if (!stored) {
       return { prefs: DEFAULT_PREFERENCES, isNew: true };
     }
-    
+
     const parsed = JSON.parse(stored);
-    
+
     if (isNewFormat(parsed)) {
       return { prefs: parsed, isNew: false };
     }
-    
+
     // Migrate legacy format
     const migrated = migrateLegacyPreferences(parsed);
     return { prefs: migrated, isNew: false };
@@ -222,7 +219,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   // ---------------------------------------------------------------------------
   // SYNC SUBSCRIPTION STATE ACROSS INSTANCES
   // ---------------------------------------------------------------------------
-  
+
   // Re-check subscription status when another instance changes it
   useEffect(() => {
     const handleSubscriptionChange = async () => {
@@ -232,11 +229,15 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           const registration = await navigator.serviceWorker.ready;
           const subscription = await registration.pushManager.getSubscription();
           const isSubscribed = !!subscription;
-          
+
           setState((prev) => {
             if (prev.isSubscribed !== isSubscribed) {
               console.log("[Push] Syncing subscription state:", isSubscribed);
-              return { ...prev, isSubscribed, preferences: { ...prev.preferences, enabled: isSubscribed } };
+              return {
+                ...prev,
+                isSubscribed,
+                preferences: { ...prev.preferences, enabled: isSubscribed },
+              };
             }
             return prev;
           });
@@ -303,7 +304,12 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         console.log("[Push] Error checking subscription:", e);
       }
 
-      console.log("[Push] Setting final state:", { isSupported, permission, isSubscribed, isFirstTimeSetup });
+      console.log("[Push] Setting final state:", {
+        isSupported,
+        permission,
+        isSubscribed,
+        isFirstTimeSetup,
+      });
 
       setState({
         isSupported: true,
@@ -320,6 +326,72 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
     init();
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // VERIFY SUBSCRIPTION WITH SERVER
+  // ---------------------------------------------------------------------------
+  // If we have a local subscription but it's not on the server, clean it up
+  useEffect(() => {
+    // Only run if we think we're subscribed and not loading
+    if (!state.isSubscribed || state.isLoading) return;
+
+    let isMounted = true;
+
+    const verifySubscription = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        // Can't verify without auth
+        if (!session || !isMounted) return;
+
+        // Get local subscription endpoint
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        if (registrations.length === 0 || !isMounted) return;
+
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (!subscription || !isMounted) return;
+
+        // Check if this subscription exists on the server
+        const { data: devices, error } = await supabase.rpc("get_user_subscriptions", {
+          user_uuid: session.user.id,
+        });
+
+        if (error || !isMounted) {
+          if (error) console.error("[Push] Error verifying subscription:", error);
+          return;
+        }
+
+        // Check if our endpoint is in the list
+        const endpoint = subscription.endpoint;
+        const isOnServer = devices?.some((d: { endpoint: string }) => d.endpoint === endpoint);
+
+        if (!isOnServer && isMounted) {
+          console.log("[Push] Local subscription not on server, cleaning up...");
+          // Unsubscribe locally to sync state
+          await subscription.unsubscribe();
+          if (isMounted) {
+            setState((prev) => ({
+              ...prev,
+              isSubscribed: false,
+              isFirstTimeSetup: true,
+            }));
+          }
+        }
+      } catch (e) {
+        console.error("[Push] Error verifying subscription:", e);
+      }
+    };
+
+    verifySubscription();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [state.isSubscribed, state.isLoading]);
 
   // ---------------------------------------------------------------------------
   // REGISTER SERVICE WORKER
@@ -370,106 +442,135 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   // SUBSCRIBE
   // ---------------------------------------------------------------------------
 
-  const subscribe = useCallback(async (initialRules?: NotificationRule[]): Promise<boolean> => {
-    if (!state.isSupported) {
-      setState((prev) => ({ ...prev, error: "Push not supported" }));
-      return false;
-    }
-
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      // Request permission if not granted
-      let permission = Notification.permission;
-      if (permission === "default") {
-        permission = await requestPermission();
-      }
-
-      if (permission !== "granted") {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "Notification permission denied",
-        }));
+  const subscribe = useCallback(
+    async (initialRules?: NotificationRule[]): Promise<boolean> => {
+      if (!state.isSupported) {
+        setState((prev) => ({ ...prev, error: "Push not supported" }));
         return false;
       }
 
-      // Register service worker
-      const registration = await registerServiceWorker();
-      if (!registration) {
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      try {
+        // Request permission if not granted
+        let permission = Notification.permission;
+        if (permission === "default") {
+          permission = await requestPermission();
+        }
+
+        if (permission !== "granted") {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: "Notification permission denied",
+          }));
+          return false;
+        }
+
+        // Register service worker
+        const registration = await registerServiceWorker();
+        if (!registration) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: "Service worker registration failed",
+          }));
+          return false;
+        }
+
+        // Subscribe to push
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        if (!vapidKey) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: "VAPID key not configured",
+          }));
+          return false;
+        }
+
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
+        });
+
+        // Build new preferences with initial rules if provided
+        const newPrefs: NotificationPreferences = {
+          ...state.preferences,
+          enabled: true,
+          rules: initialRules ?? state.preferences.rules ?? [DEFAULT_RULE],
+        };
+
+        // Get auth session
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          // No session - unsubscribe locally to keep state in sync
+          try {
+            await subscription.unsubscribe();
+          } catch (e) {
+            console.error("[Push] Failed to unsubscribe after auth error:", e);
+          }
+          throw new Error("You must be signed in to enable notifications");
+        }
+
+        // Send subscription to server with auth token
+        const response = await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            subscription: subscription.toJSON(),
+            preferences: newPrefs,
+          }),
+        });
+
+        if (!response.ok) {
+          // API failed - unsubscribe locally to keep state in sync
+          try {
+            await subscription.unsubscribe();
+          } catch (e) {
+            console.error("[Push] Failed to unsubscribe after API error:", e);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to save subscription");
+        }
+
+        // Save preferences locally
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+        markSetupComplete();
+
         setState((prev) => ({
           ...prev,
+          isSubscribed: true,
           isLoading: false,
-          error: "Service worker registration failed",
-        }));
-        return false;
-      }
-
-      // Subscribe to push
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!vapidKey) {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "VAPID key not configured",
-        }));
-        return false;
-      }
-
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
-      });
-
-      // Build new preferences with initial rules if provided
-      const newPrefs: NotificationPreferences = {
-        ...state.preferences,
-        enabled: true,
-        rules: initialRules ?? state.preferences.rules ?? [DEFAULT_RULE],
-      };
-
-      // Send subscription to server
-      const response = await fetch("/api/push/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subscription: subscription.toJSON(),
+          error: null,
           preferences: newPrefs,
-        }),
-      });
+          isFirstTimeSetup: false,
+        }));
 
-      if (!response.ok) {
-        throw new Error("Failed to save subscription");
+        // Notify other instances that subscription state changed
+        window.dispatchEvent(new CustomEvent(SUBSCRIPTION_CHANGE_EVENT));
+
+        return true;
+      } catch (error: unknown) {
+        console.error("[Push] Subscribe failed:", error);
+        const errorMessage = error instanceof Error ? error.message : "Subscription failed";
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: errorMessage,
+        }));
+        return false;
       }
-
-      // Save preferences locally
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
-      markSetupComplete();
-
-      setState((prev) => ({
-        ...prev,
-        isSubscribed: true,
-        isLoading: false,
-        error: null,
-        preferences: newPrefs,
-        isFirstTimeSetup: false,
-      }));
-
-      // Notify other instances that subscription state changed
-      window.dispatchEvent(new CustomEvent(SUBSCRIPTION_CHANGE_EVENT));
-
-      return true;
-    } catch (error: unknown) {
-      console.error("[Push] Subscribe failed:", error);
-      const errorMessage = error instanceof Error ? error.message : "Subscription failed";
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: errorMessage,
-      }));
-      return false;
-    }
-  }, [state.isSupported, state.preferences, requestPermission, registerServiceWorker]);
+    },
+    [state.isSupported, state.preferences, requestPermission, registerServiceWorker]
+  );
 
   // ---------------------------------------------------------------------------
   // UNSUBSCRIBE
@@ -483,13 +584,26 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       const subscription = await registration.pushManager.getSubscription();
 
       if (subscription) {
+        // Get auth session
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          throw new Error("You must be signed in to manage notifications");
+        }
+
         // Unsubscribe from push manager
         await subscription.unsubscribe();
 
-        // Remove from server
+        // Remove from server with auth token
         await fetch("/api/push/unsubscribe", {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
           body: JSON.stringify({ endpoint: subscription.endpoint }),
         });
       }
@@ -536,13 +650,26 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       try {
         // If subscribed, update server
         if (state.isSubscribed) {
+          // Get auth session
+          const supabase = getSupabaseClient();
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
+          if (!session) {
+            throw new Error("You must be signed in to update notification preferences");
+          }
+
           const registration = await navigator.serviceWorker.ready;
           const subscription = await registration.pushManager.getSubscription();
 
           if (subscription) {
             const response = await fetch("/api/push/subscribe", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
               body: JSON.stringify({
                 subscription: subscription.toJSON(),
                 preferences: updatedPrefs,

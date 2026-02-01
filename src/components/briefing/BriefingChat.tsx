@@ -6,6 +6,8 @@ import { useBriefingChat } from "@/hooks/useBriefingChat";
 import { ChatMessage } from "./ChatMessage";
 import { ChatChips } from "./ChatChips";
 import { ChatInput } from "./ChatInput";
+import { useAuth } from "@/contexts/AuthContext";
+import { SignInPrompt } from "../auth/SignInPrompt";
 
 interface BriefingChatProps {
   event: GeoEvent;
@@ -17,6 +19,7 @@ interface BriefingChatProps {
  * Combines messages, chips, and input into a cohesive chat experience.
  */
 export function BriefingChat({ event, className = "" }: BriefingChatProps) {
+  const { user } = useAuth();
   const { messages, isLoading, statusLabel, sendMessage, availableChips } = useBriefingChat({
     event,
     onError: (err) => console.error("Briefing error:", err),
@@ -30,13 +33,24 @@ export function BriefingChat({ event, className = "" }: BriefingChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Handle input focus - scroll input container into view on mobile when keyboard opens
+  // Handle input focus - on mobile, the modal handles viewport adjustments
+  // Don't use scrollIntoView as it can cause the modal to scroll out of view on Safari
   const handleInputFocus = useCallback(() => {
-    // Small delay to let keyboard animate open
+    // Let the modal's viewport tracking handle keyboard visibility
+    // We just ensure messages scroll to bottom after a short delay
     setTimeout(() => {
-      inputContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }, 350);
   }, []);
+
+  // Gate behind auth - must be after all hooks
+  if (!user) {
+    return (
+      <div className={`flex items-center justify-center p-8 ${className}`}>
+        <SignInPrompt feature="briefing" />
+      </div>
+    );
+  }
 
   const hasMessages = messages.length > 0;
 

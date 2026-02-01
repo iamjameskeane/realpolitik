@@ -8,30 +8,19 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { sendNotificationToAll, NotificationPayload } from "@/lib/push";
+import { sendNotificationToAll, NotificationPayload } from "@/lib/pushSupabase";
 
 export async function POST(request: NextRequest) {
   console.log("[Send] Received push send request");
-  
+
   try {
     // Authenticate request
     const authHeader = request.headers.get("authorization");
     const secret = process.env.PUSH_API_SECRET;
     const expectedToken = `Bearer ${secret}`;
-    
-    // Debug logging (mask secret for security)
-    console.log("[Send] Auth check:", { 
-      hasAuthHeader: !!authHeader, 
-      hasSecret: !!secret,
-      secretLength: secret?.length,
-      secretPrefix: secret?.substring(0, 5),
-      authHeaderPrefix: authHeader?.substring(0, 12),
-      match: authHeader === expectedToken
-    });
 
     if (!authHeader || authHeader !== expectedToken) {
-      console.warn("[Send] Unauthorized - headers don't match");
-      console.warn("[Send] Expected length:", expectedToken.length, "Got length:", authHeader?.length);
+      console.warn("[Send] Unauthorized request");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -86,10 +75,7 @@ export async function POST(request: NextRequest) {
 
     // Send to all matching subscriptions
     console.log("[Send] Calling sendNotificationToAll...");
-    const result = await sendNotificationToAll(payload, {
-      category,
-      minSeverity: severity,
-    });
+    const result = await sendNotificationToAll(payload);
 
     console.log("[Send] Result:", result);
 
@@ -103,6 +89,9 @@ export async function POST(request: NextRequest) {
     console.error("[Send] Error:", error);
     // Include more error details
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: "Failed to send notifications", details: errorMessage }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to send notifications", details: errorMessage },
+      { status: 500 }
+    );
   }
 }

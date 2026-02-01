@@ -171,7 +171,13 @@ function getEventSources(event: GeoEvent) {
 /**
  * Swipeable event row for inbox mode - swipe right to dismiss
  */
-function SwipeableEventRow({ event, reaction, onSelect, onDismiss, visualState }: SwipeableEventRowProps) {
+function SwipeableEventRow({
+  event,
+  reaction,
+  onSelect,
+  onDismiss,
+  visualState,
+}: SwipeableEventRowProps) {
   const x = useMotionValue(0);
   const opacity = useTransform(x, [0, 150], [1, 0]);
   const scale = useTransform(x, [0, 150], [1, 0.95]);

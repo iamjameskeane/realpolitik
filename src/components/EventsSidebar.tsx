@@ -22,6 +22,9 @@ interface EventsSidebarProps {
   incomingEvents?: GeoEvent[];
   /** Callback to start flyover mode with the events to fly over */
   onStartFlyover?: (events: GeoEvent[]) => void;
+  /** Severity filter - minimum severity to show */
+  minSeverity?: number;
+  onMinSeverityChange?: (value: number) => void;
 }
 
 /**
@@ -63,23 +66,17 @@ export function EventsSidebar({
   eventStateMap,
   incomingEvents = [],
   onStartFlyover,
+  minSeverity = 1,
+  onMinSeverityChange,
 }: EventsSidebarProps) {
-  const [sortBy, setSortBy] = useState<SortOption>("hot");
+  // Initialize sort to "unread" if there are incoming events, else "hot"
+  const [sortBy, setSortBy] = useState<SortOption>(() =>
+    incomingEvents.length > 0 ? "unread" : "hot"
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [hideSeen, setHideSeen] = useState(false);
+  const [showSeverityPopover, setShowSeverityPopover] = useState(false);
   const { reactions } = useBatchReactions();
-
-  // Smart default sort: "What's New" if there are incoming events, else "Hot"
-  const hasSetInitialSort = useRef(false);
-  useEffect(() => {
-    if (hasSetInitialSort.current) return;
-    if (incomingEvents.length > 0) {
-      setSortBy("unread");
-      hasSetInitialSort.current = true;
-    } else if (events.length > 0) {
-      hasSetInitialSort.current = true;
-    }
-  }, [incomingEvents.length, events.length]);
 
   // Filter events by active categories, search query, and hide seen toggle
   const filteredEvents = useMemo(() => {
@@ -249,6 +246,8 @@ export function EventsSidebar({
         className={`fixed top-1/2 z-20 -translate-y-1/2 rounded-l-lg bg-foreground/10 px-3 py-6 backdrop-blur-sm transition-all hover:bg-foreground/20 md:px-2 md:py-4 ${
           isOpen ? "right-[calc(100%-16px)] md:right-80" : "right-0"
         }`}
+        aria-label={isOpen ? "Close event sidebar" : "Open event sidebar"}
+        aria-expanded={isOpen}
       >
         <svg
           className={`h-6 w-6 text-foreground/70 transition-transform md:h-5 md:w-5 ${isOpen ? "rotate-180" : ""}`}
@@ -363,7 +362,7 @@ export function EventsSidebar({
                     }`}
                   >
                     {"isPulsing" in option && option.isPulsing && (
-                      <span className="relative flex h-2 w-2">
+                      <span className="relative flex h-2 w-2" suppressHydrationWarning>
                         {incomingEvents.length > 0 ? (
                           <>
                             <span
@@ -372,11 +371,13 @@ export function EventsSidebar({
                                   ? "bg-white animate-ping"
                                   : "bg-violet-500 animate-ping"
                               }`}
+                              suppressHydrationWarning
                             />
                             <span
                               className={`relative inline-flex h-2 w-2 rounded-full ${
                                 sortBy === option.value ? "bg-white" : "bg-violet-500"
                               }`}
+                              suppressHydrationWarning
                             />
                           </>
                         ) : (
@@ -384,6 +385,7 @@ export function EventsSidebar({
                             className={`relative inline-flex h-2 w-2 rounded-full ${
                               sortBy === option.value ? "bg-white/50" : "bg-foreground/30"
                             }`}
+                            suppressHydrationWarning
                           />
                         )}
                       </span>
@@ -454,6 +456,83 @@ export function EventsSidebar({
             )}
             {/* Spacer when no flyover */}
             {(!onStartFlyover || sortedEvents.length === 0) && <div />}
+
+            {/* Severity filter - styled like other pucks */}
+            {onMinSeverityChange && (
+              <div className="group relative">
+                <button
+                  onClick={() => setShowSeverityPopover(!showSeverityPopover)}
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 font-mono text-[10px] font-medium uppercase transition-all ${
+                    minSeverity > 1
+                      ? "bg-orange-500/20 text-orange-400"
+                      : "bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/80"
+                  }`}
+                >
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  {minSeverity > 1 ? `${minSeverity}+` : "Sev"}
+                </button>
+
+                {/* Severity Popover */}
+                {showSeverityPopover && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowSeverityPopover(false)}
+                    />
+                    <div className="absolute right-0 top-full z-50 mt-2 w-52 rounded-lg border border-foreground/10 bg-background/95 p-3 shadow-xl backdrop-blur-md">
+                      <div className="mb-2 font-mono text-[9px] font-medium uppercase tracking-wider text-foreground/40">
+                        Minimum Severity
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-base font-bold text-orange-400">
+                          {minSeverity}+
+                        </span>
+                        <input
+                          type="range"
+                          min={1}
+                          max={10}
+                          value={minSeverity}
+                          onChange={(e) => onMinSeverityChange(Number(e.target.value))}
+                          className="severity-slider flex-1"
+                        />
+                      </div>
+                      <div className="mt-1 flex justify-between text-[8px] text-foreground/30">
+                        <span>All</span>
+                        <span>Critical</span>
+                      </div>
+                      {minSeverity > 1 && (
+                        <button
+                          onClick={() => {
+                            onMinSeverityChange(1);
+                            setShowSeverityPopover(false);
+                          }}
+                          className="mt-2 w-full rounded border border-foreground/10 py-1 text-[10px] text-foreground/50 transition-colors hover:bg-foreground/5"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Styled tooltip */}
+                <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="whitespace-nowrap rounded-md border border-foreground/10 bg-background/95 px-2.5 py-1.5 text-[10px] text-foreground/70 shadow-lg backdrop-blur-md">
+                    {minSeverity > 1
+                      ? `Showing severity ${minSeverity}+`
+                      : "Filter by minimum severity"}
+                  </div>
+                  <div className="absolute -top-1 right-3 h-2 w-2 rotate-45 border-l border-t border-foreground/10 bg-background/95" />
+                </div>
+              </div>
+            )}
 
             {/* Hide Seen toggle - right, styled like sort pucks */}
             <div className="group relative">

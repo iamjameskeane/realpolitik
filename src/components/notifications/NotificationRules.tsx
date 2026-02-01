@@ -2,28 +2,37 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
-import type { NotificationRule } from "@/types/notifications";
-import { getRuleSummary, createEmptyRule, RULE_LIMITS } from "@/types/notifications";
+import type { NotificationRule, UserTier } from "@/types/notifications";
+import { getRuleSummary, createEmptyRule, getTierLimits } from "@/types/notifications";
 import { RuleEditor } from "./RuleEditor";
 
 interface NotificationRulesProps {
   rules: NotificationRule[];
   onRulesChange: (rules: NotificationRule[]) => void;
   disabled?: boolean;
+  showPushToggle?: boolean; // Show phone icon to toggle sendPush per rule
+  userTier?: UserTier; // User's subscription tier
 }
 
 export function NotificationRules({
   rules,
   onRulesChange,
   disabled = false,
+  showPushToggle = false,
+  userTier = "free",
 }: NotificationRulesProps) {
   const [editingRule, setEditingRule] = useState<NotificationRule | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
+  const tierLimits = getTierLimits(userTier);
+
   const handleToggleRule = (ruleId: string) => {
-    const updated = rules.map((r) =>
-      r.id === ruleId ? { ...r, enabled: !r.enabled } : r
-    );
+    const updated = rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r));
+    onRulesChange(updated);
+  };
+
+  const handleTogglePush = (ruleId: string) => {
+    const updated = rules.map((r) => (r.id === ruleId ? { ...r, sendPush: !r.sendPush } : r));
     onRulesChange(updated);
   };
 
@@ -60,7 +69,8 @@ export function NotificationRules({
   };
 
   const activeRulesCount = rules.filter((r) => r.enabled).length;
-  const atRuleLimit = rules.length >= RULE_LIMITS.MAX_RULES;
+  const atRuleLimit = rules.length >= tierLimits.maxRules;
+  const isFreeTier = userTier === "free";
 
   return (
     <>
@@ -78,7 +88,11 @@ export function NotificationRules({
           <button
             onClick={handleCreateRule}
             disabled={disabled || atRuleLimit}
-            title={atRuleLimit ? `Maximum ${RULE_LIMITS.MAX_RULES} rules` : undefined}
+            title={
+              atRuleLimit
+                ? `Maximum ${tierLimits.maxRules} rule${tierLimits.maxRules > 1 ? "s" : ""} on ${userTier} tier`
+                : undefined
+            }
             className="flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-700/50 px-2.5 py-1.5 text-xs text-slate-300 transition-colors hover:border-cyan-500 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -89,7 +103,7 @@ export function NotificationRules({
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            Add Rule {atRuleLimit && `(${RULE_LIMITS.MAX_RULES} max)`}
+            Add Rule {atRuleLimit && (isFreeTier ? "(Pro)" : `(${tierLimits.maxRules} max)`)}
           </button>
         </div>
 
@@ -102,12 +116,7 @@ export function NotificationRules({
             </p>
           </div>
         ) : (
-          <Reorder.Group
-            axis="y"
-            values={rules}
-            onReorder={onRulesChange}
-            className="space-y-2"
-          >
+          <Reorder.Group axis="y" values={rules} onReorder={onRulesChange} className="space-y-2">
             <AnimatePresence mode="popLayout">
               {rules.map((rule) => (
                 <Reorder.Item
@@ -121,9 +130,7 @@ export function NotificationRules({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10, transition: { duration: 0.15 } }}
                     className={`group rounded-lg border bg-slate-800/50 transition-colors ${
-                      rule.enabled
-                        ? "border-slate-600"
-                        : "border-slate-700/50 opacity-60"
+                      rule.enabled ? "border-slate-600" : "border-slate-700/50 opacity-60"
                     }`}
                   >
                     <div className="flex items-start gap-3 p-3">
@@ -144,11 +151,7 @@ export function NotificationRules({
                           stroke="currentColor"
                           strokeWidth={3}
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M5 13l4 4L19 7"
-                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                         </svg>
                       </button>
 
@@ -173,10 +176,41 @@ export function NotificationRules({
                         </p>
                       </div>
 
-                      {/* Edit button */}
+                      {/* Push toggle - phone icon */}
+                      {showPushToggle && (
+                        <button
+                          onClick={() => handleTogglePush(rule.id)}
+                          className={`flex-shrink-0 rounded-lg p-1.5 transition-all ${
+                            rule.sendPush
+                              ? "bg-cyan-500/20 text-cyan-400"
+                              : "text-slate-500 opacity-60"
+                          }`}
+                          aria-label={
+                            rule.sendPush
+                              ? "Disable push for this rule"
+                              : "Enable push for this rule"
+                          }
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            fill={rule.sendPush ? "currentColor" : "none"}
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={rule.sendPush ? 0 : 2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+                            />
+                          </svg>
+                        </button>
+                      )}
+
+                      {/* Edit button - always visible for touch devices */}
                       <button
                         onClick={() => handleEditRule(rule)}
-                        className="flex-shrink-0 rounded-lg p-1.5 text-slate-500 opacity-0 transition-all group-hover:opacity-100 hover:bg-slate-700 hover:text-slate-300"
+                        className="flex-shrink-0 rounded-lg p-1.5 text-slate-500 transition-all hover:bg-slate-700 hover:text-slate-300"
                         aria-label="Edit rule"
                       >
                         <svg
@@ -194,13 +228,9 @@ export function NotificationRules({
                         </svg>
                       </button>
 
-                      {/* Drag handle */}
-                      <div className="flex-shrink-0 cursor-grab text-slate-600 opacity-0 transition-opacity group-hover:opacity-100">
-                        <svg
-                          className="h-4 w-4"
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
+                      {/* Drag handle - always visible */}
+                      <div className="flex-shrink-0 cursor-grab text-slate-600">
+                        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                           <circle cx="9" cy="6" r="1.5" />
                           <circle cx="15" cy="6" r="1.5" />
                           <circle cx="9" cy="12" r="1.5" />
@@ -219,8 +249,8 @@ export function NotificationRules({
 
         {/* Help text */}
         <p className="text-[11px] text-slate-500">
-          Rules are checked in order. An event triggers a notification if it matches
-          any enabled rule.
+          Rules are checked in order. An event triggers a notification if it matches any enabled
+          rule.
         </p>
       </div>
 
@@ -231,10 +261,9 @@ export function NotificationRules({
             rule={editingRule}
             onSave={handleSaveRule}
             onCancel={handleCancelEdit}
-            onDelete={
-              isCreatingNew ? undefined : () => handleDeleteRule(editingRule.id)
-            }
+            onDelete={isCreatingNew ? undefined : () => handleDeleteRule(editingRule.id)}
             isNew={isCreatingNew}
+            minSeverity={tierLimits.minSeverity}
           />
         )}
       </AnimatePresence>

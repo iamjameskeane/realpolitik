@@ -12,6 +12,7 @@ interface RuleEditorProps {
   onCancel: () => void;
   onDelete?: () => void;
   isNew?: boolean;
+  minSeverity?: number; // Minimum allowed severity (tier restriction)
 }
 
 export function RuleEditor({
@@ -20,6 +21,7 @@ export function RuleEditor({
   onCancel,
   onDelete,
   isNew = false,
+  minSeverity = 1,
 }: RuleEditorProps) {
   const [editedRule, setEditedRule] = useState<NotificationRule>({ ...rule });
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export function RuleEditor({
 
   const addCondition = () => {
     if (atConditionLimit) return;
-    
+
     const defaultField = FIELD_CONFIGS[0];
     const newCondition: Condition = {
       field: defaultField.field,
@@ -68,6 +70,21 @@ export function RuleEditor({
       setError(validation.error || "Invalid rule");
       return;
     }
+
+    // Validate severity restrictions for tier
+    if (minSeverity > 1) {
+      for (const condition of editedRule.conditions) {
+        if (condition.field === "severity" && typeof condition.value === "number") {
+          if (condition.value < minSeverity) {
+            setError(
+              `Free tier is limited to severity ${minSeverity}+. Upgrade to Pro for custom rules.`
+            );
+            return;
+          }
+        }
+      }
+    }
+
     onSave(editedRule);
   };
 
@@ -133,12 +150,69 @@ export function RuleEditor({
             />
           </div>
 
+          {/* Push Notifications Toggle */}
+          <div className="mb-5">
+            <button
+              type="button"
+              onClick={() => setEditedRule((prev) => ({ ...prev, sendPush: !prev.sendPush }))}
+              className={`flex w-full items-center gap-3 rounded-lg border p-3 transition-colors ${
+                editedRule.sendPush
+                  ? "border-cyan-500/50 bg-cyan-500/10"
+                  : "border-slate-600 bg-slate-700/30 hover:border-slate-500"
+              }`}
+            >
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                  editedRule.sendPush
+                    ? "bg-cyan-500/30 text-cyan-400"
+                    : "bg-slate-600 text-slate-400"
+                }`}
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill={editedRule.sendPush ? "currentColor" : "none"}
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={editedRule.sendPush ? 0 : 2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1 text-left">
+                <p
+                  className={`text-sm font-medium ${editedRule.sendPush ? "text-cyan-400" : "text-slate-300"}`}
+                >
+                  Push Notifications
+                </p>
+                <p className="text-xs text-slate-500">
+                  {editedRule.sendPush
+                    ? "OS-level alerts on devices with push enabled"
+                    : "Inbox only, no push alerts"}
+                </p>
+              </div>
+              <div
+                className={`h-5 w-9 rounded-full transition-colors ${
+                  editedRule.sendPush ? "bg-cyan-500" : "bg-slate-600"
+                }`}
+              >
+                <div
+                  className={`h-5 w-5 rounded-full bg-white shadow-md transition-transform ${
+                    editedRule.sendPush ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </div>
+            </button>
+          </div>
+
           {/* Conditions */}
           <div className="mb-4">
             <div className="mb-3 flex items-center justify-between">
               <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Conditions{" "}
-                <span className="text-slate-500">(all must match)</span>
+                Conditions <span className="text-slate-500">(all must match)</span>
               </label>
             </div>
 
@@ -160,6 +234,7 @@ export function RuleEditor({
                       onChange={(c) => updateCondition(index, c)}
                       onRemove={() => removeCondition(index)}
                       canRemove={editedRule.conditions.length > 1}
+                      minSeverity={minSeverity}
                     />
                   </div>
                 ))}
@@ -169,7 +244,11 @@ export function RuleEditor({
             <button
               onClick={addCondition}
               disabled={atConditionLimit}
-              title={atConditionLimit ? `Maximum ${RULE_LIMITS.MAX_CONDITIONS_PER_RULE} conditions` : undefined}
+              title={
+                atConditionLimit
+                  ? `Maximum ${RULE_LIMITS.MAX_CONDITIONS_PER_RULE} conditions`
+                  : undefined
+              }
               className="mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-slate-600 px-3 py-2 text-xs text-slate-400 transition-colors hover:border-cyan-500 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

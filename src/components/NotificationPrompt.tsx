@@ -1,12 +1,12 @@
 /**
  * Notification Prompt Component
- * 
+ *
  * Shows a friendly banner prompting PWA users to enable notifications.
  * Only shows for:
  * - Mobile users in standalone mode (installed PWA)
  * - Users who haven't subscribed yet
  * - Users who haven't dismissed (dismissing is permanent)
- * 
+ *
  * Never shows on desktop.
  * Shows immediately when conditions are met.
  */
@@ -21,15 +21,9 @@ import { STORAGE_KEYS } from "@/lib/constants";
 export function NotificationPrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
   const [isEnabling, setIsEnabling] = useState(false);
-  
-  const {
-    isSupported,
-    isStandalone,
-    isSubscribed,
-    isLoading,
-    permission,
-    subscribe,
-  } = usePushNotifications();
+
+  const { isSupported, isStandalone, isSubscribed, isLoading, permission, subscribe } =
+    usePushNotifications();
 
   useEffect(() => {
     // Wait for push state to load
@@ -90,7 +84,12 @@ export function NotificationPrompt() {
             <div className="flex items-start gap-3">
               {/* Bell icon */}
               <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className="w-5 h-5 text-indigo-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -101,9 +100,7 @@ export function NotificationPrompt() {
               </div>
 
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-white text-sm mb-1">
-                  Stay Informed
-                </h3>
+                <h3 className="font-semibold text-white text-sm mb-1">Stay Informed</h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   Get instant alerts when critical geopolitical events occur worldwide.
                 </p>
@@ -116,8 +113,18 @@ export function NotificationPrompt() {
                 aria-label="Don't show again"
                 title="Don't show again"
               >
-                <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="w-4 h-4 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>

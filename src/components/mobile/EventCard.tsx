@@ -6,6 +6,9 @@ import { GeoEvent, CATEGORY_COLORS } from "@/types/events";
 import { SourceTimeline } from "../SourceTimeline";
 import { ReactionPucks, ReactionResults } from "../reactions";
 import { ConsensusBadge } from "../ConsensusBadge";
+import { useAuth } from "@/contexts/AuthContext";
+import { EntityList } from "../entities";
+import { useEventEntities } from "@/hooks/useEventEntities";
 
 // Helper to share an event
 async function shareEvent(event: GeoEvent): Promise<"shared" | "copied" | "error"> {
@@ -50,6 +53,8 @@ interface EventCardProps {
   catchUpMode?: boolean;
   flyoverMode?: boolean;
   onExitTouring?: () => void;
+  // Entity navigation (mobile)
+  onEntityClick?: (entity: import("@/types/entities").EventEntity) => void;
 }
 
 /**
@@ -70,7 +75,9 @@ export function EventCard({
   catchUpMode,
   flyoverMode,
   onExitTouring,
+  onEntityClick,
 }: EventCardProps) {
+  const { user, profile, openAuthModal } = useAuth();
   // currentIndex and totalCount kept for API compatibility but not displayed for single events
   void _currentIndex;
   void _totalCount;
@@ -79,6 +86,7 @@ export function EventCard({
   const controls = useAnimation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "shared">("idle");
+  const { entities } = useEventEntities(event.id);
 
   const handleShare = useCallback(async () => {
     const result = await shareEvent(event);
@@ -309,20 +317,53 @@ export function EventCard({
           {/* Summary */}
           <p className="mt-3 text-sm leading-relaxed text-foreground/70">{event.summary}</p>
 
-          {/* Fallout Analysis */}
-          {event.fallout_prediction && (
+          {/* Entity badges */}
+          {entities.length > 0 && (
+            <div className="mt-3">
+              <EntityList entities={entities} maxVisible={4} onEntityClick={onEntityClick} />
+            </div>
+          )}
+
+          {/* Auth Banner */}
+          {!user && (
+            <button
+              onClick={() => openAuthModal()}
+              className="mt-4 w-full rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-center transition-all active:scale-[0.98]"
+            >
+              <div className="font-mono text-xs uppercase tracking-wide text-yellow-400">
+                Sign in to access smart features
+              </div>
+              <div className="mt-1 text-xs text-yellow-400/70">
+                Reactions • Fallout Analysis • Pythia
+              </div>
+            </button>
+          )}
+
+          {/* Fallout Analysis - Pro feature */}
+          {user && event.fallout_prediction && (
             <div className="mt-4 rounded border border-amber-500/20 bg-amber-500/5 p-3">
               <div className="mb-1 font-mono text-[10px] font-medium uppercase tracking-wide text-amber-400/80">
                 🔮 Fallout Analysis
               </div>
-              <p className="text-sm leading-relaxed text-amber-400/90">
-                {event.fallout_prediction}
-              </p>
+              {profile?.tier === "pro" || profile?.tier === "enterprise" ? (
+                <p className="text-sm leading-relaxed text-amber-400/90">
+                  {event.fallout_prediction}
+                </p>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-amber-400/60 italic">
+                    Upgrade to Pro to unlock AI fallout predictions
+                  </p>
+                  <span className="ml-2 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400">
+                    Pro
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Brief Me button - after fallout, before sources */}
-          {onRequestBriefing && (
+          {/* Ask Pythia button - after fallout, before sources */}
+          {user && onRequestBriefing && (
             <div className="mt-4 flex flex-col items-center gap-4">
               <button
                 onClick={onRequestBriefing}
@@ -341,7 +382,7 @@ export function EventCard({
                   <path d="M20 3v4" />
                   <path d="M22 5h-4" />
                 </svg>
-                Brief Me
+                Ask Pythia
               </button>
               <div className="w-full border-t border-foreground/10" />
             </div>

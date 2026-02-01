@@ -5,6 +5,9 @@ import { GeoEvent, CATEGORY_COLORS } from "@/types/events";
 import { SourceTimeline } from "../SourceTimeline";
 import { ReactionPucks, ReactionResults } from "../reactions";
 import { ConsensusBadge } from "../ConsensusBadge";
+import { useAuth } from "@/contexts/AuthContext";
+import { EntityList } from "../entities";
+import { useEventEntities } from "@/hooks/useEventEntities";
 
 // Helper to share an event
 async function shareEvent(event: GeoEvent): Promise<"shared" | "copied" | "error"> {
@@ -46,6 +49,8 @@ interface EventPopupProps {
   onRequestBriefing?: (event: GeoEvent) => void;
   /** Label for the stack (e.g., "events here" or "catching up") */
   stackLabel?: string;
+  /** Callback when clicking an event from entity modal */
+  onEntityEventClick?: (eventId: string) => void;
 }
 
 /**
@@ -61,9 +66,12 @@ export function EventPopup({
   onNext,
   onRequestBriefing,
   stackLabel = "events here",
+  onEntityEventClick,
 }: EventPopupProps) {
+  const { user, profile, openAuthModal } = useAuth();
   const hasStack = stackedEvents.length > 1;
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "shared">("idle");
+  const { entities } = useEventEntities(selectedEvent.id);
 
   const handleShare = useCallback(async () => {
     const result = await shareEvent(selectedEvent);
@@ -236,20 +244,56 @@ export function EventPopup({
           {/* Summary */}
           <p className="text-sm leading-relaxed text-foreground/70">{selectedEvent.summary}</p>
 
-          {/* Fallout Analysis */}
-          {selectedEvent.fallout_prediction && (
+          {/* Entity badges */}
+          {entities.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-foreground/10">
+              <p className="text-[10px] font-medium text-foreground/40 uppercase tracking-wide mb-2">
+                Entities
+              </p>
+              <EntityList entities={entities} maxVisible={5} onEventClick={onEntityEventClick} />
+            </div>
+          )}
+
+          {/* Auth Banner */}
+          {!user && (
+            <button
+              onClick={() => openAuthModal()}
+              className="mt-4 w-full rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-center transition-all hover:border-yellow-500/50 hover:bg-yellow-500/15"
+            >
+              <div className="font-mono text-xs uppercase tracking-wide text-yellow-400">
+                Sign in to access smart features
+              </div>
+              <div className="mt-1 text-xs text-yellow-400/70">
+                Reactions • Fallout Analysis • Pythia
+              </div>
+            </button>
+          )}
+
+          {/* Fallout Analysis - Pro feature */}
+          {user && selectedEvent.fallout_prediction && (
             <div className="mt-4 rounded border border-amber-500/20 bg-amber-500/5 p-3">
               <div className="mb-1 font-mono text-[10px] font-medium uppercase tracking-wide text-amber-400/80">
                 🔮 Fallout Analysis
               </div>
-              <p className="text-sm leading-relaxed text-amber-400/90">
-                {selectedEvent.fallout_prediction}
-              </p>
+              {profile?.tier === "pro" || profile?.tier === "enterprise" ? (
+                <p className="text-sm leading-relaxed text-amber-400/90">
+                  {selectedEvent.fallout_prediction}
+                </p>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-amber-400/60 italic">
+                    Upgrade to Pro to unlock AI fallout predictions
+                  </p>
+                  <span className="ml-2 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400">
+                    Pro
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Brief Me button - after fallout, before sources */}
-          {onRequestBriefing && (
+          {/* Ask Pythia button - after fallout, before sources */}
+          {user && onRequestBriefing && (
             <div className="mt-4 flex flex-col items-center gap-4">
               <button
                 onClick={() => onRequestBriefing(selectedEvent)}
@@ -268,7 +312,7 @@ export function EventPopup({
                   <path d="M20 3v4" />
                   <path d="M22 5h-4" />
                 </svg>
-                Brief Me
+                Ask Pythia
               </button>
               <div className="w-full border-t border-foreground/10" />
             </div>

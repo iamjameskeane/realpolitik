@@ -19,7 +19,12 @@
 import { useMemo, createContext, useContext, ReactNode } from "react";
 import useSWR from "swr";
 import { ReactionType, ReactionCounts, EnrichedReactionData } from "@/types/reactions";
-import { CONSENSUS_THRESHOLD, MIN_VOTES_FOR_CONSENSUS, HOT_EVENT_MIN_VOTES } from "@/lib/constants";
+import {
+  CONSENSUS_THRESHOLD,
+  MIN_VOTES_FOR_CONSENSUS,
+  HOT_VOTE_WEIGHTS,
+  HOT_WEIGHTED_THRESHOLD,
+} from "@/lib/constants";
 
 // Re-export types for convenience
 export type { ReactionCounts, EnrichedReactionData } from "@/types/reactions";
@@ -72,8 +77,13 @@ function enrichReactionData(
     }
   }
 
-  // Determine if "hot" (high engagement)
-  const isHot = total >= HOT_EVENT_MIN_VOTES;
+  // Determine if "hot" using weighted vote score
+  // Critical votes count more than noise (engagement quality matters)
+  const weightedScore =
+    critical * HOT_VOTE_WEIGHTS.critical +
+    market * HOT_VOTE_WEIGHTS.market +
+    noise * HOT_VOTE_WEIGHTS.noise;
+  const isHot = weightedScore >= HOT_WEIGHTED_THRESHOLD;
 
   // Adjust severity based on consensus
   // Critical consensus: bump up by 1-2 points

@@ -1,6 +1,6 @@
 /**
  * Tests for service worker push notification logic
- * 
+ *
  * These tests verify the SW logic by testing the functions/patterns used,
  * since actual SW testing requires special browser environments.
  */
@@ -8,10 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Simulate the SW's URL construction logic
-function buildNotificationUrl(
-  baseUrl: string,
-  eventId: string | undefined
-): string {
+function buildNotificationUrl(baseUrl: string, eventId: string | undefined): string {
   const cacheBuster = `_t=${Date.now()}`;
   if (eventId) {
     const separator = baseUrl.includes("?") ? "&" : "?";
@@ -54,7 +51,7 @@ function buildNotificationOptions(data: {
 describe("Service Worker URL Construction", () => {
   it("should include event ID in notification URL", () => {
     const url = buildNotificationUrl("/?event=abc123", "abc123");
-    
+
     expect(url).toContain("event=abc123");
     expect(url).toContain("notif_event=abc123");
     expect(url).toContain("from=notification");
@@ -62,7 +59,7 @@ describe("Service Worker URL Construction", () => {
 
   it("should include cache buster in URL", () => {
     const url = buildNotificationUrl("/?event=abc123", "abc123");
-    
+
     expect(url).toMatch(/_t=\d+/);
   });
 
@@ -78,7 +75,7 @@ describe("Service Worker URL Construction", () => {
 
   it("should handle missing event ID", () => {
     const url = buildNotificationUrl("/", undefined);
-    
+
     expect(url).toMatch(/\/\?_t=\d+/);
     expect(url).not.toContain("notif_event");
   });
@@ -87,11 +84,11 @@ describe("Service Worker URL Construction", () => {
     const url1 = buildNotificationUrl("/?event=abc", "abc");
     // Wait a tiny bit to ensure different timestamp
     const url2 = buildNotificationUrl("/?event=abc", "abc");
-    
+
     // Extract timestamps
     const t1 = url1.match(/_t=(\d+)/)?.[1];
     const t2 = url2.match(/_t=(\d+)/)?.[1];
-    
+
     // They should be the same or very close (within same millisecond)
     expect(t1).toBeDefined();
     expect(t2).toBeDefined();
@@ -148,7 +145,7 @@ describe("Service Worker Notification Options", () => {
       id: "event-123",
       url: "/?event=event-123",
     });
-    
+
     expect(options.data.eventId).toBe("event-123");
     expect(options.data.url).toBe("/?event=event-123");
     expect(options.data.timestamp).toBeDefined();
@@ -257,7 +254,7 @@ describe("Service Worker Navigation Logic", () => {
 
   function shouldOpenNewWindow(clients: MockClient[], origin: string): boolean {
     // Only open new window if no existing window can be navigated
-    return !clients.some(c => shouldUseNavigate(c, origin));
+    return !clients.some((c) => shouldUseNavigate(c, origin));
   }
 
   it("should prefer navigate over openWindow when client exists", () => {
@@ -294,7 +291,7 @@ describe("Service Worker Navigation Logic", () => {
 describe("Service Worker Badge Logic", () => {
   it("should show badge count from pending notifications", () => {
     const pendingCount = 5;
-    
+
     // Badge should show the count
     expect(pendingCount).toBeGreaterThan(0);
   });
@@ -302,7 +299,7 @@ describe("Service Worker Badge Logic", () => {
   it("should not show badge for zero pending", () => {
     const pendingCount = 0;
     const shouldShowBadge = pendingCount > 0;
-    
+
     expect(shouldShowBadge).toBe(false);
   });
 });

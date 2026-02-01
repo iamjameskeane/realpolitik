@@ -32,9 +32,7 @@ export function QuickSetup({ onSelectPreset, onCustomRules }: QuickSetupProps) {
         <h4 className="mb-1 font-mono text-xs font-bold uppercase tracking-wider text-slate-300">
           Quick Setup
         </h4>
-        <p className="text-xs text-slate-500">
-          Start with a preset, customize later
-        </p>
+        <p className="text-xs text-slate-500">Start with a preset, customize later</p>
       </div>
 
       <div className="space-y-2">
@@ -77,9 +75,7 @@ export function QuickSetup({ onSelectPreset, onCustomRules }: QuickSetupProps) {
                   </span>
                   <span
                     className={`font-medium ${
-                      selectedPresetId === preset.id
-                        ? "text-cyan-400"
-                        : "text-slate-200"
+                      selectedPresetId === preset.id ? "text-cyan-400" : "text-slate-200"
                     }`}
                   >
                     {preset.name}
@@ -90,12 +86,8 @@ export function QuickSetup({ onSelectPreset, onCustomRules }: QuickSetupProps) {
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  {preset.description}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {preset.estimatedDaily}
-                </p>
+                <p className="mt-0.5 text-xs text-slate-400">{preset.description}</p>
+                <p className="mt-1 text-[11px] text-slate-500">{preset.estimatedDaily}</p>
               </div>
             </div>
 
@@ -116,14 +108,8 @@ export function QuickSetup({ onSelectPreset, onCustomRules }: QuickSetupProps) {
                       {rule.conditions
                         .map((c) => {
                           const op =
-                            c.operator === ">="
-                              ? "≥"
-                              : c.operator === "<="
-                                ? "≤"
-                                : c.operator;
-                          const val = Array.isArray(c.value)
-                            ? c.value.join(", ")
-                            : c.value;
+                            c.operator === ">=" ? "≥" : c.operator === "<=" ? "≤" : c.operator;
+                          const val = Array.isArray(c.value) ? c.value.join(", ") : c.value;
                           return `${c.field} ${op} ${val}`;
                         })
                         .join(" AND ")}
@@ -170,17 +156,13 @@ export function QuickSetup({ onSelectPreset, onCustomRules }: QuickSetupProps) {
                 </span>
                 <span
                   className={`font-medium ${
-                    selectedPresetId === "custom"
-                      ? "text-cyan-400"
-                      : "text-slate-200"
+                    selectedPresetId === "custom" ? "text-cyan-400" : "text-slate-200"
                   }`}
                 >
                   Custom Rules
                 </span>
               </div>
-              <p className="mt-0.5 text-xs text-slate-400">
-                Build your own with full control
-              </p>
+              <p className="mt-0.5 text-xs text-slate-400">Build your own with full control</p>
             </div>
           </div>
         </motion.button>

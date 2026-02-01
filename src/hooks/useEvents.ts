@@ -1,83 +1,213 @@
 "use client";
 
 /**
- * useEvents - SWR-based hook for fetching geopolitical events
+ * useEvents - Dynamic event fetching with lazy expansion
  *
  * Features:
- * - Stale-while-revalidate for instant UI with fresh data
- * - Auto-refresh on focus (when user returns to tab)
- * - Configurable polling interval
- * - Deduplication of concurrent requests
- * - Built-in error handling
- * - SSR support via initialEvents parameter
+ * - Starts with 24h of data (fast initial load)
+ * - Expands when user slides to larger time range
+ * - Never shrinks - keeps cached data when sliding back
+ * - Deep link support - fetches individual events on demand
+ * - SWR for caching and revalidation
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import useSWR from "swr";
 import { GeoEvent } from "@/types/events";
 import { EVENTS_POLL_INTERVAL_MS } from "@/lib/constants";
+import {
+  fetchEvents as fetchEventsFromSupabase,
+  fetchEvent as fetchEventFromSupabase,
+  GeoEventFromDB,
+} from "@/lib/supabase";
 
-// Events URL - configurable via environment variable for production (R2/S3)
-const EVENTS_URL = process.env.NEXT_PUBLIC_EVENTS_URL || "/events.json";
+// Default: fetch 24 hours on initial load
+const DEFAULT_HOURS = 24;
 
-// Fetcher function for SWR
-async function fetcher(url: string): Promise<GeoEvent[]> {
-  // Add cache-busting parameter to bypass CDN cache
-  const response = await fetch(`${url}?t=${Date.now()}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch events: ${response.status}`);
+/**
+ * Parse coordinates from various formats
+ * Handles: [lng, lat] array, "{lng,lat}" postgres string, or object
+ */
+function parseCoordinates(coords: unknown): [number, number] {
+  // Already a valid array
+  if (Array.isArray(coords) && coords.length === 2) {
+    return [Number(coords[0]), Number(coords[1])];
   }
-  return response.json();
+
+  // PostgreSQL array string format: "{1.23,4.56}"
+  if (typeof coords === "string") {
+    const match = coords.match(/^\{?([-\d.]+),([-\d.]+)\}?$/);
+    if (match) {
+      return [parseFloat(match[1]), parseFloat(match[2])];
+    }
+  }
+
+  // Fallback to [0, 0] if invalid
+  console.warn("[transformEvent] Invalid coordinates format:", coords);
+  return [0, 0];
+}
+
+/**
+ * Transform Supabase event to GeoEvent interface
+ */
+function transformEvent(event: GeoEventFromDB): GeoEvent {
+  return {
+    id: event.id,
+    title: event.title,
+    category: event.category,
+    coordinates: parseCoordinates(event.coordinates),
+    location_name: event.location_name,
+    region: event.region as GeoEvent["region"],
+    severity: event.severity,
+    summary: event.summary,
+    timestamp: event.timestamp,
+    last_updated: event.last_updated,
+    fallout_prediction: event.fallout_prediction || "",
+    sources: event.sources,
+  };
+}
+
+export interface UseEventsOptions {
+  /** Initial events from SSR (optional) */
+  initialEvents?: GeoEvent[];
+  /** Initial hours to fetch (default: 24) */
+  initialHours?: number;
 }
 
 export interface UseEventsReturn {
-  /** List of geopolitical events */
+  /** All loaded events (may span multiple time ranges) */
   events: GeoEvent[];
-  /** Loading state (only true on initial load, not revalidation) */
+  /** Loading state (initial load only) */
   isLoading: boolean;
-  /** True when revalidating (refresh in progress) */
+  /** True when fetching more data */
+  isExpanding: boolean;
+  /** True when revalidating */
   isRefreshing: boolean;
   /** Error if fetch failed */
   error: Error | undefined;
-  /** Manually trigger a refresh */
+  /** Maximum hours currently loaded */
+  maxHoursLoaded: number;
+  /** Expand to load more hours (call when user slides time range) */
+  expandToHours: (hours: number) => Promise<void>;
+  /** Fetch a single event by ID (for deep links) */
+  fetchEventById: (id: string) => Promise<GeoEvent | null>;
+  /** Manually refresh current data */
   refresh: () => Promise<GeoEvent[] | undefined>;
-  /** Timestamp of last successful data update */
+  /** Timestamp of last successful update */
   dataUpdatedAt: number | null;
 }
 
 /**
- * Hook for fetching and caching geopolitical events
- *
- * Uses SWR for:
- * - Automatic caching and revalidation
- * - Polling every 60 seconds
- * - Revalidation on window focus
- * - Request deduplication
- *
- * @param initialEvents - SSR'd events to use as initial data (avoids loading state)
+ * Hook for fetching events with lazy time range expansion
  */
-export function useEvents(initialEvents?: GeoEvent[]): UseEventsReturn {
-  // Track when data was last updated
-  // With SSR, this will be null briefly until SWR's first revalidation
+export function useEvents(options: UseEventsOptions | GeoEvent[] = {}): UseEventsReturn {
+  // Handle legacy signature: useEvents(initialEvents?: GeoEvent[])
+  const normalizedOptions: UseEventsOptions = Array.isArray(options)
+    ? { initialEvents: options }
+    : options;
+
+  const { initialEvents, initialHours = DEFAULT_HOURS } = normalizedOptions;
+
+  // Track the maximum hours we've loaded (expand-only)
+  const [maxHoursLoaded, setMaxHoursLoaded] = useState(initialHours);
+  const [isExpanding, setIsExpanding] = useState(false);
   const [dataUpdatedAt, setDataUpdatedAt] = useState<number | null>(null);
 
-  const onSuccess = useCallback(() => {
-    setDataUpdatedAt(Date.now());
-  }, []);
+  // Extra events loaded via deep links (keyed by ID)
+  const [extraEvents, setExtraEvents] = useState<Map<string, GeoEvent>>(new Map());
 
-  const { data, error, isLoading, isValidating, mutate } = useSWR<GeoEvent[]>(EVENTS_URL, fetcher, {
+  // Track if we've done initial expansion (for SSR hydration)
+  const hasHydrated = useRef(false);
+
+  // SWR cache key based on max hours loaded
+  const cacheKey = `supabase:events:hours:${maxHoursLoaded}`;
+
+  // Fetcher function
+  const fetcher = useCallback(async (): Promise<GeoEvent[]> => {
+    const events = await fetchEventsFromSupabase({ hoursAgo: maxHoursLoaded, limit: 1000 });
+    return events.map(transformEvent);
+  }, [maxHoursLoaded]);
+
+  const { data, error, isLoading, isValidating, mutate } = useSWR<GeoEvent[]>(cacheKey, fetcher, {
     refreshInterval: EVENTS_POLL_INTERVAL_MS,
     revalidateOnFocus: true,
-    dedupingInterval: 10000, // Dedupe requests within 10s
-    fallbackData: initialEvents || [], // Use SSR data as fallback
-    onSuccess,
+    dedupingInterval: 10000,
+    fallbackData: initialEvents || [],
+    onSuccess: () => setDataUpdatedAt(Date.now()),
   });
 
+  // Merge SWR data with extra events from deep links
+  const events = useMemo(() => {
+    const baseEvents = data || [];
+    if (extraEvents.size === 0) return baseEvents;
+
+    const baseIds = new Set(baseEvents.map((e) => e.id));
+    const extras = Array.from(extraEvents.values()).filter((e) => !baseIds.has(e.id));
+
+    return [...baseEvents, ...extras].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }, [data, extraEvents]);
+
+  /**
+   * Expand to load more hours of data
+   * Only fetches if requested hours > currently loaded hours
+   */
+  const expandToHours = useCallback(
+    async (hours: number) => {
+      if (hours <= maxHoursLoaded) return; // Already have this data
+
+      setIsExpanding(true);
+      try {
+        // Update max hours - this will trigger SWR to refetch with new key
+        setMaxHoursLoaded(hours);
+        // Force immediate refetch
+        await mutate();
+      } finally {
+        setIsExpanding(false);
+      }
+    },
+    [maxHoursLoaded, mutate]
+  );
+
+  /**
+   * Fetch a single event by ID (for deep links/notifications)
+   */
+  const fetchEventById = useCallback(
+    async (id: string): Promise<GeoEvent | null> => {
+      // Check if already loaded
+      const existing = events.find((e) => e.id === id);
+      if (existing) return existing;
+
+      // Check extra events cache
+      if (extraEvents.has(id)) return extraEvents.get(id)!;
+
+      // Fetch from Supabase
+      try {
+        const event = await fetchEventFromSupabase(id);
+        if (event) {
+          const transformed = transformEvent(event);
+          setExtraEvents((prev) => new Map(prev).set(id, transformed));
+          return transformed;
+        }
+      } catch (err) {
+        console.error("Error fetching event by ID:", err);
+      }
+
+      return null;
+    },
+    [events, extraEvents]
+  );
+
   return {
-    events: data || [],
-    isLoading: isLoading && !initialEvents, // Not loading if we have SSR data
-    isRefreshing: isValidating && !isLoading,
+    events,
+    isLoading: isLoading && !initialEvents,
+    isExpanding,
+    isRefreshing: isValidating && !isLoading && !isExpanding,
     error,
+    maxHoursLoaded,
+    expandToHours,
+    fetchEventById,
     refresh: mutate,
     dataUpdatedAt,
   };
