@@ -1,0 +1,98 @@
+# Traefik Configuration (Original Design Alignment)
+
+# If you prefer to use pure Traefik as originally designed, here's the configuration:
+
+version: '3.8'
+
+services:
+  # Realpolitik Traefik Gateway (Original Design)
+  styx:
+    image: traefik:v3.0
+    command:
+      # API Configuration
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      
+      # Entry Points
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      
+      # Docker Provider
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      
+      # Let Encrypt (for production)
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@realpolitik.world"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      
+      # Rate Limiting
+      - "--experimental.localblocks=true"
+      - "--entrypoints.web.middlewares=ratelimit"
+      - "--entrypoints.websecure.middlewares=ratelimit"
+      - "--middlewares.ratelimit.burst=100"
+      - "--middlewares.ratelimit.average=10"
+      
+      # Security Headers
+      - "--middlewares.security.headers.frameDeny=true"
+      - "--middlewares.security.headers.browserXssFilter=true"
+      - "--middlewares.security.headers.contentTypeNosniff=true"
+      - "--middlewares.security.headers.forceSTSHeader=true"
+    
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik Dashboard
+    
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./acme.json:/acme.json  # SSL certificates
+      - ./traefik-logs:/logs
+    
+    networks:
+      - realpolitik_network
+    
+    labels:
+      - "traefik.enable=true"
+      
+      # Global routing rules
+      - "traefik.http.routers.styx.rule=Host(`api.realpolitik.world`)"
+      - "traefik.http.routers.styx.tls=true"
+      - "traefik.http.routers.styx.tls.certresolver=letsencrypt"
+      
+      # API Routes to Delphi
+      - "traefik.http.routers.api.rule=Host(`api.realpolitik.world`) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.api.tls=true"
+      - "traefik.http.routers.api.service=delphi-service"
+      - "traefik.http.services.delphi-service.loadbalancer.server.port=8000"
+      
+      # MCP Routes to Hermes
+      - "traefik.http.routers.mcp.rule=Host(`api.realpolitik.world`) && PathPrefix(`/mcp/`)"
+      - "traefik.http.routers.mcp.tls=true"
+      - "traefik.http.routers.mcp.service=hermes-service"
+      - "traefik.http.services.hermes-service.loadbalancer.server.port=8002"
+      
+      # WebSocket Routes to Pythia
+      - "traefik.http.routers.ws.rule=Host(`api.realpolitik.world`) && PathPrefix(`/ws/`)"
+      - "traefik.http.routers.ws.tls=true"
+      - "traefik.http.routers.ws.service=pythia-service"
+      - "traefik.http.routers.ws.middlewares=websocket"
+      - "traefik.http.services.pythia-service.loadbalancer.server.port=8001"
+      
+      # WebSocket middleware
+      - "traefik.http.middlewares.websocket.headers.accessControlAllowCredentials=true"
+      - "traefik.http.middlewares.websocket.headers.accessControlAllowMethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.websocket.headers.accessControlAllowOriginList=*"
+      
+      # Health check
+      - "traefik.http.routers.health.rule=Host(`api.realpolitik.world`) && PathPrefix(`/health`)"
+      - "traefik.http.routers.health.service=health-service"
+      - "traefik.http.services.health-service.loadbalancer.server.port=8080"
+    
+    depends_on:
+      - delphi
+      - hermes
+      - pythia
+
+# This configuration demonstrates how pure Traefik would serve
+# as the Styx gateway following the original design specification.

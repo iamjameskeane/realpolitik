@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: realpolitik-services
+  labels:
+    tier: services
+    app.kubernetes.io/name: realpolitik
+    app.kubernetes.io/component: styx-gateway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: styx
+  namespace: realpolitik-services
+  labels:
+    app: styx
+    app.kubernetes.io/name: styx
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "0.1.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: styx
+  template:
+    metadata:
+      labels:
+        app: styx
+        app.kubernetes.io/name: styx
+        app.kubernetes.io/component: gateway
+    spec:
+      containers:
+      - name: styx
+        image: realpolitik/styx:0.1.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: DELPHI_URL
+          value: "http://delphi:8000"
+        - name: HERMES_URL
+          value: "http://hermes:8002"
+        - name: PYTHIA_URL
+          value: "http://pythia:8001"
+        - name: REDIS_URL
+          value: "redis://lethe:6379"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: HEALTH_CHECK_INTERVAL
+          value: "30s"
+        - name: HEALTH_CHECK_TIMEOUT
+          value: "5s"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /app/cache
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: styx
+  namespace: realpolitik-services
+  labels:
+    app: styx
+    app.kubernetes.io/name: styx
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: styx
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: styx-hpa
+  namespace: realpolitik-services
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: styx
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60

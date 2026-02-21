@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: styx-config
+  namespace: realpolitik-services
+  labels:
+    app: styx
+    app.kubernetes.io/name: styx
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "info"
+  HEALTH_CHECK_INTERVAL: "30s"
+  HEALTH_CHECK_TIMEOUT: "5s"
+  RATE_LIMIT_ENABLED: "false"
+  RATE_LIMIT_RPS: "100"
+  JWT_ENABLED: "false"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: styx-secrets
+  namespace: realpolitik-services
+  labels:
+    app: styx
+    app.kubernetes.io/name: styx
+type: Opaque
+stringData:
+  # JWT secret for authentication (generate a secure random string)
+  JWT_SECRET: "your-jwt-secret-here-change-in-production"
+  
+  # Database credentials (if needed for future features)
+  DATABASE_PASSWORD: "your-database-password"
+---
+# Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: styx-pdb
+  namespace: realpolitik-services
+  labels:
+    app: styx
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: styx
+---
+# Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: styx-network-policy
+  namespace: realpolitik-services
+spec:
+  podSelector:
+    matchLabels:
+      app: styx
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: realpolitik-services
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: realpolitik-services
+    ports:
+    - protocol: TCP
+      port: 8000  # Delphi
+    - protocol: TCP
+      port: 8001  # Pythia  
+    - protocol: TCP
+      port: 8002  # Hermes
+    - protocol: TCP
+      port: 6379  # Redis
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
