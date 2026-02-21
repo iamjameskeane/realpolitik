@@ -1,0 +1,262 @@
+# Kubernetes CronJob for Argus Intelligence Engine
+# Schedule: Every 15 minutes
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: argus-intelligence-engine
+  namespace: realpolitik
+  labels:
+    app: argus
+    component: intelligence-engine
+spec:
+  schedule: "*/15 * * * *"  # Every 15 minutes
+  concurrencyPolicy: Forbid  # Prevent overlapping runs
+  successfulJobsHistoryLimit: 3  # Keep last 3 successful jobs
+  failedJobsHistoryLimit: 5      # Keep last 5 failed jobs
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: argus
+            component: intelligence-engine
+        spec:
+          # Service account for RBAC
+          serviceAccountName: argus
+          
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          
+          # Container configuration
+          containers:
+          - name: argus
+            image: argus:latest  # Build and push this image
+            imagePullPolicy: Always
+            
+            # Resource limits
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+            
+            # Environment variables
+            env:
+            # AI Provider
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: openrouter-api-key
+            
+            # Database Connections
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: database-url
+            
+            - name: NEO4J_URI
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: neo4j-uri
+            
+            - name: NEO4J_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: neo4j-username
+            
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: neo4j-password
+            
+            - name: QDRANT_URI
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: qdrant-uri
+            
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: redis-url
+            
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: rabbitmq-url
+            
+            # Supabase
+            - name: NEXT_PUBLIC_SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: supabase-url
+            
+            - name: SUPABASE_SERVICE_ROLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: argus-secrets
+                  key: supabase-service-key
+            
+            # Configuration
+            - name: STORAGE_MODE
+              value: "supabase"
+            
+            - name: MODEL_ENRICHMENT
+              value: "anthropic/claude-3-haiku"
+            
+            - name: MODEL_SYNTHESIS
+              value: "anthropic/claude-3-sonnet"
+            
+            - name: MAX_CONCURRENT_REQUESTS
+              value: "5"
+            
+            - name: THINKING_LEVEL
+              value: "low"
+            
+            - name: ENABLE_ENTITIES
+              value: "true"
+            
+            - name: ENABLE_EMBEDDINGS
+              value: "true"
+            
+            - name: ENABLE_GRAPH_STORAGE
+              value: "true"
+            
+            # Logging
+            - name: LOG_LEVEL
+              value: "INFO"
+            
+            # Health check
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting Argus Intelligence Engine at $(date)"
+              python main.py --sources rss --output supabase
+              echo "Argus cycle completed at $(date)"
+            
+            # Health check
+            livenessProbe:
+              exec:
+                command:
+                - python
+                - -c
+                - "import sys; sys.path.insert(0, '/app'); from config import Config; Config.from_env().validate(); print('Healthy')"
+              initialDelaySeconds: 60
+              periodSeconds: 300
+              timeoutSeconds: 30
+              failureThreshold: 3
+            
+            # Volume mounts (if needed)
+            volumeMounts:
+            - name: argus-cache
+              mountPath: /app/cache
+              subPath: cache
+          
+          # Volumes
+          volumes:
+          - name: argus-cache
+            emptyDir:
+              sizeLimit: 1Gi
+          
+          # Restart policy
+          restartPolicy: OnFailure
+          
+          # Node selection
+          nodeSelector:
+            workload-type: batch
+          
+          # Tolerations (if using dedicated nodes)
+          tolerations:
+          - key: "batch-workload"
+            operator: "Equal"
+            value: "true"
+            effect: "NoSchedule"
+
+---
+# Secret for Argus configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argus-secrets
+  namespace: realpolitik
+  labels:
+    app: argus
+type: Opaque
+stringData:
+  openrouter-api-key: "sk-or-v1-your-openrouter-api-key"
+  database-url: "postgresql://username:password@postgres:5432/realpolitik"
+  neo4j-uri: "bolt://neo4j:7687"
+  neo4j-username: "neo4j"
+  neo4j-password: "neo4j-password"
+  qdrant-uri: "http://qdrant:6333"
+  redis-url: "redis://redis:6379"
+  rabbitmq-url: "amqp://argus:argus_password@rabbitmq:5672"
+  supabase-url: "https://your-project.supabase.co"
+  supabase-service-key: "your-supabase-service-role-key"
+
+---
+# ServiceAccount for RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argus
+  namespace: realpolitik
+  labels:
+    app: argus
+
+---
+# Role for accessing secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: realpolitik
+  name: argus-role
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+  resourceNames: ["argus-secrets"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argus-rolebinding
+  namespace: realpolitik
+subjects:
+- kind: ServiceAccount
+  name: argus
+  namespace: realpolitik
+roleRef:
+  kind: Role
+  name: argus-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ConfigMap for non-secret configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argus-config
+  namespace: realpolitik
+  labels:
+    app: argus
+data:
+  # Add any non-secret configuration here
+  # For example, feature flags, logging levels, etc.

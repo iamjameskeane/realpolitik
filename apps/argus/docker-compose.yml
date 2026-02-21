@@ -1,0 +1,175 @@
+# Docker Compose for Argus OpenRouter Intelligence Engine
+# This sets up Argus with all required databases for the Realpolitik ecosystem
+
+version: '3.8'
+
+services:
+  # PostgreSQL - Atlas (Source of Truth)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: realpolitik
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: argus_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d realpolitik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Neo4j - Ariadne (Graph Database)
+  neo4j:
+    image: neo4j:5.15-community
+    environment:
+      NEO4J_AUTH: neo4j/neo4j_password
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_apoc_import_file_use__neo4j__home: "true"
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "neo4j_password", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant - Mnemosyne (Vector Database)
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Lethe (Cache)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ - Iris (Message Bus)
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    environment:
+      RABBITMQ_DEFAULT_USER: argus
+      RABBITMQ_DEFAULT_PASS: argus_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Argus Intelligence Engine
+  argus:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      # AI Provider (Required)
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-your_openrouter_api_key_here}
+
+      # Database Connections
+      DATABASE_URL: postgresql://argus:argus_password@postgres:5432/realpolitik
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: neo4j_password
+      QDRANT_URI: http://qdrant:6333
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://argus:argus_password@rabbitmq:5672
+
+      # Supabase (for event storage)
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://your-project.supabase.co}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-your_service_role_key_here}
+
+      # Storage
+      STORAGE_MODE: supabase
+
+      # OpenRouter Models
+      MODEL_ENRICHMENT: anthropic/claude-3-haiku
+      MODEL_SYNTHESIS: anthropic/claude-3-sonnet
+
+      # Processing Configuration
+      MAX_CONCURRENT_REQUESTS: 5
+      THINKING_LEVEL: low
+
+      # Graph Features
+      ENABLE_ENTITIES: "true"
+      ENABLE_EMBEDDINGS: "true"
+      ENABLE_GRAPH_STORAGE: "true"
+
+      # Cache Configuration
+      PROCESSED_ARTICLE_TTL_HOURS: 24
+      GEOCODE_CACHE_TTL_DAYS: 30
+
+      # Event Configuration
+      MAX_EVENTS: 1000
+      PUSH_NOTIFICATION_THRESHOLD: 1
+      PUSH_CRITICAL_THRESHOLD: 9
+
+    # Run as cron job every 15 minutes
+    command: >
+      sh -c "
+        echo 'Starting Argus Intelligence Engine...' &&
+        while true; do
+          echo 'Running Argus cycle at $$(date)' &&
+          python main.py --sources rss --output supabase &&
+          echo 'Argus cycle completed. Sleeping for 15 minutes...' &&
+          sleep 900
+        done
+      "
+
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.path.insert(0, '/app'); from config import Config; config = Config.from_env(); config.validate(); print('Healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  default:
+    name: argus-network

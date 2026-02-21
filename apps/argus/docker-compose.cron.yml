@@ -1,0 +1,94 @@
+# Docker Compose for Argus as Cron Job (Production)
+# This runs Argus as a scheduled task without the full database stack
+
+version: '3.8'
+
+services:
+  # Argus Intelligence Engine (Cron Job Mode)
+  argus-cron:
+    build: .
+    environment:
+      # AI Provider (Required)
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+
+      # Database Connections (Production)
+      DATABASE_URL: ${DATABASE_URL}
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USERNAME: ${NEO4J_USERNAME:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      QDRANT_URI: ${QDRANT_URI}
+      REDIS_URL: ${REDIS_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+
+      # Supabase (for event storage)
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # Storage
+      STORAGE_MODE: ${STORAGE_MODE:-supabase}
+
+      # OpenRouter Models
+      MODEL_ENRICHMENT: ${MODEL_ENRICHMENT:-anthropic/claude-3-haiku}
+      MODEL_SYNTHESIS: ${MODEL_SYNTHESIS:-anthropic/claude-3-sonnet}
+
+      # Processing Configuration
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-5}
+      THINKING_LEVEL: ${THINKING_LEVEL:-low}
+
+      # Graph Features
+      ENABLE_ENTITIES: ${ENABLE_ENTITIES:-true}
+      ENABLE_EMBEDDINGS: ${ENABLE_EMBEDDINGS:-true}
+      ENABLE_GRAPH_STORAGE: ${ENABLE_GRAPH_STORAGE:-true}
+
+      # Cache Configuration
+      PROCESSED_ARTICLE_TTL_HOURS: ${PROCESSED_ARTICLE_TTL_HOURS:-24}
+      GEOCODE_CACHE_TTL_DAYS: ${GEOCODE_CACHE_TTL_DAYS:-30}
+
+      # Event Configuration
+      MAX_EVENTS: ${MAX_EVENTS:-1000}
+      PUSH_NOTIFICATION_THRESHOLD: ${PUSH_NOTIFICATION_THRESHOLD:-1}
+      PUSH_CRITICAL_THRESHOLD: ${PUSH_CRITICAL_THRESHOLD:-9}
+
+    # Run as cron job every 15 minutes
+    command: >
+      sh -c "
+        echo 'Starting Argus Intelligence Engine (Cron Mode)...' &&
+        while true; do
+          echo 'Running Argus cycle at $$(date)' &&
+          python main.py --sources rss --output supabase &&
+          echo 'Argus cycle completed. Sleeping for 15 minutes...' &&
+          sleep 900
+        done
+      "
+
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.path.insert(0, '/app'); from config import Config; config = Config.from_env(); config.validate(); print('Healthy')"]
+      interval: 300s
+      timeout: 30s
+      retries: 3
+      start_period: 300s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network (if connecting to external databases)
+    networks:
+      - argus-network
+
+networks:
+  argus-network:
+    external: true
