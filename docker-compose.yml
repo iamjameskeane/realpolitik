@@ -1,0 +1,250 @@
+version: '3.8'
+
+services:
+  # Data Layer (Titans)
+  atlas:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: realpolitik
+      POSTGRES_USER: realpolitik
+      POSTGRES_PASSWORD: realpolitik_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schemas/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U realpolitik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ariadne:
+    image: neo4j:5.15-community
+    environment:
+      NEO4J_AUTH: neo4j/neo4j_password
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: true
+      NEO4J_apoc_import_file_enabled: true
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+  mnemosyne:
+    image: qdrant/qdrant:v1.7.0
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+
+  lethe:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  iris:
+    image: rabbitmq:3.12-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: realpolitik
+      RABBITMQ_DEFAULT_PASS: realpolitik_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  # Edge Layer
+  styx:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # Processing Services (Olympians)
+  argus:
+    build:
+      context: ./apps/argus
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://realpolitik:realpolitik_password@atlas:5432/realpolitik
+      - RABBITMQ_URL=amqp://realpolitik:realpolitik_password@iris:5672/
+    depends_on:
+      atlas:
+        condition: service_healthy
+      iris:
+        condition: service_started
+    restart: unless-stopped
+    # Run as CronJob - can be disabled for local testing
+    profiles:
+      - cron
+
+  clio:
+    build:
+      context: ./apps/clio
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://realpolitik:realpolitik_password@atlas:5432/realpolitik
+      - NEO4J_URI=bolt://ariadne:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=neo4j_password
+      - RABBITMQ_URL=amqp://realpolitik:realpolitik_password@iris:5672/
+    depends_on:
+      atlas:
+        condition: service_healthy
+      ariadne:
+        condition: service_started
+      iris:
+        condition: service_started
+
+  urania:
+    build:
+      context: ./apps/urania
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://realpolitik:realpolitik_password@atlas:5432/realpolitik
+      - QDRANT_URI=http://mnemosyne:6333
+      - RABBITMQ_URL=amqp://realpolitik:realpolitik_password@iris:5672/
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    depends_on:
+      atlas:
+        condition: service_healthy
+      mnemosyne:
+        condition: service_started
+      iris:
+        condition: service_started
+
+  cassandra:
+    build:
+      context: ./apps/cassandra
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://realpolitik:realpolitik_password@atlas:5432/realpolitik
+      - NEO4J_URI=bolt://ariadne:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=neo4j_password
+      - QDRANT_URI=http://mnemosyne:6333
+      - RABBITMQ_URL=amqp://realpolitik:realpolitik_password@iris:5672/
+      - REDIS_URL=redis://lethe:6379
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    depends_on:
+      atlas:
+        condition: service_healthy
+      ariadne:
+        condition: service_started
+      mnemosyne:
+        condition: service_started
+      iris:
+        condition: service_started
+      lethe:
+        condition: service_started
+
+  # API Layer
+  delphi:
+    build:
+      context: ./apps/delphi
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://realpolitik:realpolitik_password@atlas:5432/realpolitik
+      - NEO4J_URI=bolt://ariadne:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=neo4j_password
+      - QDRANT_URI=http://mnemosyne:6333
+      - REDIS_URL=redis://lethe:6379
+      - RABBITMQ_URL=amqp://realpolitik:realpolitik_password@iris:5672/
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      atlas:
+        condition: service_healthy
+      ariadne:
+        condition: service_started
+      mnemosyne:
+        condition: service_started
+      iris:
+        condition: service_started
+      lethe:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.delphi.rule=Host(`localhost`)"
+
+  pythia:
+    build:
+      context: ./apps/pythia
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://realpolitik:realpolitik_password@atlas:5432/realpolitik
+      - NEO4J_URI=bolt://ariadne:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=neo4j_password
+      - QDRANT_URI=http://mnemosyne:6333
+      - REDIS_URL=redis://lethe:6379
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    ports:
+      - "8001:8001"
+    depends_on:
+      atlas:
+        condition: service_healthy
+      ariadne:
+        condition: service_started
+      mnemosyne:
+        condition: service_started
+      lethe:
+        condition: service_started
+
+  hermes:
+    build:
+      context: ./apps/hermes
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://realpolitik:realpolitik_password@atlas:5432/realpolitik
+      - NEO4J_URI=bolt://ariadne:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=neo4j_password
+      - QDRANT_URI=http://mnemosyne:6333
+      - RABBITMQ_URL=amqp://realpolitik:realpolitik_password@iris:5672/
+      - AGENT_SECRET=${AGENT_SECRET}
+    ports:
+      - "8002:8002"
+    depends_on:
+      atlas:
+        condition: service_healthy
+      ariadne:
+        condition: service_started
+      mnemosyne:
+        condition: service_started
+      iris:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  default:
+    name: realpolitik_network

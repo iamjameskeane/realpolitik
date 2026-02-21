@@ -1,0 +1,143 @@
+version: '3'
+
+vars:
+  PYTHON_VERSION: "3.11"
+  POETRY_VERSION: "1.7.1"
+
+tasks:
+  # Development setup
+  setup:
+    cmds:
+      - poetry install
+      - cp .env.example .env
+      - pre-commit install
+    desc: Initial project setup
+
+  # Code quality
+  lint:
+    cmds:
+      - black --check .
+      - isort --check-only .
+      - flake8 .
+      - mypy .
+    desc: Run linting and type checking
+
+  format:
+    cmds:
+      - black .
+      - isort .
+    desc: Format code with black and isort
+
+  # Testing
+  test:
+    cmds:
+      - poetry run pytest
+    desc: Run all tests
+
+  test-unit:
+    cmds:
+      - poetry run pytest tests/unit -v
+    desc: Run unit tests
+
+  test-integration:
+    cmds:
+      - poetry run pytest tests/integration -v
+    desc: Run integration tests
+
+  # Docker operations
+  up:
+    cmds:
+      - docker compose up -d
+    desc: Start all services with Docker Compose
+
+  down:
+    cmds:
+      - docker compose down
+    desc: Stop all services
+
+  build:
+    cmds:
+      - docker compose build
+    desc: Build all Docker images
+
+  # Service management
+  logs:
+    cmds:
+      - docker compose logs -f
+    desc: Follow logs from all services
+
+  logs-service:
+    cmds:
+      - docker compose logs -f {{.CLI_ARGS}}
+    desc: Follow logs from specific service
+
+  restart-service:
+    cmds:
+      - docker compose restart {{.CLI_ARGS}}
+    desc: Restart specific service
+
+  # Database operations
+  db-migrate:
+    cmds:
+      - cd apps/delphi && poetry run alembic upgrade head
+    desc: Run database migrations
+
+  db-reset:
+    cmds:
+      - docker compose down -v
+      - docker compose up -d atlas
+      - sleep 10
+      - poetry run python scripts/seed_local.py
+    desc: Reset and seed local database
+
+  # Service development
+  dev-argus:
+    cmds:
+      - cd apps/argus && poetry run python -m argus.main
+    desc: Run Argus service locally
+
+  dev-delphi:
+    cmds:
+      - cd apps/delphi && poetry run uvicorn src.delphi.main:app --reload --host 0.0.0.0 --port 8000
+    desc: Run Delphi API server locally
+
+  dev-pythia:
+    cmds:
+      - cd apps/pythia && poetry run uvicorn src.pythia.main:app --reload --host 0.0.0.0 --port 8001
+    desc: Run Pythia chat service locally
+
+  dev-hermes:
+    cmds:
+      - cd apps/hermes && poetry run python -m hermes.server
+    desc: Run Hermes MCP server locally
+
+  dev-cassandra:
+    cmds:
+      - cd apps/cassandra && poetry run python -m cassandra.main
+    desc: Run Cassandra analysis worker locally
+
+  # Monitoring
+  health:
+    cmds:
+      - curl -f http://localhost:8000/health || exit 1
+      - curl -f http://localhost:8001/health || exit 1
+      - curl -f http://localhost:6333/health || exit 1
+    desc: Check service health endpoints
+
+  # Cleanup
+  clean:
+    cmds:
+      - docker system prune -f
+      - poetry cache clear --all .
+    desc: Clean up Docker and Poetry cache
+
+  # Production deployment
+  deploy-staging:
+    cmds:
+      - kubectl apply -k infra/k8s/overlays/staging
+    desc: Deploy to staging environment
+
+  deploy-prod:
+    cmds:
+      - kubectl apply -k infra/k8s/overlays/production
+    desc: Deploy to production environment
