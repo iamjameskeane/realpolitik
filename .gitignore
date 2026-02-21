@@ -1,8 +1,40 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# General
+.env
+.env.*
+!.env.example
+*.log
+logs/
+tmp/
+temp/
+.DS_Store
+Thumbs.db
+.opencode/
+.pytest_cache/
+.history
+.svn/
+*~
 
-# dependencies
-/node_modules
-/.pnp
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+*.ipr
+*.iws
+
+# Node.js
+node_modules/
+dist/
+.next/
+out/
+build/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+.pnpm-debug.log*
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -10,61 +42,52 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-!.env.example
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-
-# plans
-/plans
-plan.md
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
 .venv/
 venv/
 ENV/
 env/
+.Python
 *.egg-info/
-.eggs/
-dist/
-build/
 *.egg
+.eggs/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
+# Go
+# Binary outputs (in root)
+/styx
+/argus
+/aegis
+/hermes
+/delphi
+/chronos
+/clio
+/pythia
+/urania
+/agora
+/cassandra
+
+# Flutter/Dart
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/coverage/
+app.*.symbols
+app.*.map.json
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Archive
+realpolitik-archive/
+
+# Misc
+*.pem
 supabase
+plan.md
+migrate_working_dir/
