@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  delphi:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATABASE_URL=postgresql://dev:dev@postgres:5432/realpolitik_dev
+      - NEO4J_URI=bolt://neo4j:7687
+      - QDRANT_URI=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - SUPABASE_URL=https://dev.supabase.co
+      - SUPABASE_ANON_KEY=dev-key
+      - JWT_SECRET_KEY=dev-secret
+      - OPENROUTER_API_KEY=dev-key
+      - RATE_LIMIT_ENABLED=false
+    depends_on:
+      - postgres
+      - redis
+      - neo4j
+      - qdrant
+      - rabbitmq
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=realpolitik_dev
+      - POSTGRES_USER=dev
+      - POSTGRES_PASSWORD=dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      - NEO4J_AUTH=neo4j/neo4j
+      - NEO4J_PLUGINS=["apoc"]
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=delphi
+      - RABBITMQ_DEFAULT_PASS=delphi
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  neo4j_data:
+  qdrant_data:
+  rabbitmq_data:
+
+networks:
+  default:
+    name: realpolitik_network
