@@ -1,214 +1,164 @@
-# REALPOLITIK
+# Realpolitik - Distributed Geopolitical Intelligence Platform
 
-> Global Situational Awareness
+> **Olympian Architecture** - A fully distributed, event-sourced intelligence system with multi-modal storage and AI-native interfaces
 
-A real-time geopolitical event monitoring dashboard that aggregates news from multiple sources, enriches them with AI analysis, and displays them on an interactive 3D globe.
+## 🏛️ Architecture Overview
 
-🌍 **Live at [realpolitik.world](https://realpolitik.world)**
+Realpolitik implements a **fully distributed system** with CQRS, Event Sourcing, and the Outbox Pattern:
 
-[![GitHub stars](https://img.shields.io/github/stars/iamjameskeane/realpolitik?style=flat-square)](https://github.com/iamjameskeane/realpolitik/stargazers)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/iamjameskeane/realpolitik?style=flat-square)](https://github.com/iamjameskeane/realpolitik/commits)
+```
+RSS Feeds → Argus → PostgreSQL (Outbox) → CDC → RabbitMQ → 
+[Neo4j Consumer] [Qdrant Consumer] [Fallout Worker] ← Delphi ← Clients
+```
 
-## Features
+### The Olympian Pantheon
 
-### 🌍 Interactive Globe
+**Data Layer (Titans):**
+- **Atlas** (PostgreSQL) - Source of truth, event store, outbox pattern
+- **Ariadne** (Neo4j) - Graph relationships, entity traversal  
+- **Mnemosyne** (Qdrant) - Vector embeddings, semantic search
+- **Lethe** (Redis) - Ephemeral cache, session storage
 
-- 3D Mapbox globe with auto-rotation
-- Event clustering for high-density regions
-- Color-coded markers by category (Military, Diplomacy, Economy, Unrest)
-- Severity-based sizing and glow effects
-- Click-to-focus with detailed event popups
+**Processing Services (Olympians):**
+- **Argus** (RSS Ingestion) - Event sourcing, write-only to PostgreSQL
+- **Chronos** (CDC Pipeline) - Debezium → Kafka/RabbitMQ
+- **Clio** (Neo4j Writer) - Graph relationship updates
+- **Urania** (Qdrant Writer) - Vector embedding updates
+- **Cassandra** (Fallout Engine) - AI analysis worker
 
-### 📱 Responsive Design
+**API Layer:**
+- **Delphi** (FastAPI) - Main app server, REST/WebSocket
+- **Pythia** (Chat Service) - RAG-powered conversational interface
+- **Hermes** (MCP Server) - AI agent gateway
+- **Styx** (Edge Gateway) - Traefik API gateway
 
-- **Desktop**: Full dashboard with sidebar event list and map popups
-- **Mobile**: Three-phase "Pilot's View" intelligence sheet
-  - Scanner mode: Scrollable event feed with sort/filter
-  - Pilot mode: Detailed event cards with swipe navigation
-  - Analyst mode: AI briefing with Pythia
-- **iOS Safari optimized**: Full viewport height, safe area handling
-
-### 🔗 Sharing & Deep Linking
-
-- Shareable URLs: `realpolitik.world/?event=EVENT_ID`
-- Opens directly to event with fly-to animation
-- Works on both desktop and mobile
-
-### 📰 Source Timeline
-
-- Chronological view of how stories develop
-- Multiple sources consolidated into single events
-- Relative timestamps ("2h ago", "3d ago")
-- Direct links to original articles
-
-### 🤖 AI-Powered Analysis
-
-- Gemini AI integration for event summarization
-- Fallout prediction: AI-generated impact analysis
-- Multi-source aggregation and deduplication
-- Semantic similarity for event clustering
-
-### 📡 Real-Time Updates
-
-- Automatic polling for new events
-- Live indicator with last-updated timestamp
-- Toast notifications for breaking events
-
-## Tech Stack
-
-- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS v4
-- **Mapping**: Mapbox GL JS (3D globe, clustering, custom layers)
-- **Animation**: Framer Motion (mobile gestures)
-- **Worker**: Python + Google Gemini, runs on GitHub Actions
-- **Storage**: Cloudflare R2 (production) / local JSON (development)
-
-## Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
+- Python 3.11+
+- Docker & Docker Compose
+- Poetry (dependency management)
 
-- Node.js 18+
-- Python 3.10+ (for worker)
-- Mapbox API token
-- Google Gemini API key (for worker)
-
-### Installation
+### Development Setup
 
 ```bash
+# Clone and setup
+git clone <repo>
+cd realpolitik
+
 # Install dependencies
-npm install
+task setup
 
-# Set up environment variables
-cp .env.example .env.local
-# Add your NEXT_PUBLIC_MAPBOX_TOKEN
+# Start all services
+task up
 
-# Run the development server
-npm run dev
+# Run individual services
+task dev-argus    # RSS ingestion
+task dev-delphi   # API server  
+task dev-pythia   # Chat service
+task dev-hermes   # MCP gateway
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the dashboard.
+### Service Development
 
-### Mobile Testing
-
-Add `?mobile=1` to the URL to force mobile layout on desktop:
-
-```
-http://localhost:3000/?mobile=1
-```
-
-### Running the Worker
-
-The worker fetches and enriches news events:
+Each service is independently runnable:
 
 ```bash
-cd worker
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
-export GEMINI_API_KEY=your_key
-export NEWSAPI_KEY=your_key
-
-# Run locally
-python run_local.py
+cd apps/argus && poetry run python -m argus.main
+cd apps/delphi && poetry run uvicorn src.delphi.main:app --reload
+cd apps/pythia && poetry run uvicorn src.pythia.main:app --reload
 ```
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 realpolitik/
-├── src/
-│   ├── app/                 # Next.js app router
-│   ├── components/
-│   │   ├── mobile/          # Mobile-specific components
-│   │   ├── map/             # Map popup and fallback
-│   │   ├── Dashboard.tsx    # Desktop layout
-│   │   ├── WorldMap.tsx     # Mapbox globe
-│   │   └── EventsSidebar.tsx
-│   ├── hooks/               # Custom React hooks
-│   │   ├── useEventLayers.ts
-│   │   ├── useAutoRotate.ts
-│   │   ├── useMediaQuery.ts
-│   │   ├── useViewportHeight.ts
-│   │   └── usePopupPosition.ts
-│   └── types/               # TypeScript definitions
-├── worker/                  # Python news worker
-├── public/
-│   └── events.json          # Event data
-└── shared/
-    └── event_schema.json    # Event schema definition
+├── 📁 apps/                    # Runnable services (containers)
+│   ├── argus/                  # RSS Ingestion (CronJob)
+│   ├── delphi/                 # FastAPI App Server
+│   ├── pythia/                 # Chat Service (WebSocket + RAG)
+│   ├── hermes/                 # MCP Server
+│   ├── cassandra/              # Fallout Analysis Worker
+│   ├── clio/                   # Neo4j Writer
+│   ├── urania/                 # Qdrant Writer
+│   └── chronos/                # CDC Pipeline
+│
+├── 📁 libs/                    # Shared libraries
+│   ├── realpolitik-schema/     # Canonical data models
+│   ├── realpolitik-clients/    # Database clients
+│   └── realpolitik-observability/ # Shared Otel setup
+│
+├── 📁 infra/                   # Infrastructure as Code
+│   ├── k8s/                    # Kubernetes manifests
+│   └── terraform/              # Cloud provisioning
+│
+├── 📁 schemas/                 # Event contracts (language agnostic)
+├── 📁 notebooks/              # Exploration & Data Science
+└── 📁 docs/                   # Architecture documentation
 ```
 
-## Event Categories
+## 🔧 Architecture Patterns
 
-| Category     | Color | Description                       |
-| ------------ | ----- | --------------------------------- |
-| 🔴 MILITARY  | Red   | Armed conflicts, defense actions  |
-| 🔵 DIPLOMACY | Cyan  | International relations, treaties |
-| 🟢 ECONOMY   | Green | Trade, sanctions, markets         |
-| 🟡 UNREST    | Amber | Protests, civil unrest            |
+- **CQRS with Event Sourcing**: Argus writes immutable events to PostgreSQL; read models built asynchronously
+- **Outbox Pattern**: Ensures atomic commit of business events and dispatch to RabbitMQ
+- **Saga Pattern**: Distributed transaction coordination with compensating transactions
+- **Event-Driven**: All inter-service communication via message queues
+- **Cache-Aside**: LLM analyses cached with TTL triggered by new events
 
-## Deployment
+## 📊 Data Flow
 
-### Architecture
+### Event Ingestion Pipeline
+1. **Argus** polls RSS feeds → PostgreSQL (Outbox)
+2. **Chronos** captures WAL → RabbitMQ
+3. **Clio** → Neo4j (graph relationships)
+4. **Urania** → Qdrant (embeddings)
 
-```
-GitHub Actions (hourly cron) → Cloudflare R2 → Vercel (Next.js)
-```
+### Analysis Request Pipeline
+1. **Delphi** receives user request → RabbitMQ
+2. **Cassandra** consumes → assembles context → OpenRouter
+3. Result cached in **Redis** + stored in **PostgreSQL**
 
-- **Frontend**: Vercel (free tier)
-- **Worker**: GitHub Actions (2000 free min/month)
-- **Storage**: Cloudflare R2 (free tier, S3-compatible)
+### Chat Interface
+1. **Pythia** receives WebSocket connection
+2. RAG over **Qdrant** + **Neo4j**
+3. Response via **OpenRouter**
 
-### 1. Frontend (Vercel)
+## 🔒 Security
+
+- **Zero-Trust**: mTLS between services, capability-based access
+- **Data Classification**: Public events, sensitive user data
+- **Agent Isolation**: MCP gateway separated from billing/sensitive APIs
+
+## 📈 Scaling
+
+- **Stateless Services**: All compute services scale horizontally
+- **Message Queue**: Decouples processing for resilience
+- **Eventual Consistency**: Cross-database synchronization
+- **Cost Optimization**: Intelligent LLM caching
+
+## 🧪 Testing
 
 ```bash
-# Deploy to Vercel
-vercel deploy --prod
-
-# Set environment variable in Vercel dashboard:
-# NEXT_PUBLIC_EVENTS_URL = https://pub-xxxxx.r2.dev/events.json
+task test        # All tests
+task test-unit   # Unit tests only
+task test-integration  # Integration tests
 ```
 
-### 2. Storage (Cloudflare R2)
+## 📚 Documentation
 
-1. Create bucket at [dash.cloudflare.com](https://dash.cloudflare.com) → R2
-2. Enable public access or custom domain
-3. Create API token with Object Read & Write permissions
-4. Note: `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
+- **[Architecture](./docs/system-architecture.md)** - Visual system diagram
+- **[Design Document](./docs/realpolitik-design-doc.md)** - Detailed technical specification
+- **[Repository Structure](./docs/repo-structure.md)** - Monorepo organization
+- **[Naming Conventions](./docs/naming-conventions-doc.md)** - Olympian pantheon
 
-### 3. Worker (GitHub Actions)
+## 🤝 Contributing
 
-Add secrets to GitHub repo (Settings → Secrets → Actions):
+1. Follow the **Olympian naming** convention for new services
+2. Implement **Outbox Pattern** for all database writes
+3. Use **event-sourced** architecture for state changes
+4. Add **observability** (traces, metrics, logs) to all services
+5. Write **tests** for all new functionality
 
-| Secret                     | Description                                     |
-| -------------------------- | ----------------------------------------------- |
-| `NEWSAPI_KEY`              | NewsAPI.org API key                             |
-| `GEMINI_API_KEY`           | Google Gemini API key for AI enrichment         |
-| `TAVILY_API_KEY`           | Tavily API key for briefing web search          |
-| `R2_ACCESS_KEY_ID`         | Cloudflare R2 access key                        |
-| `R2_SECRET_ACCESS_KEY`     | Cloudflare R2 secret key                        |
-| `R2_ENDPOINT_URL`          | `https://<account_id>.r2.cloudflarestorage.com` |
-| `R2_BUCKET_NAME`           | `realpolitik-events`                            |
-| `UPSTASH_REDIS_REST_URL`   | Upstash Redis REST URL (for reactions/limits)   |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token                        |
+## 📄 License
 
-The worker runs automatically every 15 minutes via `.github/workflows/update-intel.yml`.
-
-### Polling Frequency
-
-NewsAPI free tier allows 100 requests/day. Default is every 15 minutes (96/day).
-
-To adjust, edit the cron in `.github/workflows/update-intel.yml`:
-
-- Every hour: `0 * * * *` (24/day)
-- Every 30 min: `*/30 * * * *` (48/day)
-
-## License
-
-MIT
-
----
-
-_Built for those who need to stay ahead of global events._
+MIT License - See LICENSE file for details.
