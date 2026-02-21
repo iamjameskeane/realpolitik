@@ -1,0 +1,156 @@
+name: Delphi CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['apps/delphi/**', 'libs/realpolitik-*/**']
+  pull_request:
+    branches: [main, develop]
+    paths: ['apps/delphi/**', 'libs/realpolitik-*/**']
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'poetry'
+    
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: apps/delphi/.venv
+        key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('apps/delphi/pyproject.toml') }}
+    
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: |
+        cd apps/delphi
+        poetry install --no-interaction
+    
+    - name: Activate venv
+      run: source apps/delphi/.venv/bin/activate
+    
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 apps/delphi --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 apps/delphi --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Format check with black
+      run: black --check apps/delphi
+    
+    - name: Import check with isort
+      run: isort --check-only apps/delphi
+    
+    - name: Type check with mypy
+      run: mypy apps/delphi
+      continue-on-error: true
+    
+    - name: Test with pytest
+      run: |
+        source apps/delphi/.venv/bin/activate
+        cd apps/delphi
+        poetry run pytest tests/unit/ -v --cov=src --cov-report=xml
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379
+        ENVIRONMENT: test
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./apps/delphi/coverage.xml
+        flags: delphi
+        name: delphi-coverage
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: ./apps/delphi
+        push: true
+        tags: realpolitik/delphi:latest,realpolitik/delphi:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Deploy to staging
+      run: echo "Deploy to staging environment"
+      # Add actual deployment steps here
+    
+    - name: Wait for deployment
+      run: sleep 30
+    
+    - name: Run health checks
+      run: |
+        curl -f http://staging.delphi.realpolitik.world/health || exit 1
+        curl -f http://staging.delphi.realpolitik.world/health/ready || exit 1
+    
+    - name: Run smoke tests
+      run: |
+        curl -f http://staging.delphi.realpolitik.world/api/v1/events | jq '.events | length' || exit 1
