@@ -1,0 +1,68 @@
+"""
+Cassandra microservice docker-compose configuration.
+"""
+
+version: '3.8'
+
+services:
+  cassandra:
+    build: .
+    container_name: cassandra-fallout-engine
+    environment:
+      # Database connections
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:password@atlas:5432/realpolitik}
+      NEO4J_URI: ${NEO4J_URI:-bolt://ariadne:7687}
+      NEO4J_USERNAME: ${NEO4J_USERNAME:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password}
+      QDRANT_URI: ${QDRANT_URI:-http://mnemosyne:6333}
+      REDIS_URL: ${REDIS_URL:-redis://lethe:6379}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://iris:5672}
+      
+      # AI Service
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      
+      # Processing
+      CASSANDRA_MAX_CONCURRENT: ${CASSANDRA_MAX_CONCURRENT:-5}
+      ANALYSIS_TIMEOUT_SECONDS: ${ANALYSIS_TIMEOUT_SECONDS:-120}
+      MODEL_ENRICHMENT: ${MODEL_ENRICHMENT:-anthropic/claude-3-haiku}
+      MODEL_SYNTHESIS: ${MODEL_SYNTHESIS:-anthropic/claude-3-sonnet}
+      
+      # Caching
+      ANALYSIS_CACHE_TTL_HOURS: ${ANALYSIS_CACHE_TTL_HOURS:-24}
+      MAX_CACHE_SIZE_MB: ${MAX_CACHE_SIZE_MB:-500}
+      
+      # Queue
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-analysis.requested}
+      RABBITMQ_PREFETCH_COUNT: ${RABBITMQ_PREFETCH_COUNT:-10}
+      
+      # Monitoring
+      ENABLE_METRICS: ${ENABLE_METRICS:-true}
+      METRICS_PORT: ${METRICS_PORT:-8080}
+    ports:
+      - "${CASSANDRA_PORT:-8080}:8080"
+    depends_on:
+      - atlas
+      - ariadne
+      - mnemosyne
+      - lethe
+      - iris
+    restart: unless-stopped
+    deploy:
+      replicas: ${CASSANDRA_REPLICAS:-0}  # Scale to 0 when no jobs
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: realpolitik
